@@ -83,7 +83,7 @@ class Bot(Client):
         try:
             await self.send_photo(
                 chat_id=DATABASE_CHANNEL,
-                photo="https://ibb.co/DH3N4Lyr",
+                photo="https://ibb.co/jky6J3D7",
                 caption=("**I ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ !**"),
                 reply_markup=InlineKeyboardMarkup(
                     [[InlineKeyboardButton("ᴜᴘᴅᴀᴛᴇs", url="https://t.me/Suhanibots")]]
