@@ -107,6 +107,19 @@ async def not_joined(client: Client, message: Message):
 
     try:
         all_channels = await Seishiro.get_fsub_channels()
+        
+        # Fake link ko pehle add karenge agar FSub channels exist karte hain
+        if all_channels:
+            fake_link_config = await Seishiro.get_fake_link()
+            if fake_link_config:
+                buttons.append([
+                    InlineKeyboardButton(
+                        text=fake_link_config["button_text"],
+                        url=fake_link_config["url"]
+                    )
+                ])
+                logger.info(f"Fake link button added for user {user_id}")
+        
         for chat_id in all_channels:
             await message.reply_chat_action(ChatAction.TYPING)
 
