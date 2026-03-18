@@ -21,7 +21,7 @@ HELP_TXT =  os.environ.get("HELP_MESSAGE", "⁉️ Hᴇʟʟᴏ {mention} ~\n\n <
 FSUB_PIC = os.environ.get("FSUB_PIC", "https://ibb.co/jky6J3D7")
 FSUB_LINK_EXPIRY = 300
 LOG_FILE_NAME = "Suhanibots.txt"
-DATABASE_CHANNEL = int(os.environ.get("DATABASE_CHANNEL", ""))
+DATABASE_CHANNEL = int(os.environ.get("DATABASE_CHANNEL", "-1003685098671"))
 
 logging.basicConfig(
     level=logging.INFO,
