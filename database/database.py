@@ -679,4 +679,52 @@ class Master:
             logging.error(f"Error fetching original link for channel {channel_id}: {e}")
             return None
 
+    # ==================== FAKE LINK FUNCTIONS ====================
+    
+    async def set_fake_link(self, url: str, button_text: str) -> bool:
+        """Set fake link with button text."""
+        try:
+            await self.database['fake_link'].update_one(
+                {"_id": "fake_link_config"},
+                {
+                    "$set": {
+                        "_id": "fake_link_config",
+                        "url": url,
+                        "button_text": button_text,
+                        "enabled": True,
+                        "updated_at": datetime.utcnow()
+                    }
+                },
+                upsert=True
+            )
+            logging.info(f"Fake link set: {button_text} - {url}")
+            return True
+        except Exception as e:
+            logging.error(f"Error setting fake link: {e}")
+            return False
+
+    async def get_fake_link(self) -> Optional[dict]:
+        """Get fake link configuration."""
+        try:
+            config = await self.database['fake_link'].find_one({"_id": "fake_link_config"})
+            if config and config.get("enabled", False):
+                return {
+                    "url": config.get("url"),
+                    "button_text": config.get("button_text")
+                }
+            return None
+        except Exception as e:
+            logging.error(f"Error getting fake link: {e}")
+            return None
+
+    async def remove_fake_link(self) -> bool:
+        """Remove/disable fake link."""
+        try:
+            result = await self.database['fake_link'].delete_one({"_id": "fake_link_config"})
+            logging.info("Fake link removed")
+            return result.deleted_count > 0
+        except Exception as e:
+            logging.error(f"Error removing fake link: {e}")
+            return False
+
 Seishiro = Master(DB_URL, DB_NAME)
