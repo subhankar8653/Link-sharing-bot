@@ -175,11 +175,8 @@ async def not_joined(client: Client, message: Message):
 
                 except Exception as e:
                     logger.error(f"Error with chat {chat_id}: {e}")
-                    await temp.edit(
-                        f"<b><i>! Eʀʀᴏʀ, Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴛᴏ sᴏʟᴠᴇ ᴛʜᴇ ɪssᴜᴇs @suhanibots</i></b>\n"
-                        f"<blockquote expandable><b>Rᴇᴀsᴏɴ:</b> {e}</blockquote>"
-                    )
-                    return
+                    # Don't return here, continue with other channels
+                    continue
 
         try:
             buttons.append([
@@ -191,9 +188,23 @@ async def not_joined(client: Client, message: Message):
         except IndexError:
             pass
 
+        # Check if we have at least fake link button to show
+        if not buttons:
+            await temp.edit(
+                "<b><i>! Eʀʀᴏʀ, Nᴏ ᴠᴀʟɪᴅ ᴄʜᴀɴɴᴇʟs ғᴏᴜɴᴅ. Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ @suhanibots</i></b>"
+            )
+            return
+
         text = "<b>Yᴏᴜ Bᴀᴋᴋᴀᴀ...!! \n\n<blockquote>Jᴏɪɴ ᴍʏ ᴄʜᴀɴɴᴇʟ ᴛᴏ ᴜsᴇ ᴍʏ ᴏᴛʜᴇʀᴡɪsᴇ Yᴏᴜ ᴀʀᴇ ɪɴ ʙɪɢ sʜɪᴛ...!!</blockquote></b>"
         
         logger.debug(f"Sending final reply photo to user {user_id}")
+        
+        # Delete temp message
+        try:
+            await temp.delete()
+        except:
+            pass
+            
         await message.reply_photo(
             photo=FSUB_PIC,
             caption=text,
