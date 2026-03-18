@@ -5,13 +5,13 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
-BOT_USERNAME = 'Suhanibots'
+BOT_USERNAME = 'SenpaiSyncbot'
 APP_ID = int(os.environ.get("APP_ID", ""))
 API_HASH = os.environ.get("API_HASH", "")
-OWNER_ID = int(os.environ.get("OWNER_ID", ""))
+OWNER_ID = int(os.environ.get("OWNER_ID", "2135144380"))
 PORT = os.environ.get("PORT", "8080")
 DB_URL = os.environ.get("DB_URI", "")
-DB_NAME = os.environ.get("DB_NAME", "Suhanibots")
+DB_NAME = os.environ.get("DB_NAME", "linksharebot")
 TG_BOT_WORKERS = int(os.environ.get("TG_BOT_WORKERS", "40"))
 COMMAND_PHOTO = os.environ.get("COMMAND_PHOTO", "https://ibb.co/jky6J3D7")  # Replace with your photo URL
 START_PIC = os.environ.get("START_PIC", "https://ibb.co/jky6J3D7")
