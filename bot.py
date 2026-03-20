@@ -32,6 +32,19 @@ class Bot(Client):
         usr_bot_me = await self.get_me()
         self.uptime = datetime.now()
         
+        # 🔥 SESSION RESET FEATURE - Environment Variable Se Control Karo
+        # Railway pe RESET_SESSION=true set karo to session fresh hoga
+        import os
+        if os.getenv("RESET_SESSION", "false").lower() == "true":
+            session_file = "Bot.session"
+            if os.path.exists(session_file):
+                os.remove(session_file)
+                self.LOGGER(__name__).info("=" * 60)
+                self.LOGGER(__name__).info("♻️  SESSION RESET ACTIVATED")
+                self.LOGGER(__name__).info("🗑️  Deleted old session file")
+                self.LOGGER(__name__).info("🔄 Fresh session will be created now...")
+                self.LOGGER(__name__).info("=" * 60)
+        
         # IMPORTANT: Pre-resolve all channels to populate session cache
         # This prevents PeerIdInvalid errors when bot is deployed on new server
         try:
