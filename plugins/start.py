@@ -142,8 +142,16 @@ async def not_joined(client: Client, message: Message):
                     if chat_id in chat_data_cache:
                         data = chat_data_cache[chat_id]
                     else:
-                        data = await client.get_chat(chat_id)
-                        chat_data_cache[chat_id] = data
+                        # Resolve peer to populate session cache
+                        try:
+                            data = await client.get_chat(chat_id)
+                            chat_data_cache[chat_id] = data
+                        except PeerIdInvalid:
+                            logger.warning(f"PeerIdInvalid for channel {chat_id} - skipping")
+                            continue
+                        except Exception as e:
+                            logger.error(f"Error getting chat info for {chat_id}: {e}")
+                            continue
 
                     name = data.title
                     mode = await Seishiro.get_channel_mode(chat_id)
@@ -280,6 +288,24 @@ async def start_command(client: Bot, message: Message):
                     logger.info(f"Channel {channel_id} not in database, adding it now")
                     await Seishiro.save_channel(channel_id)
                 
+                # CRITICAL: Resolve peer before creating invite link
+                # This populates the session cache for new channels
+                try:
+                    chat = await client.get_chat(channel_id)
+                    logger.info(f"Successfully resolved peer for channel {channel_id}: {chat.title}")
+                except PeerIdInvalid:
+                    logger.error(f"PeerIdInvalid - Bot is not admin or channel doesn't exist: {channel_id}")
+                    return await message.reply_text(
+                        "<b><blockquote expandable>⚠️ Tʜɪs ᴄʜᴀɴɴᴇʟ ɪs ɴᴏᴛ ᴀᴠᴀɪʟᴀʙʟᴇ ᴏʀ ʙᴏᴛ ɪs ɴᴏᴛ ᴀᴅᴍɪɴ.\n\nMᴀᴋᴇ sᴜʀᴇ ʙᴏᴛ ɪs ᴀᴅᴍɪɴ ɪɴ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ ᴡɪᴛʜ 'Iɴᴠɪᴛᴇ Usᴇʀs' ᴘᴇʀᴍɪssɪᴏɴ.</blockquote></b>",
+                        parse_mode=ParseMode.HTML
+                    )
+                except Exception as e:
+                    logger.error(f"Error resolving peer for channel {channel_id}: {e}")
+                    return await message.reply_text(
+                        "<b><blockquote expandable>Fᴀɪʟᴇᴅ ᴛᴏ ᴀᴄᴄᴇss ᴄʜᴀɴɴᴇʟ. Pʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ.</blockquote></b>",
+                        parse_mode=ParseMode.HTML
+                    )
+                
                 # Update the encoded link in database
                 if is_request:
                     await Seishiro.save_encoded_link2(channel_id, base64_to_decode)
@@ -336,10 +362,16 @@ async def start_command(client: Bot, message: Message):
                             invite_link = invite.invite_link
                             await Seishiro.save_invite_link(channel_id, invite_link, is_request_link)
                             logger.info(f"Created new {'request' if is_request else 'invite'} link for channel {channel_id}")
+                        except PeerIdInvalid:
+                            logger.error(f"PeerIdInvalid error for channel {channel_id} - Bot might be removed or not admin")
+                            return await message.reply_text(
+                                "<b><blockquote expandable>⚠️ Tʜɪs ᴄʜᴀɴɴᴇʟ ɪs ɴᴏᴛ ᴀᴠᴀɪʟᴀʙʟᴇ ᴏʀ ʙᴏᴛ ɪs ɴᴏᴛ ᴀᴅᴍɪɴ ɪɴ ᴛʜɪs ᴄʜᴀɴɴᴇʟ.\n\nPʟᴇᴀsᴇ ᴄᴏɴᴛᴀᴄᴛ ᴄʜᴀɴɴᴇʟ ᴏᴡɴᴇʀ.</blockquote></b>",
+                                parse_mode=ParseMode.HTML
+                            )
                         except Exception as e:
                             logger.error(f"Error creating invite link for channel {channel_id}: {e}")
                             return await message.reply_text(
-                                "<b><blockquote expandable>Failed to generate invite link. Please try again later.</blockquote></b>",
+                                "<b><blockquote expandable>Failed to generate invite link. Please try again later.\n\nError: {str(e)[:100]}</blockquote></b>",
                                 parse_mode=ParseMode.HTML
                             )
                     
