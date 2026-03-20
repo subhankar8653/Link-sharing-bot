@@ -1540,3 +1540,160 @@ async def view_fake_link_command(client: Client, message: Message):
             parse_mode=ParseMode.HTML
         )
 
+
+# ============================================================================
+# CHANNEL REFRESH & CLEANUP COMMANDS
+# ============================================================================
+
+@Bot.on_message(filters.command('refresh_channels') & filters.private & is_owner_or_admin)
+async def refresh_channels_command(client: Bot, message: Message):
+    """Force refresh all channels to populate session cache"""
+    
+    status_msg = await message.reply_text(
+        "<b>🔄 Rᴇғʀᴇsʜɪɴɢ ᴀʟʟ ᴄʜᴀɴɴᴇʟs...</b>\n\n"
+        "<i>Tʜɪs ᴡɪʟʟ ғɪx 'Pᴇᴇʀ ɪᴅ ɪɴᴠᴀʟɪᴅ' ᴇʀʀᴏʀs</i>",
+        parse_mode=ParseMode.HTML
+    )
+    
+    try:
+        channels = await Seishiro.get_channels()
+        
+        if not channels:
+            return await status_msg.edit_text(
+                "<b>❌ Nᴏ ᴄʜᴀɴɴᴇʟs ғᴏᴜɴᴅ ɪɴ ᴅᴀᴛᴀʙᴀsᴇ.</b>",
+                parse_mode=ParseMode.HTML
+            )
+        
+        resolved = 0
+        failed = 0
+        failed_list = []
+        
+        for idx, channel_id in enumerate(channels, 1):
+            try:
+                chat = await client.get_chat(channel_id)
+                member = await client.get_chat_member(channel_id, "me")
+                resolved += 1
+                
+                if idx % 5 == 0 or idx == len(channels):
+                    await status_msg.edit_text(
+                        f"<b>🔄 Rᴇғʀᴇsʜɪɴɢ... {(idx*100)//len(channels)}%</b>\n\n"
+                        f"<i>Pʀᴏᴄᴇssᴇᴅ: {idx}/{len(channels)}</i>\n"
+                        f"<i>✓ Sᴜᴄᴄᴇss: {resolved}</i>\n"
+                        f"<i>✗ Fᴀɪʟᴇᴅ: {failed}</i>",
+                        parse_mode=ParseMode.HTML
+                    )
+                    
+            except PeerIdInvalid:
+                failed += 1
+                failed_list.append(f"{channel_id} (Peer invalid)")
+            except Exception as e:
+                failed += 1
+                failed_list.append(f"{channel_id} ({str(e)[:30]})")
+        
+        summary = (
+            f"<b>✅ Rᴇғʀᴇsʜ Cᴏᴍᴘʟᴇᴛᴇ!</b>\n\n"
+            f"<b>📊 Rᴇsᴜʟᴛs:</b>\n"
+            f"  • Tᴏᴛᴀʟ: {len(channels)}\n"
+            f"  • ✓ Sᴜᴄᴄᴇss: {resolved}\n"
+            f"  • ✗ Fᴀɪʟᴇᴅ: {failed}\n"
+        )
+        
+        if failed_list:
+            summary += f"\n<b>⚠️ Fᴀɪʟᴇᴅ ({len(failed_list)}):</b>\n"
+            for item in failed_list[:5]:
+                summary += f"  • {item}\n"
+            if len(failed_list) > 5:
+                summary += f"  • ...ᴀɴᴅ {len(failed_list)-5} ᴍᴏʀᴇ\n"
+            summary += f"\n<i>Usᴇ /cleanup_db ᴛᴏ ʀᴇᴍᴏᴠᴇ ɪɴᴠᴀʟɪᴅ ᴄʜᴀɴɴᴇʟs</i>"
+        
+        await status_msg.edit_text(summary, parse_mode=ParseMode.HTML)
+        
+    except Exception as e:
+        await status_msg.edit_text(
+            f"<b>❌ Eʀʀᴏʀ:</b>\n<code>{str(e)}</code>",
+            parse_mode=ParseMode.HTML
+        )
+
+
+@Bot.on_message(filters.command('cleanup_db') & filters.private & is_owner_or_admin)
+async def cleanup_database_command(client: Bot, message: Message):
+    """Remove all invalid channels from database"""
+    
+    status_msg = await message.reply_text(
+        "<b>🔄 Sᴄᴀɴɴɪɴɢ ᴅᴀᴛᴀʙᴀsᴇ...</b>",
+        parse_mode=ParseMode.HTML
+    )
+    
+    try:
+        channels = await Seishiro.get_channels()
+        
+        if not channels:
+            return await status_msg.edit_text(
+                "<b>✅ Nᴏ ᴄʜᴀɴɴᴇʟs ғᴏᴜɴᴅ.</b>",
+                parse_mode=ParseMode.HTML
+            )
+        
+        valid_channels = []
+        invalid_channels = []
+        
+        for idx, channel_id in enumerate(channels, 1):
+            try:
+                chat = await client.get_chat(channel_id)
+                member = await client.get_chat_member(channel_id, "me")
+                
+                if member.status in ["administrator", "creator"]:
+                    valid_channels.append(channel_id)
+                else:
+                    invalid_channels.append((channel_id, chat.title, f"Not admin"))
+                    
+            except PeerIdInvalid:
+                invalid_channels.append((channel_id, "Unknown", "Peer invalid"))
+            except Exception as e:
+                invalid_channels.append((channel_id, "Unknown", str(e)[:40]))
+            
+            if idx % 10 == 0 or idx == len(channels):
+                await status_msg.edit_text(
+                    f"<b>🔄 Sᴄᴀɴɴɪɴɢ... {(idx*100)//len(channels)}%</b>\n\n"
+                    f"<i>Pʀᴏᴄᴇssᴇᴅ: {idx}/{len(channels)}</i>",
+                    parse_mode=ParseMode.HTML
+                )
+        
+        if not invalid_channels:
+            return await status_msg.edit_text(
+                f"<b>✅ Aʟʟ {len(valid_channels)} ᴄʜᴀɴɴᴇʟs ᴀʀᴇ ᴠᴀʟɪᴅ!</b>",
+                parse_mode=ParseMode.HTML
+            )
+        
+        # Remove invalid channels automatically
+        await status_msg.edit_text(
+            f"<b>🗑️ Rᴇᴍᴏᴠɪɴɢ {len(invalid_channels)} ɪɴᴠᴀʟɪᴅ ᴄʜᴀɴɴᴇʟs...</b>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        removed = 0
+        for channel_id, _, _ in invalid_channels:
+            try:
+                await Seishiro.channel_data.delete_one({"channel_id": channel_id})
+                removed += 1
+            except Exception as e:
+                print(f"Failed to remove {channel_id}: {e}")
+        
+        invalid_list = "\n".join([
+            f"  • {name[:25]}... ({reason})"
+            for _, name, reason in invalid_channels[:10]
+        ])
+        
+        await status_msg.edit_text(
+            f"<b>✅ Cʟᴇᴀɴᴜᴘ Cᴏᴍᴘʟᴇᴛᴇ!</b>\n\n"
+            f"<b>Rᴇᴍᴏᴠᴇᴅ:</b> {removed} ᴄʜᴀɴɴᴇʟs\n"
+            f"<b>Rᴇᴍᴀɪɴɪɴɢ:</b> {len(valid_channels)} ᴄʜᴀɴɴᴇʟs\n\n"
+            f"<b>Rᴇᴍᴏᴠᴇᴅ (ғɪʀsᴛ 10):</b>\n{invalid_list}\n"
+            f"{('...ᴀɴᴅ ' + str(len(invalid_channels)-10) + ' ᴍᴏʀᴇ') if len(invalid_channels) > 10 else ''}",
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        await status_msg.edit_text(
+            f"<b>❌ Eʀʀᴏʀ:</b>\n<code>{str(e)}</code>",
+            parse_mode=ParseMode.HTML
+        )
