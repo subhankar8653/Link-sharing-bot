@@ -42,24 +42,5 @@ async def auto_approve(client: Bot, message: ChatJoinRequest):
         print(f"Error approving join request: {e}")
         return
     
-    # Send welcome message with invite link
-    try:
-        invite_link = await client.export_chat_invite_link(chat.id)
-        buttons = [
-            [InlineKeyboardButton('• Cʟɪᴄᴋ ʜᴇʀᴇ •', url=invite_link)]
-        ]
-        markup = InlineKeyboardMarkup(buttons)
-        caption_approve_ka = (
-            f"<b>⁉️ Bᴀᴋᴀᴀᴀ!!!... {user.mention}</b>,\n\n"
-            f"<b><blockquote>ʏᴏᴜʀ ʀᴇǫᴜᴇsᴛ ᴛᴏ ᴊᴏɪɴ {chat.title} ʜᴀs ʙᴇᴇɴ ᴀᴘᴘʀᴏᴠᴇᴅ ʙʏ ᴀᴅᴍɪɴ/ᴏᴡɴᴇʀ.</blockquote></b>"
-        )
-        
-        await client.send_photo(
-            chat_id=user.id,
-            photo='https://ibb.co/DHqBS4V7',
-            caption=caption_approve_ka,
-            reply_markup=markup
-        )
-        print(f"Sent welcome message to {user.first_name} ({user.id})")
-    except Exception as e:
-        print(f"Error sending welcome message: {e}")
+    # Message sending part removed - user ko koi message nahi jayega
+    print(f"Join request approved successfully for {user.first_name} ({user.id}) - No message sent")
