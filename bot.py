@@ -17,8 +17,10 @@ Link share bot started ✨ Credit:- @Suhanibots
 
 class Bot(Client):
     def __init__(self):
+        # 🔥 FIX: Use /tmp for session storage (writable on Railway)
+        # Railway's root filesystem is read-only, but /tmp is writable
         super().__init__(
-            name="Bot",
+            name="/tmp/Bot",  # Store session in /tmp instead of current dir
             api_hash=API_HASH,
             api_id=APP_ID,
             plugins={"root": "plugins"},
@@ -37,8 +39,8 @@ class Bot(Client):
         import stat
         
         if os.getenv("RESET_SESSION", "false").lower() == "true":
-            session_file = "Bot.session"
-            session_journal = "Bot.session-journal"
+            session_file = "/tmp/Bot.session"  # /tmp is writable on Railway
+            session_journal = "/tmp/Bot.session-journal"
             
             self.LOGGER(__name__).info("=" * 60)
             self.LOGGER(__name__).info("♻️  SESSION RESET ACTIVATED")
@@ -62,7 +64,7 @@ class Bot(Client):
                     except Exception as e:
                         self.LOGGER(__name__).error(f"❌ Could not delete {file}: {e}")
             
-            self.LOGGER(__name__).info("🔄 Fresh session will be created now...")
+            self.LOGGER(__name__).info("🔄 Fresh session will be created in /tmp...")
             self.LOGGER(__name__).info("=" * 60)
         
         # IMPORTANT: Pre-resolve all channels to populate session cache
