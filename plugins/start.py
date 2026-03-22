@@ -300,25 +300,64 @@ async def start_command(client: Bot, message: Message):
                     logger.info(f"Channel {channel_id} not in database, adding it now")
                     await Seishiro.save_channel(channel_id)
                 
-                # CRITICAL: Resolve peer before creating invite link
-                # This populates the session cache for new channels
+                # ── STEP 1: Peer Resolution (redeploy fix) ──────────────
+                # get_chat() session cache populate karta hai.
+                # Agar PeerIdInvalid aaye → bot kabhi is channel mein
+                # nahi gaya ya channel exist nahi karta.
+                # Hum yahan sirf resolve karte hain, admin check alag step mein.
                 try:
                     chat = await client.get_chat(channel_id)
-                    logger.info(f"Successfully resolved peer for channel {channel_id}: {chat.title}")
+                    logger.info(f"Peer resolved: {channel_id} → {chat.title}")
                 except PeerIdInvalid:
-                    logger.error(f"PeerIdInvalid - Bot is not admin or channel doesn't exist: {channel_id}")
+                    logger.error(f"PeerIdInvalid even after startup resolution: {channel_id}")
                     return await message.reply_text(
-                        "<b><blockquote expandable>⚠️ Tʜɪs ᴄʜᴀɴɴᴇʟ ɪs ɴᴏᴛ ᴀᴠᴀɪʟᴀʙʟᴇ ᴏʀ ʙᴏᴛ ɪs ɴᴏᴛ ᴀᴅᴍɪɴ.\n\nMᴀᴋᴇ sᴜʀᴇ ʙᴏᴛ ɪs ᴀᴅᴍɪɴ ɪɴ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ ᴡɪᴛʜ 'Iɴᴠɪᴛᴇ Usᴇʀs' ᴘᴇʀᴍɪssɪᴏɴ.</blockquote></b>",
+                        "<b><blockquote expandable>"
+                        "⚠️ Cʜᴀɴɴᴇʟ ᴀᴄᴄᴇss ғᴀɪʟᴇᴅ.\n\n"
+                        "Bᴏᴛ ᴋᴏ ɪs ᴄʜᴀɴɴᴇʟ ᴍᴇɪɴ ᴀᴅᴍɪɴ ʙᴀɴᴀᴏ "
+                        "ᴀᴜʀ ᴅᴏʙᴀʀᴀ ᴛʀʏ ᴋᴀʀᴏ."
+                        "</blockquote></b>",
                         parse_mode=ParseMode.HTML
                     )
                 except Exception as e:
-                    logger.error(f"Error resolving peer for channel {channel_id}: {e}")
+                    logger.error(f"Peer resolution failed for {channel_id}: {e}")
                     return await message.reply_text(
-                        "<b><blockquote expandable>Fᴀɪʟᴇᴅ ᴛᴏ ᴀᴄᴄᴇss ᴄʜᴀɴɴᴇʟ. Pʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ.</blockquote></b>",
+                        "<b><blockquote expandable>"
+                        f"Cʜᴀɴɴᴇʟ ᴀᴄᴄᴇss ᴇʀʀᴏʀ: {str(e)[:80]}"
+                        "</blockquote></b>",
                         parse_mode=ParseMode.HTML
                     )
-                
-                # Update the encoded link in database
+
+                # ── STEP 2: Proper Admin + Permission Check ─────────────
+                # help_Lucky.py wali check_bot_permissions() logic —
+                # ChatMemberStatus se sahi check karta hai, sirf exception
+                # pe "not admin" nahi bolta.
+                from bot import check_bot_permissions
+                is_admin_in_ch, can_invite, perm_reason = await check_bot_permissions(client, channel_id)
+
+                if not is_admin_in_ch:
+                    logger.error(f"Bot not admin in {channel_id}: {perm_reason}")
+                    return await message.reply_text(
+                        "<b><blockquote expandable>"
+                        f"⚠️ Bᴏᴛ ɪs ᴄʜᴀɴɴᴇʟ ᴍᴇɪɴ ᴀᴅᴍɪɴ ɴᴀʜɪɴ ʜᴀɪ.\n\n"
+                        f"Kᴀᴀʀᴀɴ: {perm_reason}"
+                        "</blockquote></b>",
+                        parse_mode=ParseMode.HTML
+                    )
+
+                if not can_invite:
+                    logger.error(f"Bot has no invite permission in {channel_id}: {perm_reason}")
+                    return await message.reply_text(
+                        "<b><blockquote expandable>"
+                        "⚠️ Bᴏᴛ ᴀᴅᴍɪɴ ᴛᴏ ʜᴀɪ ʟᴇᴋɪɴ <b>'Iɴᴠɪᴛᴇ Usᴇʀs'</b> "
+                        "ᴘᴇʀᴍɪssɪᴏɴ ɴᴀʜɪɴ ʜᴀɪ.\n\n"
+                        "Cʜᴀɴɴᴇʟ sᴇᴛᴛɪɴɢs ᴍᴇɪɴ ʏᴇʜ ᴘᴇʀᴍɪssɪᴏɴ ᴅᴏ."
+                        "</blockquote></b>",
+                        parse_mode=ParseMode.HTML
+                    )
+
+                logger.info(f"Bot admin verified for channel {channel_id} ✅")
+
+                # ── STEP 3: Update encoded link in DB ───────────────────
                 if is_request:
                     await Seishiro.save_encoded_link2(channel_id, base64_to_decode)
                 else:
@@ -336,34 +375,27 @@ async def start_command(client: Bot, message: Message):
                         parse_mode=ParseMode.HTML
                     )
 
+                # ── STEP 4: Invite Link Create / Reuse ──────────────────
                 async with channel_locks[channel_id]:
-                    # Check if we already have a valid link
                     old_link_info = await Seishiro.get_current_invite_link(channel_id)
                     current_time = datetime.now()
-                    
-                    # Initialize variables
                     invite_link = None
                     is_request_link = is_request
                     
                     if old_link_info:
-                        # Get link creation time from database
                         channel_data = await Seishiro.channel_data.find_one({"channel_id": channel_id})
                         link_created_time = channel_data.get("invite_link_created_at") if channel_data else None
-                        
-                        if link_created_time and (current_time - link_created_time).total_seconds() < 240:  # 4 minutes
-                            # Use existing link
+                        if link_created_time and (current_time - link_created_time).total_seconds() < 240:
                             invite_link = old_link_info["invite_link"]
                             is_request_link = old_link_info["is_request"]
                             logger.info(f"Reusing existing link for channel {channel_id}")
                         else:
-                            # Revoke old link and create new one
                             try:
                                 await client.revoke_chat_invite_link(channel_id, old_link_info["invite_link"])
-                                logger.info(f"Revoked old {'request' if old_link_info['is_request'] else 'invite'} link for channel {channel_id}")
+                                logger.info(f"Revoked old link for channel {channel_id}")
                             except Exception as e:
-                                logger.warning(f"Failed to revoke old link for channel {channel_id}: {e}")
+                                logger.warning(f"Could not revoke old link: {e}")
                     
-                    # Create new invite link if needed
                     if not invite_link:
                         try:
                             invite = await client.create_chat_invite_link(
@@ -373,17 +405,14 @@ async def start_command(client: Bot, message: Message):
                             )
                             invite_link = invite.invite_link
                             await Seishiro.save_invite_link(channel_id, invite_link, is_request_link)
-                            logger.info(f"Created new {'request' if is_request else 'invite'} link for channel {channel_id}")
-                        except PeerIdInvalid:
-                            logger.error(f"PeerIdInvalid error for channel {channel_id} - Bot might be removed or not admin")
-                            return await message.reply_text(
-                                "<b><blockquote expandable>⚠️ Tʜɪs ᴄʜᴀɴɴᴇʟ ɪs ɴᴏᴛ ᴀᴠᴀɪʟᴀʙʟᴇ ᴏʀ ʙᴏᴛ ɪs ɴᴏᴛ ᴀᴅᴍɪɴ ɪɴ ᴛʜɪs ᴄʜᴀɴɴᴇʟ.\n\nPʟᴇᴀsᴇ ᴄᴏɴᴛᴀᴄᴛ ᴄʜᴀɴɴᴇʟ ᴏᴡɴᴇʀ.</blockquote></b>",
-                                parse_mode=ParseMode.HTML
-                            )
+                            logger.info(f"Created new link for channel {channel_id}")
                         except Exception as e:
-                            logger.error(f"Error creating invite link for channel {channel_id}: {e}")
+                            logger.error(f"create_chat_invite_link failed for {channel_id}: {e}")
                             return await message.reply_text(
-                                "<b><blockquote expandable>Failed to generate invite link. Please try again later.\n\nError: {str(e)[:100]}</blockquote></b>",
+                                f"<b><blockquote expandable>"
+                                f"Iɴᴠɪᴛᴇ ʟɪɴᴋ ʙᴀɴᴀɴᴇ ᴍᴇɪɴ ᴇʀʀᴏʀ.\n\n"
+                                f"Kᴀʀᴀɴ: {str(e)[:100]}"
+                                f"</blockquote></b>",
                                 parse_mode=ParseMode.HTML
                             )
                     
