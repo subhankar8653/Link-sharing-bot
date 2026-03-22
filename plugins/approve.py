@@ -7,70 +7,75 @@ from pyrogram.types import Message, User, ChatJoinRequest, InlineKeyboardMarkup,
 from pyrogram.errors import FloodWait, ChatAdminRequired, UserNotParticipant, UserAlreadyParticipant
 from helper_func import *
 
-# 🔥 FIX: Auto-approve disabled
+# 🔥 Auto-approve disabled - not needed anymore
 AUTO_APPROVE_ENABLED = False
 
 @Client.on_chat_join_request((filters.group | filters.channel))
-async def auto_approve(client: Bot, message: ChatJoinRequest):
-    global AUTO_APPROVE_ENABLED
+async def on_join_request(client: Bot, message: ChatJoinRequest):
+    """
+    🔥 NEW LOGIC: Jab user request bhejta hai, turant database mein add kar do
+    No approval needed - request bhejne se hi bot recognize kar lega
+    """
+    from database.database import Seishiro
+    
     chat = message.chat
     user = message.from_user
     
-    # 🔥 Check if auto-approve is enabled
-    if not AUTO_APPROVE_ENABLED:
-        print(f"❌ {user.first_name} requested to join {chat.title} - Auto-approve DISABLED")
-        return
+    print(f"✅ Join request received from {user.first_name} ({user.id}) for {chat.title} ({chat.id})")
     
-    print(f"{user.first_name} requested to join {chat.title}")
-    
-    await asyncio.sleep(2)
-    
-    # Check if user is already a participant before approving
     try:
-        member = await client.get_chat_member(chat.id, user.id)
-        if member.status in ["member", "administrator", "creator"]:
-            print(f"User {user.id} is already a participant of {chat.id}, skipping approval.")
+        # 🔥 IMPORTANT: Request ko database mein save karo
+        await Seishiro.req_user(chat.id, user.id)
+        print(f"✅ Added {user.id} to request database for channel {chat.id}")
+        
+        # Optional: User ko message bhej sakte ho ki request received
+        # (Agar chahte ho toh uncomment kar do)
+        """
+        try:
+            await client.send_message(
+                chat_id=user.id,
+                text=(
+                    f"<b>✅ Request Received!</b>\n\n"
+                    f"Your request to join <b>{chat.title}</b> has been detected.\n"
+                    f"You can now use the bot!"
+                )
+            )
+        except:
+            pass
+        """
+        
+    except Exception as e:
+        print(f"❌ Error adding user {user.id} to request database: {e}")
+
+
+# 🔥 NEW: Detect when admin manually approves (optional cleanup)
+@Client.on_chat_member_updated((filters.group | filters.channel))
+async def on_member_approved(client: Bot, update):
+    """
+    Jab admin manually approve kar deta hai, database se request remove karo
+    """
+    try:
+        from database.database import Seishiro
+        
+        if not update.new_chat_member:
             return
-    except UserNotParticipant:
-        # User is not a participant, proceed with approval
-        pass
+            
+        user = update.new_chat_member.user
+        chat = update.chat
+        
+        old_status = update.old_chat_member.status if update.old_chat_member else None
+        new_status = update.new_chat_member.status
+        
+        # Agar user approved ho gaya (member ban gaya)
+        if new_status in ["member", "administrator", "creator"] and old_status != new_status:
+            try:
+                # Database se request remove karo
+                exists = await Seishiro.req_user_exist(chat.id, user.id)
+                if exists:
+                    await Seishiro.del_req_user(chat.id, user.id)
+                    print(f"✅ User {user.id} approved in {chat.title} - Removed from request DB")
+            except Exception as e:
+                print(f"⚠️ Error cleaning request for {user.id}: {e}")
+                
     except Exception as e:
-        print(f"Error checking membership: {e}")
-        return
-    
-    # Approve the join request
-    try:
-        await client.approve_chat_join_request(chat_id=chat.id, user_id=user.id)
-        print(f"Approved join request for {user.first_name} ({user.id})")
-    except UserAlreadyParticipant:
-        print(f"User {user.id} is already a participant.")
-        return
-    except Exception as e:
-        print(f"Error approving join request: {e}")
-        return
-    
-    # User ko message nahi bhejenge - sirf approve karenge
-    # Pehle wala code jo message bhejta tha wo comment out kar diya
-    
-    # try:
-    #     invite_link = await client.export_chat_invite_link(chat.id)
-    #     buttons = [
-    #         [InlineKeyboardButton('• Cʟɪᴄᴋ ʜᴇʀᴇ •', url=invite_link)]
-    #     ]
-    #     markup = InlineKeyboardMarkup(buttons)
-    #     caption_approve_ka = (
-    #         f"<b>⁉️ Bᴀᴋᴀᴀᴀ!!!... {user.mention}</b>,\n\n"
-    #         f"<b><blockquote>ʏᴏᴜʀ ʀᴇǫᴜᴇsᴛ ᴛᴏ ᴊᴏɪɴ {chat.title} ʜᴀs ʙᴇᴇɴ ᴀᴘᴘʀᴏᴠᴇᴅ ʙʏ ᴀᴅᴍɪɴ/ᴏᴡɴᴇʀ.</blockquote></b>"
-    #     )
-    #     
-    #     await client.send_photo(
-    #         chat_id=user.id,
-    #         photo='https://ibb.co/DHqBS4V7',
-    #         caption=caption_approve_ka,
-    #         reply_markup=markup
-    #     )
-    #     print(f"Sent welcome message to {user.first_name} ({user.id})")
-    # except Exception as e:
-    #     print(f"Error sending welcome message: {e}")
-    
-    print(f"Request approved for {user.first_name} ({user.id}) - No message sent to user")
+        print(f"Error in on_member_approved: {e}")
