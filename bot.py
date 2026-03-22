@@ -18,8 +18,10 @@ Link share bot started ✨ Credit:- @Suhanibots
 
 class Bot(Client):
     def __init__(self):
+        # 🔥 IMPORTANT: Set LOGGER first before using it
+        self.LOGGER = LOGGER
+        
         # 🔥 FIX: Use string session for persistence across restarts
-        # String session environment variable se load hoga
         session_string = os.getenv("SESSION_STRING", "")
         
         if session_string:
@@ -33,7 +35,7 @@ class Bot(Client):
                 workers=TG_BOT_WORKERS,
                 bot_token=TG_BOT_TOKEN,
             )
-            self.LOGGER(__name__).info("Using STRING SESSION (persistent)")
+            self.LOGGER(__name__).info("✅ Using STRING SESSION (persistent)")
         else:
             # Development: File session use karo
             super().__init__(
@@ -44,9 +46,7 @@ class Bot(Client):
                 workers=TG_BOT_WORKERS,
                 bot_token=TG_BOT_TOKEN,
             )
-            self.LOGGER(__name__).info("Using FILE SESSION (development)")
-        
-        self.LOGGER = LOGGER
+            self.LOGGER(__name__).info("⚠️  Using FILE SESSION (not persistent)")
 
     async def start(self, *args, **kwargs):
         await super().start()
@@ -68,6 +68,7 @@ class Bot(Client):
                 
                 resolved_count = 0
                 failed_count = 0
+                invalid_channels = []
                 
                 for idx, channel_id in enumerate(channels, 1):
                     try:
@@ -79,8 +80,17 @@ class Bot(Client):
                         
                         if member.status not in ["administrator", "creator"]:
                             self.LOGGER(__name__).warning(
-                                f"⚠️  [{idx}/{len(channels)}] Not admin: {channel_id}"
+                                f"⚠️  [{idx}/{len(channels)}] Not admin: {channel_id} ({chat.title})"
                             )
+                            invalid_channels.append(channel_id)
+                            failed_count += 1
+                            continue
+                        
+                        if not member.privileges or not member.privileges.can_invite_users:
+                            self.LOGGER(__name__).warning(
+                                f"⚠️  [{idx}/{len(channels)}] No invite permission: {channel_id} ({chat.title})"
+                            )
+                            invalid_channels.append(channel_id)
                             failed_count += 1
                             continue
                         
@@ -91,13 +101,31 @@ class Bot(Client):
                         
                     except Exception as e:
                         failed_count += 1
+                        invalid_channels.append(channel_id)
                         self.LOGGER(__name__).warning(
                             f"✗ [{idx}/{len(channels)}] Failed {channel_id}: {e}"
                         )
                 
+                # Auto-cleanup invalid channels
+                if invalid_channels:
+                    self.LOGGER(__name__).warning("=" * 60)
+                    self.LOGGER(__name__).warning(f"🗑️  Marking {len(invalid_channels)} invalid channels as inactive...")
+                    
+                    for channel_id in invalid_channels:
+                        try:
+                            await Seishiro.channel_data.update_one(
+                                {"channel_id": channel_id},
+                                {"$set": {"status": "inactive", "inactive_at": datetime.utcnow()}}
+                            )
+                        except:
+                            pass
+                    
+                    self.LOGGER(__name__).info(f"✅ Cleaned up {len(invalid_channels)} channels")
+                    self.LOGGER(__name__).warning("=" * 60)
+                
                 self.LOGGER(__name__).info("=" * 60)
                 self.LOGGER(__name__).info(
-                    f"✅ RESOLUTION COMPLETE: {resolved_count} success, {failed_count} failed"
+                    f"✅ RESOLUTION COMPLETE: {resolved_count} valid, {failed_count} invalid"
                 )
                 self.LOGGER(__name__).info("=" * 60)
             else:
@@ -110,7 +138,7 @@ class Bot(Client):
         try:
             await self.send_photo(
                 chat_id=DATABASE_CHANNEL,
-                photo="https://telegra.ph/file/your-image.jpg",
+                photo="https://telegra.ph/file/d3c1d3f1e58c3164f8e2e.jpg",
                 caption=("**🤖 I ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ !**"),
                 reply_markup=InlineKeyboardMarkup(
                     [[InlineKeyboardButton("ᴜᴘᴅᴀᴛᴇs", url="https://t.me/Suhanibots")]]
@@ -120,7 +148,7 @@ class Bot(Client):
             self.LOGGER(__name__).warning(f"⚠️  Failed to send restart message: {e}")
         
         self.set_parse_mode(ParseMode.HTML)
-        self.LOGGER(__name__).info("⚡ Bot is running...")
+        self.LOGGER(__name__).info("⚡ Bot is running... Credit:- @Suhanibots")
         self.LOGGER(__name__).info(f"{name}")
         self.username = usr_bot_me.username
         
