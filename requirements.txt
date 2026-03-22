@@ -9,3 +9,4 @@ motor
 aiohttp
 asyncio
 aiofiles
+matplotlib
