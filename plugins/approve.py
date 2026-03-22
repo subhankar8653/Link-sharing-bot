@@ -8,7 +8,7 @@ from pyrogram.errors import FloodWait, ChatAdminRequired, UserNotParticipant, Us
 from helper_func import *
 
 # 🔥 Auto-approve disabled - not needed anymore
-AUTO_APPROVE_ENABLED = False
+AUTO_APPROVE_ENABLED = true
 
 @Client.on_chat_join_request((filters.group | filters.channel))
 async def on_join_request(client: Bot, message: ChatJoinRequest):
