@@ -7,6 +7,7 @@ from pyrogram.types import Message, User, ChatJoinRequest, InlineKeyboardMarkup,
 from pyrogram.errors import FloodWait, ChatAdminRequired, UserNotParticipant, UserAlreadyParticipant
 from helper_func import *
 
+# 🔥 CHANGE 2: Auto-approve disabled kar diya
 AUTO_APPROVE_ENABLED = False
 
 @Client.on_chat_join_request((filters.group | filters.channel))
@@ -14,7 +15,14 @@ async def auto_approve(client: Bot, message: ChatJoinRequest):
     global AUTO_APPROVE_ENABLED
     chat = message.chat
     user = message.from_user
-    print(f"{user.first_name} requested to join {chat.title}")
+    
+    # 🔥 CRITICAL FIX: Check if auto-approve is enabled
+    if not AUTO_APPROVE_ENABLED:
+        print(f"❌ {user.first_name} requested to join {chat.title} - Auto-approve is DISABLED")
+        print(f"ℹ️  Admin needs to manually approve this request")
+        return  # Exit without approving
+    
+    print(f"✅ {user.first_name} requested to join {chat.title} - Auto-approve is ENABLED")
     
     await asyncio.sleep(2)
     

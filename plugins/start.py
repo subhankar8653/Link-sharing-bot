@@ -199,48 +199,44 @@ async def not_joined(client: Client, message: Message):
         # Check if we have at least fake link button to show
         if not buttons:
             await temp.edit(
-                "<b><i>! Eʀʀᴏʀ, Nᴏ ᴠᴀʟɪᴅ ᴄʜᴀɴɴᴇʟs ғᴏᴜɴᴅ. Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ @suhanibots</i></b>"
+                "<b><blockquote expandable>⚠️ Nᴏ Cʜᴀɴɴᴇʟs Fᴏᴜɴᴅ!\n\nPʟᴇᴀsᴇ ᴀsᴋ ᴀᴅᴍɪɴ ᴛᴏ ᴀᴅᴅ ᴄʜᴀɴɴᴇʟs.</blockquote></b>",
+                parse_mode=ParseMode.HTML
             )
             return
 
-        text = "<b>Yᴏᴜ Bᴀᴋᴋᴀᴀ...!! \n\n<blockquote>𝑻𝒐 𝒖𝒔𝒆 𝒕𝒉𝒊𝒔 𝒃𝒐𝒕, 𝒑𝒍𝒆𝒂𝒔𝒆 𝒋𝒐𝒊𝒏 𝒕𝒉𝒆 𝒄𝒉𝒂𝒏𝒏𝒆𝒍 𝒑𝒓𝒐𝒗𝒊𝒅𝒆𝒅 𝒃𝒆𝒍𝒐𝒘....!!</blockquote></b>"
-        
-        logger.debug(f"Sending final reply photo to user {user_id}")
-        
-        # Delete temp message
+        markup = InlineKeyboardMarkup(buttons)
         try:
             await temp.delete()
+        except Exception as e:
+            logger.warning(f"Failed to delete temp message in not_joined: {e}")
+
+        try:
+            await client.send_photo(
+                chat_id=message.from_user.id,
+                photo=FSUB_PIC,
+                caption=f"<b>Hᴇʟʟᴏᴏᴏ {message.from_user.mention} ~</b>\n\n<blockquote expandable>ʏᴏᴜ ʜᴀᴠᴇ ᴛᴏ ᴊᴏɪɴ ᴏᴜʀ ᴄʜᴀɴɴᴇʟ ᴛᴏ ᴜsᴇ ᴛʜɪs ʙᴏᴛ !</blockquote>",
+                reply_markup=markup,
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Failed to send not_joined photo message: {e}")
+            # Fallback to text message
+            await message.reply_text(
+                f"<b>Hᴇʟʟᴏᴏᴏ {message.from_user.mention} ~</b>\n\n<blockquote expandable>ʏᴏᴜ ʜᴀᴠᴇ ᴛᴏ ᴊᴏɪɴ ᴏᴜʀ ᴄʜᴀɴɴᴇʟ ᴛᴏ ᴜsᴇ ᴛʜɪs ʙᴏᴛ !</blockquote>",
+                reply_markup=markup,
+                parse_mode=ParseMode.HTML
+            )
+    except Exception as e:
+        logger.error(f"Error in not_joined: {e}")
+        try:
+            await temp.edit("<b><blockquote expandable>An error occurred. Please try again later.</blockquote></b>", parse_mode=ParseMode.HTML)
         except:
             pass
-            
-        await message.reply_photo(
-            photo=FSUB_PIC,
-            caption=text,
-            reply_markup=InlineKeyboardMarkup(buttons),
-        )
 
-    except Exception as e:
-        logger.error(f"Final Error in not_joined: {e}")
-        await temp.edit(
-            f"<b><i>! Eʀʀᴏʀ, Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴛᴏ sᴏʟᴠᴇ ᴛʜᴇ ɪssᴜᴇs @suhanibots</i></b>\n"
-            f"<blockquote expandable><b>Rᴇᴀsᴏɴ:</b> {e}</blockquote>"
-        )
-    
-@Bot.on_message(filters.command('start') & filters.private)
+@Bot.on_message(filters.command("start") & filters.private)
 @check_fsub
-async def start_command(client: Bot, message: Message):
+async def start_command(client: Client, message: Message):
     user_id = message.from_user.id
-    
-    # Check if user is banned
-    user = await Seishiro.is_user_banned(user_id)
-    if user:
-        keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Cᴏɴᴛᴀᴄᴛ ʜᴇʀᴇ...!!", url="https://t.me/suhanibots")]]
-        )
-        return await message.reply_text(
-            "Wᴛғ ʏᴏᴜ ᴀʀᴇ ʙᴀɴɴᴇᴅ ғʀᴏᴍ ᴜsɪɴɢ ᴍᴇ ʙʏ ᴏᴜʀ ᴀᴅᴍɪɴ/ᴏᴡɴᴇʀ . Iғ ʏᴏᴜ ᴛʜɪɴᴋs ɪᴛ's ᴍɪsᴛᴀᴋᴇ ᴄʟɪᴄᴋ ᴏɴ ᴄᴏɴᴛᴀᴄᴛ ʜᴇʀᴇ...!!",
-            reply_markup=keyboard
-        )
     
     # Add user to database
     await Seishiro.add_user(user_id, message)
@@ -396,6 +392,7 @@ async def start_command(client: Bot, message: Message):
                         parse_mode=ParseMode.HTML
                     )
                     
+                    # 🔥 CHANGE 1: Dono messages ko 5 minute (300 seconds) baad delete karo
                     asyncio.create_task(delete_after_delay(note_msg, 300))
                     asyncio.create_task(delete_after_delay(link_share_msg, 300))
                     asyncio.create_task(revoke_invite_after_5_minutes(client, channel_id, invite_link, is_request))
@@ -418,16 +415,16 @@ async def start_command(client: Bot, message: Message):
                 inline_buttons = InlineKeyboardMarkup(
                     [
                         [
-                            InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data="about"),
-                            InlineKeyboardButton("Hᴇʟᴘ •", callback_data="help")
+                            InlineKeyboardButton("• Sᴇᴛᴛɪɴɢs", callback_data="settings"),
                         ],
                         [
-                            InlineKeyboardButton("Sᴇᴛᴛɪɴɢs", callback_data="settings_main")
+                            InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data="about"),
+                            InlineKeyboardButton("Hᴇʟᴘ •", callback_data="help")
                         ]
                     ]
                 )
             else:
-                # Hide Settings for normal users
+                # Regular user - no settings
                 inline_buttons = InlineKeyboardMarkup(
                     [
                         [
