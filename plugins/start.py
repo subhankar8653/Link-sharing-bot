@@ -154,13 +154,22 @@ async def not_joined(client: Client, message: Message):
                     if chat_id in chat_data_cache:
                         data = chat_data_cache[chat_id]
                     else:
-                        # Resolve peer to populate session cache
                         try:
                             data = await client.get_chat(chat_id)
                             chat_data_cache[chat_id] = data
                         except PeerIdInvalid:
-                            logger.warning(f"PeerIdInvalid for channel {chat_id} - skipping")
-                            continue
+                            # get_chat() nahi chala — deep resolve try karo
+                            logger.warning(f"PeerIdInvalid {chat_id} — deep resolve...")
+                            from bot import _force_resolve_peer
+                            if not await _force_resolve_peer(client, chat_id):
+                                logger.error(f"Deep resolve failed {chat_id} — skip")
+                                continue
+                            try:
+                                data = await client.get_chat(chat_id)
+                                chat_data_cache[chat_id] = data
+                            except Exception as e2:
+                                logger.error(f"get_chat after resolve failed {chat_id}: {e2}")
+                                continue
                         except Exception as e:
                             logger.error(f"Error getting chat info for {chat_id}: {e}")
                             continue
@@ -215,7 +224,7 @@ async def not_joined(client: Client, message: Message):
             )
             return
 
-        text = "<b><blockquote>Channel ke links pane ke liye, niche diye gaye button me jo bhi channels hain un sab par request bheje ya join karein.</blockquote></b>"
+        text = "<b>welcome senpai 😁\n\n<blockquote>Channel ke links pane ke liye, niche diye gaye button me jo bhi channels hain un sab par request bheje ya join karein.</blockquote></b>"
         
         logger.debug(f"Sending final reply photo to user {user_id}")
         
@@ -301,23 +310,25 @@ async def start_command(client: Bot, message: Message):
                     await Seishiro.save_channel(channel_id)
                 
                 # ── STEP 1: Peer Resolution (redeploy fix) ──────────────
-                # get_chat() session cache populate karta hai.
-                # Agar PeerIdInvalid aaye → bot kabhi is channel mein
-                # nahi gaya ya channel exist nahi karta.
-                # Hum yahan sirf resolve karte hain, admin check alag step mein.
+                # Pehle normal get_chat(), agar PeerIdInvalid aaye toh
+                # _force_resolve_peer() se deep resolve karo.
+                from bot import _force_resolve_peer, check_bot_permissions
                 try:
                     chat = await client.get_chat(channel_id)
                     logger.info(f"Peer resolved: {channel_id} → {chat.title}")
                 except PeerIdInvalid:
-                    logger.error(f"PeerIdInvalid even after startup resolution: {channel_id}")
-                    return await message.reply_text(
-                        "<b><blockquote expandable>"
-                        "⚠️ Cʜᴀɴɴᴇʟ ᴀᴄᴄᴇss ғᴀɪʟᴇᴅ.\n\n"
-                        "Bᴏᴛ ᴋᴏ ɪs ᴄʜᴀɴɴᴇʟ ᴍᴇɪɴ ᴀᴅᴍɪɴ ʙᴀɴᴀᴏ "
-                        "ᴀᴜʀ ᴅᴏʙᴀʀᴀ ᴛʀʏ ᴋᴀʀᴏ."
-                        "</blockquote></b>",
-                        parse_mode=ParseMode.HTML
-                    )
+                    logger.warning(f"PeerIdInvalid for {channel_id} — deep resolve...")
+                    ok = await _force_resolve_peer(client, channel_id)
+                    if not ok:
+                        return await message.reply_text(
+                            "<b><blockquote expandable>"
+                            "⚠️ Cʜᴀɴɴᴇʟ ʀᴇsᴏʟᴠᴇ ɴᴀʜɪɴ ʜᴜᴀ.\n\n"
+                            "Bᴏᴛ ᴋᴏ ɪs ᴄʜᴀɴɴᴇʟ ᴍᴇɪɴ ᴀᴅᴍɪɴ ʙᴀɴᴀᴏ "
+                            "ᴀᴜʀ ᴅᴏʙᴀʀᴀ ᴛʀʏ ᴋᴀʀᴏ."
+                            "</blockquote></b>",
+                            parse_mode=ParseMode.HTML
+                        )
+                    logger.info(f"Deep resolve OK for {channel_id}")
                 except Exception as e:
                     logger.error(f"Peer resolution failed for {channel_id}: {e}")
                     return await message.reply_text(
@@ -328,10 +339,6 @@ async def start_command(client: Bot, message: Message):
                     )
 
                 # ── STEP 2: Proper Admin + Permission Check ─────────────
-                # help_Lucky.py wali check_bot_permissions() logic —
-                # ChatMemberStatus se sahi check karta hai, sirf exception
-                # pe "not admin" nahi bolta.
-                from bot import check_bot_permissions
                 is_admin_in_ch, can_invite, perm_reason = await check_bot_permissions(client, channel_id)
 
                 if not is_admin_in_ch:
