@@ -43,16 +43,29 @@ def check_fsub(func):
 
         async def is_sub(client, user_id, channel_id):
             try:
+                # 🔥 FIX: Pehle actual membership check karo
                 member = await client.get_chat_member(channel_id, user_id)
-                return member.status in {
-                    ChatMemberStatus.OWNER,
-                    ChatMemberStatus.ADMINISTRATOR,
-                    ChatMemberStatus.MEMBER
-                }
+                
+                # Agar user actually member hai (approved request)
+                if member.status in {ChatMemberStatus.OWNER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.MEMBER}:
+                    # 🔥 IMPORTANT: Agar member hai toh database se remove karo (cleanup)
+                    try:
+                        await Seishiro.del_req_user(channel_id, user_id)
+                        logger.info(f"✅ User {user_id} is now member of {channel_id}, removed from request DB")
+                    except:
+                        pass
+                    return True
+                
+                # Agar user restricted/kicked hai
+                return False
+                
             except UserNotParticipant:
+                # User member nahi hai, check karo database mein request pending hai
                 mode = await Seishiro.get_channel_mode(channel_id) or await Seishiro.get_channel_mode_all(channel_id)
                 if mode == "on":
+                    # Database mein check karo ki request exist karti hai
                     exists = await Seishiro.req_user_exist(channel_id, user_id)
+                    logger.debug(f"User {user_id} not in channel {channel_id}, DB request exists: {exists}")
                     return exists
                 return False
             except Exception as e:

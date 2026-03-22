@@ -3,7 +3,7 @@ import asyncio
 from bot import Bot
 from config import *
 from pyrogram import Client, filters
-from pyrogram.types import Message, User, ChatJoinRequest, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import Message, User, ChatJoinRequest, ChatMemberUpdated, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import FloodWait, ChatAdminRequired, UserNotParticipant, UserAlreadyParticipant
 from helper_func import *
 
@@ -50,28 +50,41 @@ async def auto_approve(client: Bot, message: ChatJoinRequest):
         print(f"Error approving join request: {e}")
         return
     
-    # User ko message nahi bhejenge - sirf approve karenge
-    # Pehle wala code jo message bhejta tha wo comment out kar diya
-    
-    # try:
-    #     invite_link = await client.export_chat_invite_link(chat.id)
-    #     buttons = [
-    #         [InlineKeyboardButton('• Cʟɪᴄᴋ ʜᴇʀᴇ •', url=invite_link)]
-    #     ]
-    #     markup = InlineKeyboardMarkup(buttons)
-    #     caption_approve_ka = (
-    #         f"<b>⁉️ Bᴀᴋᴀᴀᴀ!!!... {user.mention}</b>,\n\n"
-    #         f"<b><blockquote>ʏᴏᴜʀ ʀᴇǫᴜᴇsᴛ ᴛᴏ ᴊᴏɪɴ {chat.title} ʜᴀs ʙᴇᴇɴ ᴀᴘᴘʀᴏᴠᴇᴅ ʙʏ ᴀᴅᴍɪɴ/ᴏᴡɴᴇʀ.</blockquote></b>"
-    #     )
-    #     
-    #     await client.send_photo(
-    #         chat_id=user.id,
-    #         photo='https://ibb.co/DHqBS4V7',
-    #         caption=caption_approve_ka,
-    #         reply_markup=markup
-    #     )
-    #     print(f"Sent welcome message to {user.first_name} ({user.id})")
-    # except Exception as e:
-    #     print(f"Error sending welcome message: {e}")
-    
     print(f"Request approved for {user.first_name} ({user.id}) - No message sent to user")
+
+
+# 🔥 NEW: Handler for when member status changes (manual approval detection)
+@Client.on_chat_member_updated((filters.group | filters.channel))
+async def on_chat_member_updated(client: Bot, update: ChatMemberUpdated):
+    """
+    Yeh handler tab trigger hota hai jab kisi user ka status change hota hai.
+    Jab admin manually request approve karta hai, tab yeh detect kar leta hai.
+    """
+    try:
+        from database.database import Seishiro
+        
+        chat = update.chat
+        user = update.new_chat_member.user if update.new_chat_member else None
+        
+        if not user:
+            return
+        
+        old_status = update.old_chat_member.status if update.old_chat_member else None
+        new_status = update.new_chat_member.status if update.new_chat_member else None
+        
+        # Agar user ka status change hua hai aur ab member ban gaya hai
+        if new_status in ["member", "administrator", "creator"] and old_status != new_status:
+            # Database se request remove karo (cleanup)
+            try:
+                # Check if this user had pending request in database
+                req_exists = await Seishiro.req_user_exist(chat.id, user.id)
+                if req_exists:
+                    await Seishiro.del_req_user(chat.id, user.id)
+                    print(f"✅ User {user.id} ({user.first_name}) approved in {chat.title} - Removed from request DB")
+                else:
+                    print(f"ℹ️  User {user.id} ({user.first_name}) joined {chat.title} (no pending request in DB)")
+            except Exception as e:
+                print(f"⚠️  Error cleaning up request for user {user.id}: {e}")
+                
+    except Exception as e:
+        print(f"Error in on_chat_member_updated: {e}")
