@@ -17,7 +17,59 @@ COMMAND_PHOTO = os.environ.get("COMMAND_PHOTO", "https://ibb.co/cSfdrzRh")  # Re
 START_PIC = os.environ.get("START_PIC", "https://ibb.co/cSfdrzRh")
 START_MSG = os.environ.get("START_MESSAGE", "Hᴇʟʟᴏ {mention} ~\n\n <i><b><blockquote>Iᴀᴍ ᴀ ᴀᴅᴠᴀɴᴄᴇ ʟɪɴᴋ sʜᴀʀᴇ ʙᴏᴛ ᴛʜʀᴏᴜɢʜ ᴡʜɪᴄʜ ʏᴏᴜ ᴄᴀɴ ɢᴇᴛ ᴛʜᴇ ʟɪɴᴋs ᴏғ sᴘᴇᴄɪғɪᴄ ᴄʜᴀɴɴᴇʟs ᴡʜɪᴄʜ sᴀᴠᴇ ʏᴏᴜʀ ᴄʜᴀɴɴᴇʟs ғʀᴏᴍ enemy.</blockquote></b></i>")
 ABOUT_TXT = os.environ.get("HELP_MESSAGE", "<i><b><blockquote>◈ ᴄʀᴇᴀᴛᴏʀ: <a href=https://t.me/suhanibots>Suhanibots</a>\n◈ ꜰᴏᴜɴᴅᴇʀ ᴏꜰ : <a href=https://t.me/suhanibots>Suhanibots</a>\n◈ ᴅᴀᴛᴀʙᴀsᴇ: <a href='https://www.mongodb.com/docs/'>ᴍᴏɴɢᴏ ᴅʙ</a>\n» ᴅᴇᴠᴇʟᴏᴘᴇʀ: <a href='https://t.me/suhanibots'>Suhani</a></blockquote></b></i>")
-HELP_TXT =  os.environ.get("HELP_MESSAGE", "⁉️ Hᴇʟʟᴏ {mention} ~\n\n <b><blockquote expandable>➪ I ᴀᴍ ᴀ ᴘʀɪᴠᴀᴛᴇ ʟɪɴᴋ sʜᴀʀɪɴɢ ʙᴏᴛ, ᴍᴇᴀɴᴛ ᴛᴏ ᴘʀᴏᴠɪᴅᴇ ʟɪɴᴋ ғᴏʀ sᴘᴇᴄɪғɪᴄ ᴄʜᴀɴɴᴇʟs.\n\n ➪ Iɴ ᴏʀᴅᴇʀ ᴛᴏ ɢᴇᴛ ᴛʜᴇ ʟɪɴᴋs ʏᴏᴜ ʜᴀᴠᴇ ᴛᴏ ᴊᴏɪɴ ᴛʜᴇ ᴀʟʟ ᴍᴇɴᴛɪᴏɴᴇᴅ ᴄʜᴀɴɴᴇʟ ᴛʜᴀᴛ ɪ ᴘʀᴏᴠɪᴅᴇ ʏᴏᴜ ᴛᴏ ᴊᴏɪɴ. Yᴏᴜ ᴄᴀɴ ɴᴏᴛ ᴀᴄᴄᴇss ᴏʀ ɢᴇᴛ ᴛʜᴇ ғɪʟᴇs ᴜɴʟᴇss ʏᴏᴜ ᴊᴏɪɴᴇᴅ ᴀʟʟ ᴄʜᴀɴɴᴇʟs.\n\n ‣ - Oᴘᴇɴ ᴛʜɪs ʜᴇʟᴘ ᴍᴇssᴀɢᴇ !</blockquote></b>")
+
+# ============================================
+# NEW HELP MESSAGE - VERSION 3 (BEST & MOST ATTRACTIVE)
+# ============================================
+HELP_TXT = os.environ.get("HELP_MESSAGE", """<b>🎯 Hᴇʟᴘ Cᴇɴᴛᴇʀ</b>
+
+<blockquote>💫 <b>Hᴇʏ {mention}!</b>
+
+Wᴇʟᴄᴏᴍᴇ ᴛᴏ ᴛʜᴇ ᴍᴏsᴛ ᴀᴅᴠᴀɴᴄᴇᴅ ʟɪɴᴋ sʜᴀʀɪɴɢ ʙᴏᴛ! I'ᴍ ʜᴇʀᴇ ᴛᴏ ᴘʀᴏᴠɪᴅᴇ ʏᴏᴜ sᴇᴄᴜʀᴇ ᴀᴄᴄᴇss ᴛᴏ ᴘʀᴇᴍɪᴜᴍ ᴄᴏɴᴛᴇɴᴛ. 🔐</blockquote>
+
+┏━━━━━━━━━━━━━━━━━━┓
+┃  <b>📖 Qᴜɪᴄᴋ Gᴜɪᴅᴇ</b>  ┃
+┗━━━━━━━━━━━━━━━━━━┛
+
+<b>🔸 Sᴛᴇᴘ 1 - Sᴇɴᴅ Lɪɴᴋ</b>
+   Sʜᴀʀᴇ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ ʟɪɴᴋ ᴡɪᴛʜ ᴍᴇ
+
+<b>🔸 Sᴛᴇᴘ 2 - Jᴏɪɴ Cʜᴀɴɴᴇʟs</b>
+   Cʟɪᴄᴋ ᴏɴ ᴀʟʟ ᴄʜᴀɴɴᴇʟ ʙᴜᴛᴛᴏɴs & ᴊᴏɪɴ
+
+<b>🔸 Sᴛᴇᴘ 3 - Gᴇᴛ Fɪʟᴇ</b>
+   Cʟɪᴄᴋ "Tʀʏ Aɢᴀɪɴ" ᴛᴏ ʀᴇᴄᴇɪᴠᴇ ʏᴏᴜʀ ғɪʟᴇ
+
+┏━━━━━━━━━━━━━━━━━━┓
+┃  <b>⚡ Sᴘᴇᴄɪᴀʟ Fᴇᴀᴛᴜʀᴇs</b>  ┃
+┗━━━━━━━━━━━━━━━━━━┛
+
+🚀 <b>Lɪɢʜᴛɴɪɴɢ Fᴀsᴛ</b> - Iɴsᴛᴀɴᴛ ᴅᴇʟɪᴠᴇʀʏ
+🔒 <b>Sᴜᴘᴇʀ Sᴇᴄᴜʀᴇ</b> - Eɴᴄʀʏᴘᴛᴇᴅ ʟɪɴᴋs
+🎁 <b>Pʀᴇᴍɪᴜᴍ Cᴏɴᴛᴇɴᴛ</b> - Exᴄʟᴜsɪᴠᴇ ᴀᴄᴄᴇss
+⏰ <b>24/7 Oɴʟɪɴᴇ</b> - Aʟᴡᴀʏs ᴀᴠᴀɪʟᴀʙʟᴇ
+
+┏━━━━━━━━━━━━━━━━━━┓
+┃  <b>⚠️ Rᴜʟᴇs & Rᴇǫᴜɪʀᴇᴍᴇɴᴛs</b>  ┃
+┗━━━━━━━━━━━━━━━━━━┛
+
+❗ Jᴏɪɴ <u><b>ALL</b></u> ᴍᴇɴᴛɪᴏɴᴇᴅ ᴄʜᴀɴɴᴇʟs (ᴍᴀɴᴅᴀᴛᴏʀʏ)
+❗ Dᴏɴ'ᴛ ʟᴇᴀᴠᴇ ᴀғᴛᴇʀ ɢᴇᴛᴛɪɴɢ ᴛʜᴇ ғɪʟᴇ
+❗ Sᴛᴀʏ ᴀs ᴀ ᴍᴇᴍʙᴇʀ ғᴏʀ ғᴜᴛᴜʀᴇ ᴀᴄᴄᴇss
+✅ Fᴏʟʟᴏᴡ ʀᴜʟᴇs ғᴏʀ ᴜɴɪɴᴛᴇʀʀᴜᴘᴛᴇᴅ sᴇʀᴠɪᴄᴇ
+
+┏━━━━━━━━━━━━━━━━━━┓
+┃  <b>👤 Yᴏᴜʀ Pʀᴏғɪʟᴇ</b>  ┃
+┗━━━━━━━━━━━━━━━━━━┛
+
+📛 <b>Nᴀᴍᴇ:</b> {first} {last}
+🔖 <b>Usᴇʀɴᴀᴍᴇ:</b> {username}
+🆔 <b>Usᴇʀ ID:</b> <code>{id}</code>
+
+━━━━━━━━━━━━━━━━━━━
+
+<i>💡 Tɪᴘ: Usᴇ /start ᴛᴏ ɢᴏ ʙᴀᴄᴋ ᴛᴏ ᴍᴀɪɴ ᴍᴇɴᴜ</i>""")
+
 FSUB_PIC = os.environ.get("FSUB_PIC", "https://ibb.co/cSfdrzRh")
 FSUB_LINK_EXPIRY = 300
 LOG_FILE_NAME = "Suhanibots.txt"
