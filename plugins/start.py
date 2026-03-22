@@ -215,7 +215,7 @@ async def not_joined(client: Client, message: Message):
             )
             return
 
-        text = "<b>swagat Hai hamare bot main \n\n<blockquote>Channel ke links pane ke liye, niche diye gaye button me jo bhi channels hain un sab par request bheje ya join karein.</blockquote></b>"
+        text = "<b>welcome senpai 😁\n\n<blockquote>Channel ke links pane ke liye, niche diye gaye button me jo bhi channels hain un sab par request bheje ya join karein.</blockquote></b>"
         
         logger.debug(f"Sending final reply photo to user {user_id}")
         
@@ -331,7 +331,7 @@ async def start_command(client: Bot, message: Message):
                         [[InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=original_link)]]
                     )
                     return await message.reply_text(
-                        "<b><blockquote expandable>ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ! ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ</blockquote></b>",
+                        "<b><blockquote expandable>Your channel link here 👇 click here to proceed 👇</blockquote></b>",
                         reply_markup=button,
                         parse_mode=ParseMode.HTML
                     )
