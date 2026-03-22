@@ -53,9 +53,16 @@ class Bot(Client):
         usr_bot_me = await self.get_me()
         self.uptime = datetime.now()
         
+        # 🔥 OPTIONAL: Skip channel validation if environment variable is set
+        skip_validation = os.getenv("SKIP_VALIDATION", "false").lower() == "true"
+        
+        if skip_validation:
+            self.LOGGER(__name__).warning("⚠️  Channel validation SKIPPED (SKIP_VALIDATION=true)")
+        
         # 🔥 IMPORTANT: Pre-resolve all channels on startup
-        try:
-            from database.database import Seishiro
+        if not skip_validation:
+            try:
+                from database.database import Seishiro
             
             self.LOGGER(__name__).info("=" * 60)
             self.LOGGER(__name__).info("🔄 RESOLVING CHANNEL PEERS...")
@@ -133,6 +140,10 @@ class Bot(Client):
                 
         except Exception as e:
             self.LOGGER(__name__).error(f"❌ Error during peer resolution: {e}")
+        
+        # End of validation block
+        else:
+            self.LOGGER(__name__).info("⚠️  Skipping channel validation")
         
         # Notify restart
         try:
