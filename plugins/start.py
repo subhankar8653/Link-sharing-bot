@@ -215,7 +215,7 @@ async def not_joined(client: Client, message: Message):
             )
             return
 
-        text = "<b>welcome senpai 😁\n\n<blockquote>Channel ke links pane ke liye, niche diye gaye button me jo bhi channels hain un sab par request bheje ya join karein.</blockquote></b>"
+        text = "<b><blockquote>Channel ke links pane ke liye, niche diye gaye button me jo bhi channels hain un sab par request bheje ya join karein.</blockquote></b>"
         
         logger.debug(f"Sending final reply photo to user {user_id}")
         
