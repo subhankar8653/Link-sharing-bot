@@ -727,4 +727,81 @@ class Master:
             logging.error(f"Error removing fake link: {e}")
             return False
 
+    # ══════════════════════════════════════════
+    # PREMIUM SYSTEM  (DreamXBotz se liya)
+    # ══════════════════════════════════════════
+
+    async def has_premium_access(self, user_id: int) -> bool:
+        """Check karo user ka premium active hai ya nahi."""
+        try:
+            user = await self.user_data.find_one({"_id": int(user_id)})
+            if not user:
+                return False
+            expiry = user.get("expiry_time")
+            if expiry is None:
+                return False
+            import datetime
+            if isinstance(expiry, datetime.datetime) and datetime.datetime.now() <= expiry:
+                return True
+            # Expire ho gaya — clean karo
+            await self.user_data.update_one(
+                {"_id": int(user_id)},
+                {"$set": {"expiry_time": None}}
+            )
+            return False
+        except Exception as e:
+            logging.error(f"has_premium_access error for {user_id}: {e}")
+            return False
+
+    async def get_premium_expiry(self, user_id: int):
+        """Premium expiry datetime return karo, ya None."""
+        try:
+            user = await self.user_data.find_one({"_id": int(user_id)})
+            if user:
+                return user.get("expiry_time")
+            return None
+        except Exception as e:
+            logging.error(f"get_premium_expiry error: {e}")
+            return None
+
+    async def add_premium(self, user_id: int, seconds: int) -> bool:
+        """User ko premium do — seconds mein duration."""
+        import datetime
+        try:
+            expiry = datetime.datetime.now() + datetime.timedelta(seconds=seconds)
+            await self.user_data.update_one(
+                {"_id": int(user_id)},
+                {"$set": {"expiry_time": expiry}},
+                upsert=True
+            )
+            logging.info(f"Premium added for {user_id}, expires {expiry}")
+            return True
+        except Exception as e:
+            logging.error(f"add_premium error for {user_id}: {e}")
+            return False
+
+    async def remove_premium(self, user_id: int) -> bool:
+        """User se premium hata do."""
+        try:
+            result = await self.user_data.update_one(
+                {"_id": int(user_id)},
+                {"$set": {"expiry_time": None}}
+            )
+            return result.matched_count > 0
+        except Exception as e:
+            logging.error(f"remove_premium error for {user_id}: {e}")
+            return False
+
+    async def get_all_premium_users(self):
+        """Sabhi active premium users return karo."""
+        import datetime
+        try:
+            cursor = self.user_data.find(
+                {"expiry_time": {"$gt": datetime.datetime.now()}}
+            )
+            return [doc async for doc in cursor]
+        except Exception as e:
+            logging.error(f"get_all_premium_users error: {e}")
+            return []
+
 Seishiro = Master(DB_URL, DB_NAME)
