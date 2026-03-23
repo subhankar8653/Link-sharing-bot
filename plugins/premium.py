@@ -263,24 +263,46 @@ async def _build_plans_ui():
         f"<b>📋 Plans:</b>\n{plans_section}"
     )
 
-    # Buttons
+    # Buttons — Star plans
     btns = []
     for stars, dur in sorted(plans.items()):
         btns.append([InlineKeyboardButton(
             f"⭐ {stars} Stars → {dur}", callback_data=f"prem_buy_{stars}"
         )])
 
-    # Custom payment buttons — ek button per wallet jo set hai
-    # Sirf wallets pe depend karo, custom_plans optional hai
-    for key, address in wallets.items():
-        meta = WALLET_META.get(key, {})
-        if not meta:
+    # Custom payment buttons
+    # Strategy: sabse pehle custom_plans ke currency_keys se buttons banao
+    # Phir jo wallets set hain unke buttons banao (agar already nahi bane)
+    shown_keys = set()
+
+    # 1. Custom plans se buttons (ek currency per button)
+    for p in custom_plans:
+        key = p.get("currency_key", "")
+        if not key or key in shown_keys:
             continue
-        symbol  = meta.get("symbol", key.upper())
-        network = meta.get("network", "")
+        shown_keys.add(key)
+        meta = WALLET_META.get(key, {})
         if key == "rs":
             btn_label = f"💰 Pay via Indian Rupees (UPI)"
         else:
+            symbol  = meta.get("symbol", key.upper())
+            network = meta.get("network", key.upper())
+            btn_label = f"💳 Pay via {symbol} · {network}"
+        btns.append([InlineKeyboardButton(btn_label, callback_data=f"prem_pay_{key}")])
+
+    # 2. Wallets se buttons (jo upar se nahi aaye)
+    for key, address in wallets.items():
+        if key in shown_keys:
+            continue
+        shown_keys.add(key)
+        meta = WALLET_META.get(key, {})
+        if not meta:
+            continue
+        if key == "rs":
+            btn_label = f"💰 Pay via Indian Rupees (UPI)"
+        else:
+            symbol  = meta.get("symbol", key.upper())
+            network = meta.get("network", key.upper())
             btn_label = f"💳 Pay via {symbol} · {network}"
         btns.append([InlineKeyboardButton(btn_label, callback_data=f"prem_pay_{key}")])
 
@@ -941,10 +963,6 @@ async def cb_buy(client: Bot, cq: CallbackQuery):
 
 @Bot.on_callback_query(filters.regex(r"^prem_pay_(\w+)$"), group=-1)
 async def cb_pay_currency(client: Bot, cq: CallbackQuery):
-    """
-    User ne ek currency select ki — us currency ke plans + wallet dikhao.
-    Button: "💳 Pay via ₹ · UPI" → prem_pay_rs
-    """
     import re
     m   = re.match(r"^prem_pay_(\w+)$", cq.data)
     key = m.group(1) if m else ""
@@ -952,41 +970,47 @@ async def cb_pay_currency(client: Bot, cq: CallbackQuery):
     if key not in WALLET_META:
         return await cq.answer("⚠️ Invalid currency.", show_alert=True)
 
-    wallets = await get_wallets()
-    address = wallets.get(key, "")
-    if not address:
-        return await cq.answer(
-            "⚠️ Wallet set nahi hai. Admin se contact karo.", show_alert=True
-        )
-
     meta          = WALLET_META[key]
+    wallets       = await get_wallets()
+    address       = wallets.get(key, "")
     custom_plans  = await get_custom_plans()
     currency_plans = [p for p in custom_plans if p.get("currency_key") == key]
     ui            = await get_premium_ui()
+    cfg           = await _get_bot_config()
+    qr_code       = cfg.get("qr_code", "")
 
-    # Plans for this currency
+    # Plans text
     if currency_plans:
         plan_lines = "\n".join(
             f"• <b>{p['label']}</b> → {p['duration']}" for p in currency_plans
         )
     else:
-        plan_lines = "<i>Owner se custom plans puchho.</i>"
+        plan_lines = "<i>Kisi plan ke liye admin se contact karo.</i>"
 
-    # Address field name
-    addr_label = "UPI ID" if key == "rs" else f"Wallet Address ({meta['network']})"
+    # Address section
+    addr_label = "UPI ID" if key == "rs" else f"Wallet Address"
+    if address:
+        addr_section = (
+            f"<b>{addr_label} ({meta['network']}):</b>\n"
+            f"<code>{address}</code>\n\n"
+            f"<b>Steps:</b>\n"
+            f"1. Upar diye address pe payment karo\n"
+            f"2. Niche button se admin ko notify karo\n"
+            f"3. Admin verify karke premium activate karega\n\n"
+            f"<i>⚠️ Sirf <b>{meta['network']}</b> network use karo!</i>"
+        )
+    else:
+        addr_section = (
+            f"<i>Payment address ke liye admin se contact karo.</i>"
+        )
 
     text = (
         f"<b>💳 {meta['name']} ({meta['network']})</b>\n\n"
         f"<b>📋 Plans:</b>\n{plan_lines}\n\n"
-        f"<b>{addr_label}:</b>\n<code>{address}</code>\n\n"
-        f"<b>Steps:</b>\n"
-        f"1. Upar diya address pe payment karo\n"
-        f"2. Niche button se admin ko screenshot bhejo\n"
-        f"3. Admin verify karke premium activate karega\n\n"
-        f"<i>⚠️ Galat network pe payment mat karna!</i>"
+        f"{addr_section}"
     )
 
-    # Which plan did they choose? Let them pick
+    # Confirmation buttons
     plan_btns = []
     for p in currency_plans:
         plan_btns.append([InlineKeyboardButton(
@@ -1004,23 +1028,24 @@ async def cb_pay_currency(client: Bot, cq: CallbackQuery):
         [InlineKeyboardButton("❌ Close", callback_data="prem_close")],
     ]
 
-    cfg     = await _get_bot_config()
-    qr_code = cfg.get("qr_code", "")
+    if ui.get("contact_link"):
+        btns.insert(-2, [InlineKeyboardButton("📩 Contact Admin", url=ui["contact_link"])])
 
+    kb = InlineKeyboardMarkup(btns)
+
+    # QR code sirf UPI ke liye
     if qr_code and key == "rs":
         try:
-            await cq.message.reply_photo(
-                photo=qr_code, caption=text,
-                reply_markup=InlineKeyboardMarkup(btns)
-            )
+            await cq.message.reply_photo(photo=qr_code, caption=text, reply_markup=kb)
             return await cq.answer()
         except Exception:
             pass
 
     try:
-        await cq.message.reply_text(text, reply_markup=InlineKeyboardMarkup(btns))
+        await cq.message.reply_text(text, reply_markup=kb)
     except Exception as e:
         logger.error(f"cb_pay_currency reply failed: {e}")
+    await cq.answer()
     await cq.answer()
 
 
