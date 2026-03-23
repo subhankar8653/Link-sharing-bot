@@ -68,11 +68,11 @@ IST    = pytz.timezone("Asia/Kolkata")
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 WALLET_META = {
-    "rs":        {"name": "Indian Rupees",      "network": "UPI",         "symbol": "₹",    "db_key": "wallet_rs"},
-    "ton":       {"name": "TON Coin",           "network": "TON Network", "symbol": "TON",  "db_key": "wallet_ton"},
-    "usdt_ton":  {"name": "USDT",               "network": "TON Network", "symbol": "USDT", "db_key": "wallet_usdt_ton"},
-    "usdt_trc":  {"name": "USDT",               "network": "TRC20",       "symbol": "USDT", "db_key": "wallet_usdt_trc"},
-    "usdt_erc":  {"name": "USDT",               "network": "ERC20",       "symbol": "USDT", "db_key": "wallet_usdt_erc"},
+    "rs":        {"name": "Indian Rupees",  "network": "UPI",         "symbol": "₹",    "db_key": "wallet_rs",        "qr_key": "qr_rs"},
+    "ton":       {"name": "TON Coin",       "network": "TON Network", "symbol": "TON",  "db_key": "wallet_ton",       "qr_key": "qr_ton"},
+    "usdt_ton":  {"name": "USDT",           "network": "TON Network", "symbol": "USDT", "db_key": "wallet_usdt_ton",  "qr_key": "qr_usdt_ton"},
+    "usdt_trc":  {"name": "USDT",           "network": "TRC20",       "symbol": "USDT", "db_key": "wallet_usdt_trc",  "qr_key": "qr_usdt_trc"},
+    "usdt_erc":  {"name": "USDT",           "network": "ERC20",       "symbol": "USDT", "db_key": "wallet_usdt_erc",  "qr_key": "qr_usdt_erc"},
 }
 
 def wallet_display_name(key: str) -> str:
@@ -436,11 +436,13 @@ async def cmd_set_wallet(client: Bot, msg: Message):
 
 @Bot.on_message(filters.command("wallets") & filters.private)
 async def cmd_wallets(client: Bot, msg: Message):
-    """Saare set wallets dekho."""
+    """Saare set wallets + QR status dekho."""
     if not await is_owner_or_admin(msg.from_user.id):
         return await msg.reply("⛔ Sirf admins ke liye!")
 
+    cfg     = await _get_bot_config()
     wallets = await get_wallets()
+
     if not wallets:
         return await msg.reply(
             "📭 Koi wallet set nahi hai.\n\n"
@@ -450,13 +452,21 @@ async def cmd_wallets(client: Bot, msg: Message):
 
     lines = ["<b>💳 Set Wallets:</b>\n"]
     for key, address in wallets.items():
-        meta = WALLET_META[key]
-        label = "UPI ID" if key == "rs" else "Address"
+        meta      = WALLET_META[key]
+        label     = "UPI ID" if key == "rs" else "Address"
+        qr_set    = "✅" if cfg.get(meta["qr_key"]) else "❌"
         lines.append(
             f"• <b>{meta['name']}</b> ({meta['network']})\n"
-            f"  {label}: <code>{address}</code>"
+            f"  {label}: <code>{address}</code>\n"
+            f"  QR: {qr_set}"
         )
-    lines.append(f"\n<i>Change: /setwallet &lt;type&gt; &lt;new_address&gt;</i>")
+
+    lines.append(
+        "\n<b>Commands:</b>\n"
+        "<code>/setwallet &lt;key&gt; &lt;address&gt;</code>\n"
+        "<code>/setqr &lt;key&gt; &lt;image_url&gt;</code>\n\n"
+        "<b>Keys:</b> rs | ton | usdt_ton | usdt_trc | usdt_erc"
+    )
     await msg.reply("\n".join(lines))
 
 
@@ -491,12 +501,66 @@ async def cmd_set_upi(client: Bot, msg: Message):
 
 @Bot.on_message(filters.command("setqr") & filters.private)
 async def cmd_set_qr(client: Bot, msg: Message):
+    """
+    /setqr <currency_key> <image_url>   → specific currency ka QR set karo
+    /setqr <image_url>                  → sirf UPI/RS ka QR set karo (purana style)
+
+    Examples:
+      /setqr rs https://image.jpg       → Indian Rupees QR
+      /setqr ton https://image.jpg      → TON QR
+      /setqr usdt_ton https://image.jpg → USDT (TON) QR
+      /setqr usdt_trc https://image.jpg → USDT (TRC20) QR
+    """
     if not await is_owner_or_admin(msg.from_user.id):
         return await msg.reply("⛔ Sirf admins ke liye!")
-    if len(msg.command) < 2:
-        return await msg.reply("<code>/setqr https://image.jpg</code>")
-    await _set_bot_config("qr_code", msg.command[1])
-    await msg.reply("✅ QR code set!")
+
+    parts = msg.command
+    if len(parts) < 2:
+        valid = " | ".join(WALLET_META.keys())
+        return await msg.reply(
+            "<b>📌 Usage:</b>\n"
+            "<code>/setqr &lt;currency_key&gt; &lt;image_url&gt;</code>\n\n"
+            f"<b>Currency keys:</b> <code>{valid}</code>\n\n"
+            "<b>Examples:</b>\n"
+            "<code>/setqr rs https://image.jpg</code>\n"
+            "<code>/setqr ton https://image.jpg</code>\n"
+            "<code>/setqr usdt_ton https://image.jpg</code>\n"
+            "<code>/setqr usdt_trc https://image.jpg</code>"
+        )
+
+    # Agar sirf URL diya (purana style) — rs ka QR set karo
+    if len(parts) == 2:
+        url = parts[1]
+        await _set_bot_config("qr_rs", url)
+        await _set_bot_config("qr_code", url)  # backward compat
+        return await msg.reply(
+            f"✅ <b>Indian Rupees (UPI) QR set!</b>\n\n"
+            f"<i>Tip: Doosri currencies ke liye:\n"
+            f"/setqr ton &lt;url&gt;\n"
+            f"/setqr usdt_ton &lt;url&gt;</i>"
+        )
+
+    key = parts[1].lower()
+    url = parts[2]
+
+    if key not in WALLET_META:
+        valid = " | ".join(WALLET_META.keys())
+        return await msg.reply(
+            f"❌ Invalid key: <code>{key}</code>\n"
+            f"Valid: <code>{valid}</code>"
+        )
+
+    meta    = WALLET_META[key]
+    qr_key  = meta["qr_key"]
+    await _set_bot_config(qr_key, url)
+    if key == "rs":
+        await _set_bot_config("qr_code", url)  # backward compat
+
+    await msg.reply(
+        f"✅ <b>{meta['name']} ({meta['network']}) QR Set!</b>\n\n"
+        f"Ab jab user is currency se payment karna chahega,\n"
+        f"toh yeh QR dikhega."
+    )
 
 @Bot.on_message(filters.command("setcontact") & filters.private)
 async def cmd_set_contact(client: Bot, msg: Message):
@@ -977,7 +1041,8 @@ async def cb_pay_currency(client: Bot, cq: CallbackQuery):
     currency_plans = [p for p in custom_plans if p.get("currency_key") == key]
     ui            = await get_premium_ui()
     cfg           = await _get_bot_config()
-    qr_code       = cfg.get("qr_code", "")
+    # Currency-specific QR dhundo, fallback global qr_code pe
+    qr_code = cfg.get(meta["qr_key"], "") or cfg.get("qr_code", "")
 
     # Plans text
     if currency_plans:
@@ -1033,8 +1098,8 @@ async def cb_pay_currency(client: Bot, cq: CallbackQuery):
 
     kb = InlineKeyboardMarkup(btns)
 
-    # QR code sirf UPI ke liye
-    if qr_code and key == "rs":
+    # QR code — har currency ke liye dikhao agar set hai
+    if qr_code:
         try:
             await cq.message.reply_photo(photo=qr_code, caption=text, reply_markup=kb)
             return await cq.answer()
