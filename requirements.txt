@@ -10,3 +10,5 @@ aiohttp
 asyncio
 aiofiles
 matplotlib
+shortzy
+pytz

@@ -1,4 +1,3 @@
-from ast import pattern
 import os
 from os import environ
 import logging
@@ -62,6 +61,40 @@ FSUB_PIC = os.environ.get("FSUB_PIC", "https://ibb.co/cSfdrzRh")
 FSUB_LINK_EXPIRY = 300
 LOG_FILE_NAME = "Suhanibots.txt"
 DATABASE_CHANNEL = int(os.environ.get("DATABASE_CHANNEL", "-1003685098671"))
+
+# ============================================
+# PREMIUM SYSTEM CONFIG  (DreamXBotz se liya)
+# ============================================
+PREMIUM_LOGS = int(os.environ.get("PREMIUM_LOGS", DATABASE_CHANNEL))
+# Telegram Star se payment ke liye plans — {stars: "duration"}
+STAR_PREMIUM_PLANS = {
+    10: "7day",
+    20: "15day",
+    40: "1month",
+    55: "45day",
+    75: "60day",
+}
+# Premium subscription image
+SUBSCRIPTION_IMG = os.environ.get(
+    "SUBSCRIPTION_IMG",
+    "https://graph.org/file/242b7f1b52743938d81f1.jpg"
+)
+# UPI payment details (manual payment ke liye)
+QR_CODE      = os.environ.get("QR_CODE", "")
+OWNER_UPI_ID = os.environ.get("OWNER_UPI_ID", "N/A")
+OWNER_LNK    = os.environ.get("OWNER_LNK", "https://t.me/suhanibots")
+
+# ============================================
+# LINK SHORTENER CONFIG  (DreamXBotz se liya)
+# Jab user invite link open kare, shortener se
+# ads serve honge → tumhe paisa milega.
+# Apna API key shortener website se lo.
+# ============================================
+IS_SHORTENER_ON   = os.environ.get("IS_SHORTENER_ON", "true").lower() == "true"
+SHORTENER_API     = os.environ.get("SHORTENER_API", "")        # API key
+SHORTENER_WEBSITE = os.environ.get("SHORTENER_WEBSITE", "")    # e.g. omegalinks.in
+# Premium users shortener bypass karte hain
+PREMIUM_BYPASS_SHORTENER = os.environ.get("PREMIUM_BYPASS_SHORTENER", "true").lower() == "true"
 
 logging.basicConfig(
     level=logging.INFO,
