@@ -4,140 +4,145 @@ import time
 import logging
 from collections import defaultdict
 from asyncio import Lock
-from pyrogram import Client, filters
-from pyrogram.enums import ParseMode, ChatMemberStatus, ChatAction
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputMediaPhoto
-from pyrogram.errors import FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid, RPCError
-from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
 from functools import wraps
 
-from bot import Bot
+from pyrogram import Client, filters
+from pyrogram.enums import ParseMode, ChatMemberStatus, ChatAction
+from pyrogram.types import (
+    Message, InlineKeyboardMarkup, InlineKeyboardButton,
+    CallbackQuery, InputMediaPhoto
+)
+from pyrogram.errors import (
+    FloodWait, InputUserDeactivated, UserIsBlocked,
+    PeerIdInvalid, RPCError
+)
+from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
+
+from bot import Bot, _force_resolve_peer, check_bot_permissions
 from datetime import datetime, timedelta
 from config import *
 from database.database import Seishiro
 from plugins.settings import revoke_invite_after_5_minutes
+from plugins.premium import get_invite_link_with_ads
 from helper_func import *
 
 logger = logging.getLogger(__name__)
 
-# Initialize chat_data_cache
+# Peer cache — baar baar get_chat() na ho
 chat_data_cache = {}
 
+# Per-channel lock — ek waqt mein sirf ek invite link bane
 channel_locks = defaultdict(Lock)
+
+
+# ═══════════════════════════════════════════
+# ADMIN FILTER
+# ═══════════════════════════════════════════
 
 async def check_admin(filter, client, message):
     try:
-        user_id = message.from_user.id
-        return any([user_id == OWNER_ID, await Seishiro.is_admin(user_id)])
+        uid = message.from_user.id
+        return uid == OWNER_ID or await Seishiro.is_admin(uid)
     except Exception as e:
-        logger.error(f"Exception in check_admin: {e}")
+        logger.error(f"check_admin error: {e}")
         return False
 
 admin = filters.create(check_admin)
+
+
+# ═══════════════════════════════════════════
+# FORCE SUBSCRIBE DECORATOR
+# ═══════════════════════════════════════════
 
 def check_fsub(func):
     @wraps(func)
     async def wrapper(client, message, *args, **kwargs):
         user_id = message.from_user.id
-        logger.debug(f"check_fsub decorator called for user {user_id}")
 
         async def is_sub(client, user_id, channel_id):
             try:
-                member = await client.get_chat_member(channel_id, user_id)
+                member    = await client.get_chat_member(channel_id, user_id)
                 is_member = member.status in {
                     ChatMemberStatus.OWNER,
                     ChatMemberStatus.ADMINISTRATOR,
                     ChatMemberStatus.MEMBER
                 }
-                
-                # 🔥 FIX: Agar member hai toh database se cleanup karo
                 if is_member:
                     try:
-                        exists = await Seishiro.req_user_exist(channel_id, user_id)
-                        if exists:
+                        if await Seishiro.req_user_exist(channel_id, user_id):
                             await Seishiro.del_req_user(channel_id, user_id)
-                            logger.info(f"User {user_id} is member, cleaned from request DB")
-                    except:
+                    except Exception:
                         pass
-                
                 return is_member
             except UserNotParticipant:
-                mode = await Seishiro.get_channel_mode(channel_id) or await Seishiro.get_channel_mode_all(channel_id)
+                mode = await Seishiro.get_channel_mode(channel_id)
                 if mode == "on":
-                    exists = await Seishiro.req_user_exist(channel_id, user_id)
-                    return exists
+                    return await Seishiro.req_user_exist(channel_id, user_id)
                 return False
             except Exception as e:
-                logger.error(f"Error in is_sub(): {e}")
+                logger.error(f"is_sub error: {e}")
                 return False
 
         async def is_subscribed(client, user_id):
-            channel_ids = await Seishiro.get_fsub_channels()
-            if not channel_ids:
+            channels = await Seishiro.get_fsub_channels()
+            if not channels:
                 return True
             if user_id == OWNER_ID:
                 return True
-            for cid in channel_ids:
+            # Premium users FSub bypass karte hain
+            if await Seishiro.has_premium_access(user_id):
+                logger.info(f"User {user_id} is premium — FSub bypassed")
+                return True
+            for cid in channels:
                 if not await is_sub(client, user_id, cid):
-                    mode = await Seishiro.get_channel_mode(cid) or await Seishiro.get_channel_mode_all(cid)
+                    mode = await Seishiro.get_channel_mode(cid)
                     if mode == "on":
                         await asyncio.sleep(2)
                         if await is_sub(client, user_id, cid):
                             continue
                     return False
             return True
-        
+
         try:
-            is_sub_status = await is_subscribed(client, user_id)
-            logger.debug(f"User {user_id} subscribed status: {is_sub_status}")
-            
-            if not is_sub_status:
-                logger.debug(f"User {user_id} is not subscribed, calling not_joined.")
+            if not await is_subscribed(client, user_id):
                 return await not_joined(client, message)
-            
-            logger.debug(f"User {user_id} is subscribed, proceeding with function call.")
             return await func(client, message, *args, **kwargs)
-        
         except Exception as e:
-            logger.error(f"FATAL ERROR in check_fsub: {e}")
-            await message.reply_text(f"An unexpected error occurred: {e}. Please contact the developer.")
-            return
+            logger.error(f"check_fsub error: {e}")
+            await message.reply_text("An unexpected error occurred. Please contact the developer.")
     return wrapper
 
-async def not_joined(client: Client, message: Message):
-    logger.debug(f"not_joined function called for user {message.from_user.id}")
-    temp = await message.reply("<b><i>ᴡᴀɪᴛ ᴀ sᴇᴄ..</i></b>")
 
-    # Add a check to ensure temp message exists before proceeding
+# ═══════════════════════════════════════════
+# NOT JOINED — FSub channels dikhao
+# ═══════════════════════════════════════════
+
+async def not_joined(client: Client, message: Message):
+    user_id = message.from_user.id
+    temp    = await message.reply("<b><i>ᴡᴀɪᴛ ᴀ sᴇᴄ..</i></b>")
     if not temp:
-        logger.warning("Failed to send temporary message in not_joined")
         return
 
-    user_id = message.from_user.id
     buttons = []
-    count = 0
+    count   = 0
 
     try:
         all_channels = await Seishiro.get_fsub_channels()
-        
-        # Fake link ko pehle add karenge agar FSub channels exist karte hain
+
+        # Fake link button sabse pehle (agar set hai)
         if all_channels:
-            fake_link_config = await Seishiro.get_fake_link()
-            if fake_link_config:
-                buttons.append([
-                    InlineKeyboardButton(
-                        text=fake_link_config["button_text"],
-                        url=fake_link_config["url"]
-                    )
-                ])
-                logger.info(f"Fake link button added for user {user_id}")
-        
+            fake = await Seishiro.get_fake_link()
+            if fake:
+                buttons.append([InlineKeyboardButton(
+                    text=fake["button_text"], url=fake["url"]
+                )])
+
         for chat_id in all_channels:
             await message.reply_chat_action(ChatAction.TYPING)
 
             is_member = False
             try:
-                member = await client.get_chat_member(chat_id, user_id)
+                member    = await client.get_chat_member(chat_id, user_id)
                 is_member = member.status in {
                     ChatMemberStatus.OWNER,
                     ChatMemberStatus.ADMINISTRATOR,
@@ -146,418 +151,366 @@ async def not_joined(client: Client, message: Message):
             except UserNotParticipant:
                 is_member = False
             except Exception as e:
-                is_member = False
-                logger.error(f"Error checking member in not_joined: {e}")
+                logger.error(f"Member check error {chat_id}: {e}")
 
-            if not is_member:
-                try:
-                    if chat_id in chat_data_cache:
-                        data = chat_data_cache[chat_id]
-                    else:
+            if is_member:
+                continue
+
+            try:
+                if chat_id in chat_data_cache:
+                    data = chat_data_cache[chat_id]
+                else:
+                    try:
+                        data = await client.get_chat(chat_id)
+                        chat_data_cache[chat_id] = data
+                    except PeerIdInvalid:
+                        logger.warning(f"PeerIdInvalid {chat_id} — deep resolve...")
+                        if not await _force_resolve_peer(client, chat_id):
+                            logger.error(f"Deep resolve failed {chat_id} — skip")
+                            continue
                         try:
                             data = await client.get_chat(chat_id)
                             chat_data_cache[chat_id] = data
-                        except PeerIdInvalid:
-                            # get_chat() nahi chala — deep resolve try karo
-                            logger.warning(f"PeerIdInvalid {chat_id} — deep resolve...")
-                            from bot import _force_resolve_peer
-                            if not await _force_resolve_peer(client, chat_id):
-                                logger.error(f"Deep resolve failed {chat_id} — skip")
-                                continue
-                            try:
-                                data = await client.get_chat(chat_id)
-                                chat_data_cache[chat_id] = data
-                            except Exception as e2:
-                                logger.error(f"get_chat after resolve failed {chat_id}: {e2}")
-                                continue
-                        except Exception as e:
-                            logger.error(f"Error getting chat info for {chat_id}: {e}")
+                        except Exception as e2:
+                            logger.error(f"get_chat after resolve failed {chat_id}: {e2}")
                             continue
-
-                    name = data.title
-                    mode = await Seishiro.get_channel_mode(chat_id)
-
-                    if mode == "on" and not data.username:
-                        invite = await client.create_chat_invite_link(
-                            chat_id=chat_id,
-                            creates_join_request=True,
-                            expire_date=datetime.utcnow() + timedelta(seconds=FSUB_LINK_EXPIRY) if FSUB_LINK_EXPIRY else None
-                        )
-                        link = invite.invite_link
-                    else:
-                        if data.username:
-                            link = f"https://t.me/{data.username}"
-                        else:
-                            invite = await client.create_chat_invite_link(
-                                chat_id=chat_id,
-                                expire_date=datetime.utcnow() + timedelta(seconds=FSUB_LINK_EXPIRY) if FSUB_LINK_EXPIRY else None
-                            )
-                            link = invite.invite_link
-
-                    buttons.append([InlineKeyboardButton(text=name, url=link)])
-                    count += 1
-                    try:
-                        await temp.edit(f"<b>{'! ' * count}</b>")
                     except Exception as e:
-                        logger.warning(f"Failed to edit message in not_joined: {e}")
+                        logger.error(f"get_chat error {chat_id}: {e}")
+                        continue
 
+                name = data.title
+                mode = await Seishiro.get_channel_mode(chat_id)
 
-                except Exception as e:
-                    logger.error(f"Error with chat {chat_id}: {e}")
-                    # Don't return here, continue with other channels
-                    continue
+                if mode == "on" and not data.username:
+                    invite = await client.create_chat_invite_link(
+                        chat_id=chat_id,
+                        creates_join_request=True,
+                        expire_date=datetime.utcnow() + timedelta(seconds=FSUB_LINK_EXPIRY) if FSUB_LINK_EXPIRY else None
+                    )
+                    link = invite.invite_link
+                elif data.username:
+                    link = f"https://t.me/{data.username}"
+                else:
+                    invite = await client.create_chat_invite_link(
+                        chat_id=chat_id,
+                        expire_date=datetime.utcnow() + timedelta(seconds=FSUB_LINK_EXPIRY) if FSUB_LINK_EXPIRY else None
+                    )
+                    link = invite.invite_link
 
+                buttons.append([InlineKeyboardButton(text=name, url=link)])
+                count += 1
+                try:
+                    await temp.edit(f"<b>{'! ' * count}</b>")
+                except Exception:
+                    pass
+
+            except Exception as e:
+                logger.error(f"FSub button error {chat_id}: {e}")
+                continue
+
+        # Joined button
         try:
-            buttons.append([
-                InlineKeyboardButton(
-                    text='• Jᴏɪɴᴇᴅ •',
-                    url=f"https://t.me/{BOT_USERNAME}?start={message.command[1]}"
-                )
-            ])
-        except IndexError:
+            buttons.append([InlineKeyboardButton(
+                text='• Jᴏɪɴᴇᴅ •',
+                url=f"https://t.me/{BOT_USERNAME}?start={message.command[1]}"
+            )])
+        except (IndexError, AttributeError):
             pass
 
-        # Check if we have at least fake link button to show
         if not buttons:
-            await temp.edit(
-                "<b><i>! Eʀʀᴏʀ, Nᴏ ᴠᴀʟɪᴅ ᴄʜᴀɴɴᴇʟs ғᴏᴜɴᴅ. Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ @suhanibots</i></b>"
+            return await temp.edit(
+                "<b><i>! No valid channels found. Contact @suhanibots</i></b>"
             )
-            return
 
-        text = "<b>welcome senpai 😁\n\n<blockquote>Channel ke links pane ke liye, niche diye gaye button me jo bhi channels hain un sab par request bheje ya join karein.</blockquote></b>"
-        
-        logger.debug(f"Sending final reply photo to user {user_id}")
-        
-        # Delete temp message
         try:
             await temp.delete()
-        except:
+        except Exception:
             pass
-            
+
         await message.reply_photo(
             photo=FSUB_PIC,
-            caption=text,
+            caption=(
+                "<b>Welcome! 😁\n\n"
+                "<blockquote>Links pane ke liye niche diye gaye "
+                "channels join karein ya request karein.</blockquote></b>"
+            ),
             reply_markup=InlineKeyboardMarkup(buttons),
         )
 
     except Exception as e:
-        logger.error(f"Final Error in not_joined: {e}")
-        await temp.edit(
-            f"<b><i>! Eʀʀᴏʀ, Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴛᴏ sᴏʟᴠᴇ ᴛʜᴇ ɪssᴜᴇs @suhanibots</i></b>\n"
-            f"<blockquote expandable><b>Rᴇᴀsᴏɴ:</b> {e}</blockquote>"
-        )
-    
+        logger.error(f"not_joined error: {e}")
+        try:
+            await temp.edit(
+                f"<b><i>Error! Contact @suhanibots</i></b>\n"
+                f"<blockquote expandable><b>Reason:</b> {e}</blockquote>"
+            )
+        except Exception:
+            pass
+
+
+# ═══════════════════════════════════════════
+# /start COMMAND
+# ═══════════════════════════════════════════
+
 @Bot.on_message(filters.command('start') & filters.private)
 @check_fsub
 async def start_command(client: Bot, message: Message):
     user_id = message.from_user.id
-    
-    # Check if user is banned
-    user = await Seishiro.is_user_banned(user_id)
-    if user:
-        keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Cᴏɴᴛᴀᴄᴛ ʜᴇʀᴇ...!!", url="https://t.me/suhanibots")]]
-        )
+
+    # Ban check
+    if await Seishiro.is_user_banned(user_id):
         return await message.reply_text(
-            "Wᴛғ ʏᴏᴜ ᴀʀᴇ ʙᴀɴɴᴇᴅ ғʀᴏᴍ ᴜsɪɴɢ ᴍᴇ ʙʏ ᴏᴜʀ ᴀᴅᴍɪɴ/ᴏᴡɴᴇʀ . Iғ ʏᴏᴜ ᴛʜɪɴᴋs ɪᴛ's ᴍɪsᴛᴀᴋᴇ ᴄʟɪᴄᴋ ᴏɴ ᴄᴏɴᴛᴀᴄᴛ ʜᴇʀᴇ...!!",
-            reply_markup=keyboard
+            "🚫 Yᴏᴜ ᴀʀᴇ ʙᴀɴɴᴇᴅ! Contact: @suhanibots",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("Cᴏɴᴛᴀᴄᴛ", url="https://t.me/suhanibots")
+            ]])
         )
-    
-    # Add user to database
+
+    # User save karo
     await Seishiro.add_user(user_id, message)
-    
+
     try:
-        # Handle deep links (encoded links)
         text = message.text
+
+        # ── Deep link ─────────────────────────────────────────────────
         if len(text) > 7:
             try:
                 base64_string = text.split(" ", 1)[1]
-                is_request = base64_string.startswith("req_")
-                
-                logger.info(f"Processing deep link - base64_string: {base64_string}, is_request: {is_request}")
-                
-                # Decode to get channel_id regardless of database status
+                is_request    = base64_string.startswith("req_")
+
+                # Decode
                 try:
-                    if is_request:
-                        base64_to_decode = base64_string[4:]  # Remove 'req_' prefix
-                    else:
-                        base64_to_decode = base64_string
-                    
-                    # Use the decode function from helper_func.py
-                    decoded_string = await decode(base64_to_decode)
-                    channel_id = int(decoded_string)
-                    logger.info(f"Decoded channel_id from link: {channel_id}")
-                    
-                except Exception as decode_error:
-                    logger.error(f"Failed to decode base64 string '{base64_string}': {decode_error}")
+                    base64_to_decode = base64_string[4:] if is_request else base64_string
+                    decoded_string   = await decode(base64_to_decode)
+                    channel_id       = int(decoded_string)
+                    logger.info(f"Deep link: channel_id={channel_id}, req={is_request}")
+                except Exception as e:
+                    logger.error(f"Decode failed '{base64_string}': {e}")
                     return await message.reply_text(
-                        "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>",
-                        parse_mode=ParseMode.HTML
+                        "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>"
                     )
-                
-                # Verify channel_id is valid (negative number for channels/groups)
-                if not channel_id or (channel_id > 0):
-                    logger.error(f"Invalid channel_id decoded: {channel_id}")
+
+                if not channel_id or channel_id > 0:
                     return await message.reply_text(
-                        "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>",
-                        parse_mode=ParseMode.HTML
+                        "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>"
                     )
-                
-                # Ensure channel exists in database
-                channel_exists = await Seishiro.channel_data.find_one({"channel_id": channel_id})
-                if not channel_exists:
-                    logger.info(f"Channel {channel_id} not in database, adding it now")
+
+                # Channel DB mein save karo agar nahi hai
+                if not await Seishiro.channel_data.find_one({"channel_id": channel_id}):
                     await Seishiro.save_channel(channel_id)
-                
-                # ── STEP 1: Peer Resolution (redeploy fix) ──────────────
-                # Pehle normal get_chat(), agar PeerIdInvalid aaye toh
-                # _force_resolve_peer() se deep resolve karo.
-                from bot import _force_resolve_peer, check_bot_permissions
+
+                # ── STEP 1: Peer Resolution ────────────────────────────
                 try:
                     chat = await client.get_chat(channel_id)
-                    logger.info(f"Peer resolved: {channel_id} → {chat.title}")
+                    logger.info(f"Peer OK: {channel_id} → {chat.title}")
                 except PeerIdInvalid:
-                    logger.warning(f"PeerIdInvalid for {channel_id} — deep resolve...")
-                    ok = await _force_resolve_peer(client, channel_id)
-                    if not ok:
+                    logger.warning(f"PeerIdInvalid {channel_id} — deep resolve...")
+                    if not await _force_resolve_peer(client, channel_id):
                         return await message.reply_text(
                             "<b><blockquote expandable>"
-                            "⚠️ Cʜᴀɴɴᴇʟ ʀᴇsᴏʟᴠᴇ ɴᴀʜɪɴ ʜᴜᴀ.\n\n"
-                            "Bᴏᴛ ᴋᴏ ɪs ᴄʜᴀɴɴᴇʟ ᴍᴇɪɴ ᴀᴅᴍɪɴ ʙᴀɴᴀᴏ "
-                            "ᴀᴜʀ ᴅᴏʙᴀʀᴀ ᴛʀʏ ᴋᴀʀᴏ."
-                            "</blockquote></b>",
-                            parse_mode=ParseMode.HTML
+                            "⚠️ Channel resolve nahi hua.\n\n"
+                            "Bot ko is channel mein admin banao aur dobara try karo."
+                            "</blockquote></b>"
                         )
-                    logger.info(f"Deep resolve OK for {channel_id}")
+                    logger.info(f"Deep resolve OK: {channel_id}")
                 except Exception as e:
-                    logger.error(f"Peer resolution failed for {channel_id}: {e}")
+                    logger.error(f"get_chat failed {channel_id}: {e}")
                     return await message.reply_text(
-                        "<b><blockquote expandable>"
-                        f"Cʜᴀɴɴᴇʟ ᴀᴄᴄᴇss ᴇʀʀᴏʀ: {str(e)[:80]}"
-                        "</blockquote></b>",
-                        parse_mode=ParseMode.HTML
+                        f"<b><blockquote expandable>Channel access error: {str(e)[:80]}</blockquote></b>"
                     )
 
-                # ── STEP 2: Proper Admin + Permission Check ─────────────
-                is_admin_in_ch, can_invite, perm_reason = await check_bot_permissions(client, channel_id)
+                # ── STEP 2: Admin + Permission Check ──────────────────
+                is_admin_ch, can_invite, reason = await check_bot_permissions(client, channel_id)
 
-                if not is_admin_in_ch:
-                    logger.error(f"Bot not admin in {channel_id}: {perm_reason}")
+                if not is_admin_ch:
                     return await message.reply_text(
-                        "<b><blockquote expandable>"
-                        f"⚠️ Bᴏᴛ ɪs ᴄʜᴀɴɴᴇʟ ᴍᴇɪɴ ᴀᴅᴍɪɴ ɴᴀʜɪɴ ʜᴀɪ.\n\n"
-                        f"Kᴀᴀʀᴀɴ: {perm_reason}"
-                        "</blockquote></b>",
-                        parse_mode=ParseMode.HTML
+                        f"<b><blockquote expandable>"
+                        f"⚠️ Bot is channel mein admin nahi hai.\n\nKaaran: {reason}"
+                        f"</blockquote></b>"
                     )
 
                 if not can_invite:
-                    logger.error(f"Bot has no invite permission in {channel_id}: {perm_reason}")
                     return await message.reply_text(
                         "<b><blockquote expandable>"
-                        "⚠️ Bᴏᴛ ᴀᴅᴍɪɴ ᴛᴏ ʜᴀɪ ʟᴇᴋɪɴ <b>'Iɴᴠɪᴛᴇ Usᴇʀs'</b> "
-                        "ᴘᴇʀᴍɪssɪᴏɴ ɴᴀʜɪɴ ʜᴀɪ.\n\n"
-                        "Cʜᴀɴɴᴇʟ sᴇᴛᴛɪɴɢs ᴍᴇɪɴ ʏᴇʜ ᴘᴇʀᴍɪssɪᴏɴ ᴅᴏ."
-                        "</blockquote></b>",
-                        parse_mode=ParseMode.HTML
+                        "⚠️ Bot admin hai lekin 'Invite Users' permission nahi hai.\n\n"
+                        "Channel settings mein yeh permission do."
+                        "</blockquote></b>"
                     )
 
-                logger.info(f"Bot admin verified for channel {channel_id} ✅")
-
-                # ── STEP 3: Update encoded link in DB ───────────────────
+                # ── STEP 3: Encoded link save karo ────────────────────
                 if is_request:
                     await Seishiro.save_encoded_link2(channel_id, base64_to_decode)
                 else:
                     await Seishiro.save_encoded_link(channel_id)
-                
-                # Check if original link exists
+
+                # Original link check
                 original_link = await Seishiro.get_original_link(channel_id)
                 if original_link:
-                    button = InlineKeyboardMarkup(
-                        [[InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=original_link)]]
-                    )
                     return await message.reply_text(
-                        "<b><blockquote expandable>Your channel link here 👇 click here to proceed 👇</blockquote></b>",
-                        reply_markup=button,
-                        parse_mode=ParseMode.HTML
+                        "<b><blockquote expandable>Your channel link 👇</blockquote></b>",
+                        reply_markup=InlineKeyboardMarkup([[
+                            InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=original_link)
+                        ]])
                     )
 
-                # ── STEP 4: Invite Link Create / Reuse ──────────────────
+                # ── STEP 4: Invite Link Create / Reuse ────────────────
                 async with channel_locks[channel_id]:
-                    old_link_info = await Seishiro.get_current_invite_link(channel_id)
-                    current_time = datetime.now()
-                    invite_link = None
+                    invite_link     = None
                     is_request_link = is_request
-                    
-                    if old_link_info:
-                        channel_data = await Seishiro.channel_data.find_one({"channel_id": channel_id})
-                        link_created_time = channel_data.get("invite_link_created_at") if channel_data else None
-                        if link_created_time and (current_time - link_created_time).total_seconds() < 240:
-                            invite_link = old_link_info["invite_link"]
-                            is_request_link = old_link_info["is_request"]
-                            logger.info(f"Reusing existing link for channel {channel_id}")
+                    current_time    = datetime.now()
+
+                    old = await Seishiro.get_current_invite_link(channel_id)
+                    if old:
+                        ch_doc     = await Seishiro.channel_data.find_one({"channel_id": channel_id})
+                        created_at = ch_doc.get("invite_link_created_at") if ch_doc else None
+                        if created_at and (current_time - created_at).total_seconds() < 240:
+                            invite_link     = old["invite_link"]
+                            is_request_link = old["is_request"]
+                            logger.info(f"Reusing link {channel_id}")
                         else:
                             try:
-                                await client.revoke_chat_invite_link(channel_id, old_link_info["invite_link"])
-                                logger.info(f"Revoked old link for channel {channel_id}")
+                                await client.revoke_chat_invite_link(channel_id, old["invite_link"])
                             except Exception as e:
-                                logger.warning(f"Could not revoke old link: {e}")
-                    
+                                logger.warning(f"Revoke failed: {e}")
+
                     if not invite_link:
                         try:
-                            invite = await client.create_chat_invite_link(
+                            inv = await client.create_chat_invite_link(
                                 chat_id=channel_id,
                                 expire_date=datetime.now() + timedelta(minutes=5),
                                 creates_join_request=is_request
                             )
-                            invite_link = invite.invite_link
+                            invite_link = inv.invite_link
                             await Seishiro.save_invite_link(channel_id, invite_link, is_request_link)
-                            logger.info(f"Created new link for channel {channel_id}")
+                            logger.info(f"New link created {channel_id}")
                         except Exception as e:
-                            logger.error(f"create_chat_invite_link failed for {channel_id}: {e}")
+                            logger.error(f"create_chat_invite_link failed {channel_id}: {e}")
                             return await message.reply_text(
                                 f"<b><blockquote expandable>"
-                                f"Iɴᴠɪᴛᴇ ʟɪɴᴋ ʙᴀɴᴀɴᴇ ᴍᴇɪɴ ᴇʀʀᴏʀ.\n\n"
-                                f"Kᴀʀᴀɴ: {str(e)[:100]}"
-                                f"</blockquote></b>",
-                                parse_mode=ParseMode.HTML
+                                f"Invite link banane mein error.\nKaaran: {str(e)[:100]}"
+                                f"</blockquote></b>"
                             )
-                    
-                    button = InlineKeyboardMarkup([[InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=invite_link)]])
-                    
-                    wait_msg = await message.reply_text(
-                        "<b><i>ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ...</i></b>",
-                        parse_mode=ParseMode.HTML
+
+                    # ── STEP 5: Shortener (ads → earnings) ────────────
+                    # Premium user → direct link (no ads)
+                    # Free user   → shortener link (ads dikhenge → paisa milega)
+                    display_link = await get_invite_link_with_ads(
+                        client, user_id, invite_link
                     )
-                    
+                    logger.info(
+                        f"Link user {user_id}: "
+                        f"{'direct/premium' if display_link == invite_link else 'shortened/free'}"
+                    )
+
+                    button = InlineKeyboardMarkup([[
+                        InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=display_link)
+                    ]])
+
+                    wait_msg = await message.reply_text("<b><i>ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ...</i></b>")
                     await asyncio.sleep(0.5)
                     await wait_msg.delete()
-                    
-                    link_share_msg = await message.reply_text(
-                        "<b><blockquote expandable>ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ! ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ</blockquote></b>",
-                        reply_markup=button,
-                        parse_mode=ParseMode.HTML
-                    )
-                    
-                    note_msg = await message.reply_text(
-                        "<b>⚠️ Wᴀʀɴɪɴɢ ⚠️</b>\n\n<blockquote><b><i>Tʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ɪɴ ғᴇᴡ ᴍɪɴᴜᴛᴇs. Iғ ᴛʜᴇ ʟɪɴᴋ ɪs ᴇxᴘɪʀᴇᴅ so ᴛʀʏ ᴀɢᴀɪɴ.</i></b></blockquote>",
-                        parse_mode=ParseMode.HTML
-                    )
-                    
-                    # 🔥 FIX: Dono messages 5 minutes mein delete honge
-                    asyncio.create_task(delete_after_delay(note_msg, 300))
-                    asyncio.create_task(delete_after_delay(link_share_msg, 300))
-                    asyncio.create_task(revoke_invite_after_5_minutes(client, channel_id, invite_link, is_request))
-                
-            except Exception as e:
-                logger.error(f"Error processing deep link: {e}")
-                await message.reply_text(
-                    "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>",
-                    parse_mode=ParseMode.HTML
-                )
-                # Normal /start (no deep link)
-        else:
-            user_id = message.from_user.id
 
-            # Check if user is owner or admin in database
+                    link_msg = await message.reply_text(
+                        "<b><blockquote expandable>"
+                        "ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ! ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ"
+                        "</blockquote></b>",
+                        reply_markup=button
+                    )
+
+                    note_msg = await message.reply_text(
+                        "<b>⚠️ Warning ⚠️</b>\n\n"
+                        "<blockquote><b><i>Yeh message aur link kuch minutes mein "
+                        "auto-delete ho jayega. Agar link expire ho jaaye toh dobara try karein.</i></b></blockquote>"
+                    )
+
+                    asyncio.create_task(delete_after_delay(note_msg, 300))
+                    asyncio.create_task(delete_after_delay(link_msg, 300))
+                    asyncio.create_task(revoke_invite_after_5_minutes(
+                        client, channel_id, invite_link, is_request
+                    ))
+
+            except Exception as e:
+                logger.error(f"Deep link error: {e}", exc_info=True)
+                await message.reply_text(
+                    "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>"
+                )
+
+        # ── Normal /start (no deep link) ──────────────────────────────
+        else:
             is_admin = (user_id == OWNER_ID) or await Seishiro.is_admin(user_id)
 
             if is_admin:
-                # Show Settings button for admins/owner
-                inline_buttons = InlineKeyboardMarkup(
+                inline_buttons = InlineKeyboardMarkup([
                     [
-                        [
-                            InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data="about"),
-                            InlineKeyboardButton("Hᴇʟᴘ •", callback_data="help")
-                        ],
-                        [
-                            InlineKeyboardButton("Sᴇᴛᴛɪɴɢs", callback_data="settings_main")
-                        ]
-                    ]
-                )
+                        InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data="about"),
+                        InlineKeyboardButton("Hᴇʟᴘ •", callback_data="help")
+                    ],
+                    [InlineKeyboardButton("⚙️ Sᴇᴛᴛɪɴɢs", callback_data="settings_main")],
+                    [InlineKeyboardButton("💎 Pʀᴇᴍɪᴜᴍ", callback_data="prem_plans")],
+                ])
             else:
-                # Hide Settings for normal users
-                inline_buttons = InlineKeyboardMarkup(
+                inline_buttons = InlineKeyboardMarkup([
                     [
-                        [
-                            InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data="about"),
-                            InlineKeyboardButton("Hᴇʟᴘ •", callback_data="help")
-                        ]
-                    ]
-                )
+                        InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data="about"),
+                        InlineKeyboardButton("Hᴇʟᴘ •", callback_data="help")
+                    ],
+                    [InlineKeyboardButton("💎 Pʀᴇᴍɪᴜᴍ", callback_data="prem_plans")],
+                ])
+
+            caption = START_MSG.format(
+                first=message.from_user.first_name,
+                last=message.from_user.last_name or "",
+                username="@" + message.from_user.username if message.from_user.username else "N/A",
+                mention=message.from_user.mention,
+                id=message.from_user.id
+            )
 
             try:
                 await message.reply_photo(
                     photo=START_PIC,
-                    caption=START_MSG.format(
-                        first=message.from_user.first_name,
-                        last=message.from_user.last_name or "",
-                        username="@" + message.from_user.username if message.from_user.username else None,
-                        mention=message.from_user.mention,
-                        id=message.from_user.id
-                    ),
+                    caption=caption,
                     reply_markup=inline_buttons
                 )
             except Exception as e:
-                logger.warning(f"Failed to send start photo: {e}")
-                await message.reply_text(
-                    START_MSG.format(
-                        first=message.from_user.first_name,
-                        last=message.from_user.last_name or "",
-                        username="@" + message.from_user.username if message.from_user.username else None,
-                        mention=message.from_user.mention,
-                        id=message.from_user.id
-                    ),
-                    reply_markup=inline_buttons
-                )
+                logger.warning(f"Photo failed: {e}")
+                await message.reply_text(caption, reply_markup=inline_buttons)
 
     except Exception as e:
-        logger.error(f"FATAL ERROR in start_command: {e}", exc_info=True)
+        logger.error(f"FATAL start_command: {e}", exc_info=True)
         await message.reply_text(
-            f"<b>An unexpected error occurred. Please try again later.</b>\n\n"
-            f"<blockquote>If this persists, contact support.</blockquote>",
-            parse_mode=ParseMode.HTML
+            "<b>An unexpected error occurred. Please try again later.</b>\n\n"
+            "<blockquote>If this persists, contact support.</blockquote>"
         )
-                
+
+
+# ═══════════════════════════════════════════
+# BROADCAST
+# ═══════════════════════════════════════════
+
 @Bot.on_message(filters.command("broadcast") & filters.private & admin)
 async def broadcast_handler(bot: Client, m: Message):
     try:
-        # Check if command is used as a reply
         if not m.reply_to_message:
             return await m.reply_text(
-                "<b>⚠️ Pʟᴇᴀsᴇ ʀᴇᴘʟʏ ᴛᴏ ᴀ ᴍᴇssᴀɢᴇ ᴛᴏ ʙʀᴏᴀᴅᴄᴀsᴛ ɪᴛ!</b>\n\n"
-                "<i>Usᴀɢᴇ: Rᴇᴘʟʏ ᴛᴏ ᴀɴʏ ᴍᴇssᴀɢᴇ ᴀɴᴅ ᴜsᴇ /broadcast</i>",
-                parse_mode=ParseMode.HTML
+                "<b>⚠️ Reply to a message and use /broadcast</b>"
             )
-        
+
         try:
             all_users = await Seishiro.get_all_users()
         except Exception as e:
-            logger.error(f"Error fetching users from database: {e}")
-            return await m.reply_text(
-                "<b>❌ Eʀʀᴏʀ ғᴇᴛᴄʜɪɴɢ ᴜsᴇʀs ғʀᴏᴍ ᴅᴀᴛᴀʙᴀsᴇ!</b>",
-                parse_mode=ParseMode.HTML
-            )
-        
+            return await m.reply_text(f"<b>❌ Error fetching users: {e}</b>")
+
         broadcast_msg = m.reply_to_message
-        
-        try:
-            sts_msg = await m.reply_text("Bʀᴏᴀᴅᴄᴀsᴛ Sᴛᴀʀᴛᴇᴅ...!!")
-        except Exception as e:
-            logger.error(f"Error sending broadcast start message: {e}")
-            return
-        
-        done = 0
-        failed = 0
-        success = 0
+        sts_msg       = await m.reply_text("📤 Broadcast started...")
+
+        done = failed = success = 0
         start_time = time.time()
-        
+
         try:
             total_users = await Seishiro.total_users_count()
-        except Exception as e:
-            logger.error(f"Error getting total users count: {e}")
+        except Exception:
             total_users = 0
-        
+
         try:
             async for user in all_users:
                 try:
@@ -569,112 +522,86 @@ async def broadcast_handler(bot: Client, m: Message):
                     if sts == 400:
                         try:
                             await Seishiro.delete_user(user['_id'])
-                        except Exception as e:
-                            logger.error(f"Error deleting user {user['_id']}: {e}")
+                        except Exception:
+                            pass
                     done += 1
-                    
-                    # Update status every 20 users
+
                     if done % 20 == 0:
                         try:
                             await sts_msg.edit(
-                                f"Broadcast In Progress: \n\n"
-                                f"Total Users {total_users} \n"
-                                f"Completed : {done} / {total_users}\n"
-                                f"Success : {success}\n"
-                                f"Failed : {failed}"
+                                f"📤 Broadcast in progress...\n\n"
+                                f"Total: {total_users}\n"
+                                f"Done: {done}/{total_users}\n"
+                                f"✅ Success: {success}  ❌ Failed: {failed}"
                             )
-                        except FloodWait as e:
-                            logger.warning(f"FloodWait during status update: waiting {e.value}s")
-                            await asyncio.sleep(e.value)
-                        except Exception as e:
-                            logger.error(f"Error updating broadcast status: {e}")
-                            
+                        except FloodWait as fw:
+                            await asyncio.sleep(fw.value)
+                        except Exception:
+                            pass
+
                 except Exception as e:
-                    logger.error(f"Error processing user {user.get('_id', 'unknown')}: {e}")
+                    logger.error(f"Broadcast user {user.get('_id')} error: {e}")
                     failed += 1
-                    done += 1
+                    done   += 1
                     continue
-            
-            # Calculate completion time
+
             completed_in = timedelta(seconds=int(time.time() - start_time))
-            
-            # Send final status
             try:
                 await sts_msg.edit(
-                    f"Bʀᴏᴀᴅᴄᴀꜱᴛ Cᴏᴍᴩʟᴇᴛᴇᴅ: \n"
-                    f"Cᴏᴍᴩʟᴇᴛᴇᴅ Iɴ {completed_in}.\n\n"
-                    f"Total Users {total_users}\n"
-                    f"Completed: {done} / {total_users}\n"
-                    f"Success: {success}\n"
-                    f"Failed: {failed}"
+                    f"✅ Broadcast Complete!\n\n"
+                    f"Time: {completed_in}\n"
+                    f"Total: {total_users} | Done: {done}\n"
+                    f"✅ Success: {success}  ❌ Failed: {failed}"
                 )
-            except Exception as e:
-                logger.error(f"Error sending final broadcast status: {e}")
-                # Try sending as new message if edit fails
-                try:
-                    await m.reply_text(
-                        f"Bʀᴏᴀᴅᴄᴀꜱᴛ Cᴏᴍᴩʟᴇᴛᴇᴅ: \n"
-                        f"Cᴏᴍᴩʟᴇᴛᴇᴅ Iɴ {completed_in}.\n\n"
-                        f"Total Users {total_users}\n"
-                        f"Completed: {done} / {total_users}\n"
-                        f"Success: {success}\n"
-                        f"Failed: {failed}"
-                    )
-                except Exception as e2:
-                    logger.error(f"Error sending fallback broadcast status: {e2}")
-                    
+            except Exception:
+                await m.reply_text(
+                    f"✅ Broadcast done. Success: {success}, Failed: {failed}"
+                )
+
         except Exception as e:
-            logger.error(f"Critical error during broadcast loop: {e}")
+            logger.error(f"Broadcast loop error: {e}")
             try:
                 await sts_msg.edit(
-                    f"<b>❌ Bʀᴏᴀᴅᴄᴀsᴛ Fᴀɪʟᴇᴅ!</b>\n\n"
-                    f"Completed: {done}\n"
-                    f"Success: {success}\n"
-                    f"Failed: {failed}\n\n"
-                    f"<blockquote expandable><b>Eʀʀᴏʀ:</b> {str(e)}</blockquote>",
-                    parse_mode=ParseMode.HTML
+                    f"<b>❌ Broadcast Failed!</b>\n\n"
+                    f"Done: {done} | ✅ {success} | ❌ {failed}\n\n"
+                    f"<blockquote expandable>Error: {e}</blockquote>"
                 )
-            except:
+            except Exception:
                 pass
-                
+
     except Exception as e:
-        logger.error(f"Fatal error in broadcast_handler: {e}")
-        try:
-            await m.reply_text(
-                f"<b>❌ Aɴ ᴜɴᴇxᴘᴇᴄᴛᴇᴅ ᴇʀʀᴏʀ ᴏᴄᴄᴜʀʀᴇᴅ! {e}</b>\n\n"
-                f"<i>Pʟᴇᴀsᴇ ᴄᴏɴᴛᴀᴄᴛ ᴛʜᴇ ᴅᴇᴠᴇʟᴏᴘᴇʀ.</i>",
-                parse_mode=ParseMode.HTML
-            )
-        except:
-            pass
+        logger.error(f"broadcast_handler fatal: {e}")
+        await m.reply_text(f"<b>❌ Error: {e}</b>")
+
+
+# ═══════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════
 
 async def send_msg(user_id, message):
     try:
         await message.copy(chat_id=int(user_id))
         return 200
     except FloodWait as e:
-        logger.warning(f"FloodWait for user {user_id}: waiting {e.value}s")
         await asyncio.sleep(e.value)
         return await send_msg(user_id, message)
     except InputUserDeactivated:
-        logger.info(f"{user_id} : Deactivated")
         return 400
     except UserIsBlocked:
-        logger.info(f"{user_id} : Blocked The Bot")
         return 400
     except PeerIdInvalid:
-        logger.info(f"{user_id} : User ID Invalid")
         return 400
     except RPCError as e:
-        logger.error(f"{user_id} : RPC Error - {e}")
+        logger.error(f"RPC error {user_id}: {e}")
         return 500
     except Exception as e:
-        logger.error(f"{user_id} : Unexpected error - {e}")
+        logger.error(f"send_msg error {user_id}: {e}")
         return 500
 
-async def delete_after_delay(msg, delay):
+
+async def delete_after_delay(msg, delay: int):
     await asyncio.sleep(delay)
     try:
         await msg.delete()
-    except:
+    except Exception:
         pass
