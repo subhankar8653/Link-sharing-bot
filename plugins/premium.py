@@ -717,7 +717,8 @@ async def cmd_plan(client: Bot, msg: Message):
 async def cb_plans(client: Bot, cq: CallbackQuery):
     plans = await get_star_plans()
     ui    = await get_premium_ui()
-    btns  = [
+
+    btns = [
         [InlineKeyboardButton(f"⭐ {s} Stars → {d}", callback_data=f"prem_buy_{s}")]
         for s, d in sorted(plans.items())
     ]
@@ -725,27 +726,47 @@ async def cb_plans(client: Bot, cq: CallbackQuery):
         btns.append([InlineKeyboardButton("💰 Pay via UPI", callback_data="prem_upi")])
     btns.append([InlineKeyboardButton("❌ Close", callback_data="prem_close")])
 
-    plans_text = "\n".join(f"• ⭐ <b>{s} Stars</b> → {d}" for s, d in sorted(plans.items()))
+    plans_text = (
+        "\n".join(f"• ⭐ <b>{s} Stars</b> → {d}" for s, d in sorted(plans.items()))
+        if plans else "<i>Koi plan set nahi. Owner se contact karo.</i>"
+    )
+    caption = f"<b>💎 Premium Plans</b>\n\n{plans_text}\n\n<i>⭐ Star payment — instant & secure!</i>"
+    kb      = InlineKeyboardMarkup(btns)
+
+    # Message type ke hisaab se edit karo
     try:
-        await cq.message.edit_caption(
-            caption=f"<b>💎 Premium Plans</b>\n\n{plans_text}\n\n<i>Star payment instant & secure!</i>",
-            reply_markup=InlineKeyboardMarkup(btns)
-        )
+        if cq.message.photo:
+            await cq.message.edit_caption(caption=caption, reply_markup=kb)
+        else:
+            await cq.message.edit_text(caption, reply_markup=kb)
     except Exception:
-        await cq.message.reply_text(
-            f"<b>💎 Premium Plans</b>\n\n{plans_text}",
-            reply_markup=InlineKeyboardMarkup(btns)
-        )
+        # Edit nahi hua — naya message bhejo (purana delete)
+        try:
+            await cq.message.delete()
+        except Exception:
+            pass
+        try:
+            await client.send_photo(
+                cq.message.chat.id,
+                photo=ui["sub_img"],
+                caption=caption,
+                reply_markup=kb
+            )
+        except Exception:
+            await client.send_message(cq.message.chat.id, caption, reply_markup=kb)
+
     await cq.answer()
 
 
 @Bot.on_callback_query(filters.regex(r"^prem_buy_\d+$"))
 async def cb_buy(client: Bot, cq: CallbackQuery):
     try:
-        stars = int(cq.data.split("_")[2])
+        # prem_buy_40 → split("_") = ["prem","buy","40"] → index -1
+        stars = int(cq.data.split("_")[-1])
         plans = await get_star_plans()
         if stars not in plans:
-            return await cq.answer("⚠️ Plan exist nahi karta.", show_alert=True)
+            return await cq.answer("⚠️ Yeh plan exist nahi karta.", show_alert=True)
+
         dur = plans[stars]
         await client.send_invoice(
             chat_id=cq.message.chat.id,
@@ -753,7 +774,7 @@ async def cb_buy(client: Bot, cq: CallbackQuery):
             description=f"Pay {stars} Stars → Premium for {dur}",
             payload=f"premium_{stars}",
             currency="XTR",
-            prices=[LabeledPrice(label="Premium", amount=stars)],
+            prices=[LabeledPrice(label="Premium Subscription", amount=stars)],
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("❌ Cancel", callback_data="prem_close")
             ]])
@@ -761,7 +782,7 @@ async def cb_buy(client: Bot, cq: CallbackQuery):
         await cq.answer()
     except Exception as e:
         logger.error(f"Invoice error: {e}")
-        await cq.answer("❌ Error. Try again.", show_alert=True)
+        await cq.answer(f"❌ Error processing. Try again.\n{str(e)[:60]}", show_alert=True)
 
 
 @Bot.on_callback_query(filters.regex("^prem_upi$"))
@@ -780,18 +801,23 @@ async def cb_upi(client: Bot, cq: CallbackQuery):
     btns = []
     if ui["contact_link"]:
         btns.append([InlineKeyboardButton("📩 Contact Owner", url=ui["contact_link"])])
-    btns.append([InlineKeyboardButton("⬅️ Back", callback_data="prem_plans")])
+    btns.append([InlineKeyboardButton("⬅️ Back to Plans", callback_data="prem_plans")])
+    kb = InlineKeyboardMarkup(btns)
 
+    # QR code photo ke saath bhejo
     if ui["qr_code"]:
         try:
-            await cq.message.reply_photo(
-                photo=ui["qr_code"], caption=text,
-                reply_markup=InlineKeyboardMarkup(btns)
-            )
+            await cq.message.reply_photo(photo=ui["qr_code"], caption=text, reply_markup=kb)
             return await cq.answer()
-        except Exception:
-            pass
-    await cq.message.reply_text(text, reply_markup=InlineKeyboardMarkup(btns))
+        except Exception as e:
+            logger.warning(f"QR photo failed: {e}")
+
+    # Photo nahi gaya — text message
+    try:
+        await cq.message.reply_text(text, reply_markup=kb)
+    except Exception as e:
+        logger.error(f"UPI reply failed: {e}")
+        await cq.answer("Error showing UPI info.", show_alert=True)
     await cq.answer()
 
 
@@ -814,7 +840,10 @@ async def cb_toggle_shortener(client: Bot, cq: CallbackQuery):
     new_val = not s["enabled"]
     await _set_bot_config("shortener_enabled", new_val)
     await cq.answer(f"{'✅ Shortener ON' if new_val else '❌ Shortener OFF'}", show_alert=True)
-    await cq.message.delete()
+    try:
+        await cq.message.delete()
+    except Exception:
+        pass
 
 
 @Bot.on_callback_query(filters.regex("^confirm_remove_shortener$"))
@@ -825,7 +854,10 @@ async def cb_confirm_remove(client: Bot, cq: CallbackQuery):
     await _set_bot_config("shortener_website", "")
     await _set_bot_config("shortener_enabled", False)
     await cq.answer("🗑 Shortener removed!", show_alert=True)
-    await cq.message.delete()
+    try:
+        await cq.message.delete()
+    except Exception:
+        pass
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
