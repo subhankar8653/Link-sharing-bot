@@ -226,10 +226,23 @@ async def _build_plans_ui():
         "\n".join(f"• ⭐ <b>{s} Stars</b> → {d}" for s, d in sorted(plans.items()))
         if plans else ""
     )
-    custom_text = (
-        "\n".join(f"• <b>{p['label']}</b> → {p['duration']}" for p in custom_plans)
-        if custom_plans else ""
-    )
+
+    # Custom plans text — wallet ke saath match karke dikhao
+    custom_lines = []
+    for p in custom_plans:
+        custom_lines.append(f"• <b>{p['label']}</b> → {p['duration']}")
+    # Agar wallet set hai but koi custom plan nahi — phir bhi dikhao
+    custom_plan_keys = {p.get("currency_key") for p in custom_plans}
+    for key, address in wallets.items():
+        if key not in custom_plan_keys:
+            meta = WALLET_META.get(key, {})
+            if key == "rs":
+                custom_lines.append(f"• <b>Indian Rupees (UPI)</b> — Contact for pricing")
+            else:
+                custom_lines.append(
+                    f"• <b>{meta.get('name','?')} ({meta.get('network','?')})</b> — Contact for pricing"
+                )
+    custom_text = "\n".join(custom_lines)
 
     plans_section = ""
     if star_text:
@@ -257,27 +270,19 @@ async def _build_plans_ui():
             f"⭐ {stars} Stars → {dur}", callback_data=f"prem_buy_{stars}"
         )])
 
-    # Custom payment currencies (grouped)
-    has_other = bool(wallets) or bool(custom_plans)
-    if has_other:
-        # Show one button per available currency
-        shown = set()
-        for p in custom_plans:
-            key = p.get("currency_key", "")
-            if key and key not in shown and key in wallets:
-                shown.add(key)
-                btns.append([InlineKeyboardButton(
-                    f"💳 Pay via {wallet_label_short(key)}",
-                    callback_data=f"prem_pay_{key}"
-                )])
-        # Agar wallets set hain but custom plans mein currency_key nahi (old data)
-        for key in wallets:
-            if key not in shown:
-                shown.add(key)
-                btns.append([InlineKeyboardButton(
-                    f"💳 Pay via {wallet_label_short(key)}",
-                    callback_data=f"prem_pay_{key}"
-                )])
+    # Custom payment buttons — ek button per wallet jo set hai
+    # Sirf wallets pe depend karo, custom_plans optional hai
+    for key, address in wallets.items():
+        meta = WALLET_META.get(key, {})
+        if not meta:
+            continue
+        symbol  = meta.get("symbol", key.upper())
+        network = meta.get("network", "")
+        if key == "rs":
+            btn_label = f"💰 Pay via Indian Rupees (UPI)"
+        else:
+            btn_label = f"💳 Pay via {symbol} · {network}"
+        btns.append([InlineKeyboardButton(btn_label, callback_data=f"prem_pay_{key}")])
 
     btns.append([InlineKeyboardButton("❌ Close", callback_data="prem_close")])
     return caption, InlineKeyboardMarkup(btns), ui
