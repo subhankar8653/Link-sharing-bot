@@ -804,4 +804,66 @@ class Master:
             logging.error(f"get_all_premium_users error: {e}")
             return []
 
+    # ══════════════════════════════════════════
+    # VERIFY TOKEN SYSTEM
+    # Shortener complete hone ke baad user bot
+    # link pe aata hai — tab token se verify karke
+    # temp premium dete hain + fresh channel link
+    # ══════════════════════════════════════════
+
+    async def create_verify_token(self, user_id: int, channel_id: int, token: str) -> bool:
+        """
+        Shortener se pehle ek token DB mein save karo.
+        Token = random string jo bot deep link mein encode hoga.
+        """
+        import datetime
+        try:
+            await self.database['verify_tokens'].update_one(
+                {"token": token},
+                {"$set": {
+                    "token":      token,
+                    "user_id":    int(user_id),
+                    "channel_id": int(channel_id),
+                    "created_at": datetime.datetime.now(),
+                    "used":       False,
+                }},
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logging.error(f"create_verify_token error: {e}")
+            return False
+
+    async def get_verify_token(self, token: str) -> dict:
+        """Token ka data fetch karo."""
+        try:
+            doc = await self.database['verify_tokens'].find_one({"token": token})
+            return dict(doc) if doc else {}
+        except Exception as e:
+            logging.error(f"get_verify_token error: {e}")
+            return {}
+
+    async def mark_token_used(self, token: str) -> bool:
+        """Token use ho gaya — mark karo taaki reuse na ho."""
+        try:
+            await self.database['verify_tokens'].update_one(
+                {"token": token},
+                {"$set": {"used": True}}
+            )
+            return True
+        except Exception as e:
+            logging.error(f"mark_token_used error: {e}")
+            return False
+
+    async def delete_old_tokens(self) -> None:
+        """1 ghante se purane tokens delete karo (cleanup)."""
+        import datetime
+        try:
+            cutoff = datetime.datetime.now() - datetime.timedelta(hours=1)
+            await self.database['verify_tokens'].delete_many(
+                {"created_at": {"$lt": cutoff}}
+            )
+        except Exception as e:
+            logging.error(f"delete_old_tokens error: {e}")
+
 Seishiro = Master(DB_URL, DB_NAME)
