@@ -351,6 +351,57 @@ async def cmd_set_sub_img(client: Bot, msg: Message):
     await msg.reply("✅ Subscription image set!")
 
 
+@Bot.on_message(filters.command("setverifytime") & filters.private)
+async def cmd_set_verify_time(client: Bot, msg: Message):
+    """
+    /setverifytime 12 hour
+    /setverifytime 24 hour
+    /setverifytime 6 hour
+
+    Shortener complete karne ke baad kitne time ka temp premium milega.
+    Is time mein user ko direct links milenge (no shortener, no FSub).
+    Time khatam → phir shortener complete karna padega.
+    """
+    if not await is_owner_or_admin(msg.from_user.id):
+        return await msg.reply("⛔ Sirf admins ke liye!")
+
+    parts = msg.command
+    if len(parts) < 3:
+        cur = await _get_bot_config()
+        cur_sec = cur.get("verify_premium_seconds", 86400)
+        cur_hr  = cur_sec // 3600
+        return await msg.reply(
+            f"<b>⏰ Current Verify Time: <code>{cur_hr} hours</code></b>\n\n"
+            f"<b>Usage:</b> <code>/setverifytime amount unit</code>\n\n"
+            f"<b>Examples:</b>\n"
+            f"<code>/setverifytime 6 hour</code>\n"
+            f"<code>/setverifytime 12 hour</code>\n"
+            f"<code>/setverifytime 24 hour</code>\n"
+            f"<code>/setverifytime 1 day</code>\n\n"
+            f"<i>Shortener complete karne ke baad user ko is time tak "
+            f"direct links milenge — koi ads nahi, koi FSub nahi.</i>"
+        )
+
+    time_str = parts[1] + parts[2]
+    seconds  = await get_seconds(time_str)
+    if seconds <= 0:
+        return await msg.reply(
+            "❌ Invalid time!\nUse: <code>6 hour / 12 hour / 24 hour / 1 day</code>"
+        )
+
+    await _set_bot_config("verify_premium_seconds", seconds)
+    hours = seconds // 3600
+    mins  = (seconds % 3600) // 60
+
+    display = f"{hours}h" if mins == 0 else f"{hours}h {mins}m"
+    await msg.reply(
+        f"✅ <b>Verify Time Set!</b>\n\n"
+        f"⏰ Duration: <b>{display}</b>\n\n"
+        f"Ab shortener complete karne wale users ko "
+        f"<b>{display}</b> tak direct links milenge."
+    )
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # PLANS MANAGEMENT COMMANDS (Admin)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
