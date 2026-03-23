@@ -69,13 +69,6 @@ async def settings_callback(client: Bot, callback_query):
     cb_data = callback_query.data
     print(f"Callback received: {cb_data} from user {user_id}")
 
-    # ── Premium callbacks — premium.py handle karega, yahan ignore karo ──
-    PREMIUM_PREFIXES = (
-        "prem_", "toggle_shortener", "confirm_remove_shortener"
-    )
-    if any(cb_data.startswith(p) for p in PREMIUM_PREFIXES):
-        return  # premium.py ke handlers handle karenge
-
     try:
         is_admin_user = user_id == OWNER_ID or await Seishiro.is_admin(user_id)
 

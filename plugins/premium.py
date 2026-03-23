@@ -713,7 +713,7 @@ async def cmd_plan(client: Bot, msg: Message):
 # CALLBACKS
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-@Bot.on_callback_query(filters.regex("^prem_plans$"))
+@Bot.on_callback_query(filters.regex("^prem_plans$"), group=-1)
 async def cb_plans(client: Bot, cq: CallbackQuery):
     plans = await get_star_plans()
     ui    = await get_premium_ui()
@@ -758,7 +758,7 @@ async def cb_plans(client: Bot, cq: CallbackQuery):
     await cq.answer()
 
 
-@Bot.on_callback_query(filters.regex(r"^prem_buy_\d+$"))
+@Bot.on_callback_query(filters.regex(r"^prem_buy_\d+$"), group=-1)
 async def cb_buy(client: Bot, cq: CallbackQuery):
     try:
         # prem_buy_40 → split("_") = ["prem","buy","40"] → index -1
@@ -785,7 +785,7 @@ async def cb_buy(client: Bot, cq: CallbackQuery):
         await cq.answer(f"❌ Error processing. Try again.\n{str(e)[:60]}", show_alert=True)
 
 
-@Bot.on_callback_query(filters.regex("^prem_upi$"))
+@Bot.on_callback_query(filters.regex("^prem_upi$"), group=-1)
 async def cb_upi(client: Bot, cq: CallbackQuery):
     ui    = await get_premium_ui()
     plans = await get_star_plans()
@@ -821,7 +821,7 @@ async def cb_upi(client: Bot, cq: CallbackQuery):
     await cq.answer()
 
 
-@Bot.on_callback_query(filters.regex("^prem_close$"))
+@Bot.on_callback_query(filters.regex("^prem_close$"), group=-1)
 async def cb_close(client: Bot, cq: CallbackQuery):
     try:
         await cq.message.delete()
@@ -830,7 +830,7 @@ async def cb_close(client: Bot, cq: CallbackQuery):
     await cq.answer()
 
 
-@Bot.on_callback_query(filters.regex("^toggle_shortener$"))
+@Bot.on_callback_query(filters.regex("^toggle_shortener$"), group=-1)
 async def cb_toggle_shortener(client: Bot, cq: CallbackQuery):
     if not await is_owner_or_admin(cq.from_user.id):
         return await cq.answer("⛔ Permission denied!", show_alert=True)
@@ -846,7 +846,7 @@ async def cb_toggle_shortener(client: Bot, cq: CallbackQuery):
         pass
 
 
-@Bot.on_callback_query(filters.regex("^confirm_remove_shortener$"))
+@Bot.on_callback_query(filters.regex("^confirm_remove_shortener$"), group=-1)
 async def cb_confirm_remove(client: Bot, cq: CallbackQuery):
     if not await is_owner_or_admin(cq.from_user.id):
         return await cq.answer("⛔ Permission denied!", show_alert=True)
