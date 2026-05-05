@@ -932,12 +932,14 @@ class Master:
         channel_id: int,
         req_encoded: str,
         link_msg_id: int = None,
-        link_chat_id: int = None
+        link_chat_id: int = None,
+        invite_link: str = None
     ) -> bool:
         """
         Jab user request link click kare, uska pending data save karo.
+        invite_link  = wahi join link jo user ko diya tha (approve pe button mein aayega)
         link_msg_id  = bot ka 'HERE IS YOUR LINK' message ID (approve pe delete hoga)
-        link_chat_id = us message ka chat_id (user ka private chat)
+        link_chat_id = us message ka chat_id
         """
         try:
             data = {
@@ -950,6 +952,8 @@ class Master:
                 data["link_msg_id"] = link_msg_id
             if link_chat_id is not None:
                 data["link_chat_id"] = link_chat_id
+            if invite_link is not None:
+                data["invite_link"] = invite_link
 
             await self.database['user_request_links'].update_one(
                 {"user_id": user_id, "channel_id": channel_id},
