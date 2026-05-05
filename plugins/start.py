@@ -26,9 +26,71 @@ from helper_func import *
 
 logger = logging.getLogger(__name__)
 
+# ── TTL Chat Cache (10 minute) ────────────────────────────────────────────────
+# Ek hi channel ko baar baar GetFullChannel se fetch karne pe FloodWait aata hai.
+# Cache mein rakhne se Telegram API calls drastically kam ho jaate hain.
+_CHAT_CACHE: dict[int, tuple] = {}   # {channel_id: (chat_object, timestamp)}
+_CHAT_CACHE_TTL = 600                # 10 minute
+
+def _get_cached_chat(cid: int):
+    entry = _CHAT_CACHE.get(cid)
+    if entry:
+        obj, ts = entry
+        if (datetime.now() - ts).total_seconds() < _CHAT_CACHE_TTL:
+            return obj
+    return None
+
+def _set_cached_chat(cid: int, obj):
+    _CHAT_CACHE[cid] = (obj, datetime.now())
+
+
+async def _safe_get_chat(client, cid: int, retries: int = 3):
+    """
+    get_chat ka flood-safe wrapper.
+    FloodWait aaye toh wait karke retry karo (max 3 baar).
+    Cache se milega toh Telegram call hi nahi hoga.
+    """
+    cached = _get_cached_chat(cid)
+    if cached:
+        return cached
+
+    for attempt in range(retries):
+        try:
+            data = await client.get_chat(cid)
+            _set_cached_chat(cid, data)
+            return data
+        except FloodWait as fw:
+            wait = fw.value + 2
+            logger.warning(f"FloodWait {wait}s on get_chat({cid}), attempt {attempt+1}/{retries}")
+            await asyncio.sleep(wait)
+        except PeerIdInvalid:
+            raise
+        except Exception as e:
+            logger.error(f"get_chat({cid}) error: {e}")
+            raise
+    raise Exception(f"get_chat({cid}) failed after {retries} retries (FloodWait)")
+
+
+async def _safe_get_member(client, cid: int, uid: int, retries: int = 3):
+    """
+    get_chat_member ka flood-safe wrapper.
+    FloodWait aaye toh wait karke retry karo.
+    """
+    for attempt in range(retries):
+        try:
+            return await client.get_chat_member(cid, uid)
+        except FloodWait as fw:
+            wait = fw.value + 2
+            logger.warning(f"FloodWait {wait}s on get_chat_member({cid},{uid}), attempt {attempt+1}/{retries}")
+            await asyncio.sleep(wait)
+        except Exception:
+            raise
+    raise Exception(f"get_chat_member({cid},{uid}) failed after {retries} retries (FloodWait)")
+
+
+# Legacy dict — kuch jagah directly use hota tha, ab _safe_get_chat use karo
 chat_data_cache = {}
 channel_locks   = defaultdict(Lock)
-
 
 # ═══════════════════════════════════════════
 # ADMIN FILTER
@@ -58,7 +120,7 @@ def check_fsub(func):
 
         async def is_sub(uid, cid):
             try:
-                m = await client.get_chat_member(cid, uid)
+                m = await _safe_get_member(client, cid, uid)
                 ok = m.status in {
                     ChatMemberStatus.OWNER,
                     ChatMemberStatus.ADMINISTRATOR,
@@ -133,7 +195,7 @@ async def not_joined(client: Client, message: Message):
 
             is_member = False
             try:
-                m         = await client.get_chat_member(cid, uid)
+                m         = await _safe_get_member(client, cid, uid)
                 is_member = m.status in {
                     ChatMemberStatus.OWNER,
                     ChatMemberStatus.ADMINISTRATOR,
@@ -152,12 +214,12 @@ async def not_joined(client: Client, message: Message):
                     data = chat_data_cache[cid]
                 else:
                     try:
-                        data = await client.get_chat(cid)
+                        data = await _safe_get_chat(client, cid)
                         chat_data_cache[cid] = data
                     except PeerIdInvalid:
                         if not await _force_resolve_peer(client, cid):
                             continue
-                        data = await client.get_chat(cid)
+                        data = await _safe_get_chat(client, cid)
                         chat_data_cache[cid] = data
 
                 mode = await Seishiro.get_channel_mode(cid)
@@ -226,9 +288,9 @@ async def not_joined(client: Client, message: Message):
 # ═══════════════════════════════════════════
 
 async def _resolve_peer_safe(client: Bot, channel_id: int) -> bool:
-    """Peer resolve karo — PeerIdInvalid pe deep resolve."""
+    """Peer resolve karo — PeerIdInvalid pe deep resolve, FloodWait pe retry."""
     try:
-        await client.get_chat(channel_id)
+        await _safe_get_chat(client, channel_id)
         return True
     except PeerIdInvalid:
         return await _force_resolve_peer(client, channel_id)
@@ -254,13 +316,21 @@ async def _get_fresh_invite_link(client: Bot, channel_id: int, is_request: bool)
                 pass
 
         try:
-            inv  = await client.create_chat_invite_link(
-                chat_id=channel_id,
-                expire_date=datetime.now() + timedelta(minutes=5),
-                creates_join_request=is_request
-            )
-            await Seishiro.save_invite_link(channel_id, inv.invite_link, is_request)
-            return inv.invite_link
+            for attempt in range(3):
+                try:
+                    inv  = await client.create_chat_invite_link(
+                        chat_id=channel_id,
+                        expire_date=datetime.now() + timedelta(minutes=5),
+                        creates_join_request=is_request
+                    )
+                    await Seishiro.save_invite_link(channel_id, inv.invite_link, is_request)
+                    return inv.invite_link
+                except FloodWait as fw:
+                    wait = fw.value + 2
+                    logger.warning(f"FloodWait {wait}s on create_invite_link({channel_id}), attempt {attempt+1}/3")
+                    await asyncio.sleep(wait)
+            logger.error(f"create_invite_link({channel_id}) failed after 3 retries")
+            return None
         except Exception as e:
             logger.error(f"create_invite_link failed {channel_id}: {e}")
             return None
@@ -457,7 +527,7 @@ async def start_command(client: Bot, message: Message):
 
                 # Peer resolve
                 try:
-                    chat = await client.get_chat(channel_id)
+                    chat = await _safe_get_chat(client, channel_id)
                     logger.info(f"Peer OK: {channel_id} → {chat.title}")
                 except PeerIdInvalid:
                     if not await _force_resolve_peer(client, channel_id):
