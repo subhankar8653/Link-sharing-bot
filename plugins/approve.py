@@ -74,54 +74,69 @@ async def on_join_request(client: Bot, message: ChatJoinRequest):
 async def _send_approve_notification(client: Bot, user, chat):
     """
     Jab user approve ho jaye, usse DM bhejo:
-    - Congratulations message
-    - Original request link (taaki woh join kar sake)
-    - Auto-delete 5 min baad
+    - Channel ka last message ka direct link (private channel link format)
+    - Purana 'HERE IS YOUR LINK' message delete karo
+    - Notification message bhi 5 min baad auto-delete
     """
     from database.database import Seishiro
-    
+
     try:
-        # User ka stored request link fetch karo
-        req_encoded = await Seishiro.get_user_request_link(user.id, chat.id)
-        
-        if req_encoded:
-            # Original request link reconstruct karo
-            join_link = f"https://t.me/{BOT_USERNAME}?start=req_{req_encoded}"
-        else:
-            # Fallback: fresh invite link banao
+        # ── Purana link_msg delete karo ───────────────────────────────
+        doc = await Seishiro.get_user_request_doc(user.id, chat.id)
+        if doc:
+            old_msg_id   = doc.get("link_msg_id")
+            old_chat_id  = doc.get("link_chat_id")
+            if old_msg_id and old_chat_id:
+                try:
+                    await client.delete_messages(old_chat_id, old_msg_id)
+                    print(f"🗑️ Deleted old link_msg {old_msg_id} for user {user.id}")
+                except Exception as e:
+                    print(f"⚠️ Could not delete old link_msg: {e}")
+
+        # ── Channel ka last message ID fetch karo ─────────────────────
+        # Private channel link format: https://t.me/c/CHANNEL_ID_WITHOUT_MINUS100/MSG_ID
+        join_url = None
+        try:
+            # Channel ID se -100 prefix hatao
+            raw_id = str(chat.id)
+            if raw_id.startswith("-100"):
+                raw_id = raw_id[4:]  # "-1003993344945" → "3993344945"
+
+            # Last message ID get karo
+            async for msg in client.get_chat_history(chat.id, limit=1):
+                last_msg_id = msg.id
+                join_url = f"https://t.me/c/{raw_id}/{last_msg_id}"
+                break
+        except Exception as e:
+            print(f"⚠️ Could not get last message: {e}")
+            # Fallback: channel ka simple link
             try:
-                from datetime import datetime, timedelta
-                inv = await client.create_chat_invite_link(
-                    chat_id=chat.id,
-                    expire_date=datetime.now() + timedelta(minutes=5),
-                    creates_join_request=False  # Direct join link
-                )
-                join_link = inv.invite_link
-            except Exception as e:
-                print(f"Fallback invite link error: {e}")
-                join_link = None
-        
-        # DM bhejo
+                if chat.username:
+                    join_url = f"https://t.me/{chat.username}"
+            except Exception:
+                pass
+
+        # ── Approve notification DM bhejo ─────────────────────────────
         text = (
             f"<b>✅ Aapki request accept kar li gayi!</b>\n\n"
             f"<blockquote>"
             f"<b>Channel:</b> {chat.title}\n\n"
             f"Niche button pe click karke channel join karein.\n"
-            f"<i>⚠️ Yeh link 5 minute mein auto-delete ho jayega.</i>"
+            f"<i>⚠️ Yeh message 5 minute mein auto-delete ho jayega.</i>"
             f"</blockquote>"
         )
-        
+
         buttons = []
-        if join_link:
-            buttons.append([InlineKeyboardButton("• ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ •", url=join_link)])
-        
+        if join_url:
+            buttons.append([InlineKeyboardButton("• ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ •", url=join_url)])
+
         sent_msg = await client.send_message(
             chat_id=user.id,
             text=text,
             reply_markup=InlineKeyboardMarkup(buttons) if buttons else None
         )
-        
-        # Cleanup: 5 min baad message delete karo + stored link delete
+
+        # ── Cleanup: 5 min baad delete + DB entry hata do ─────────────
         async def cleanup():
             await asyncio.sleep(300)
             try:
@@ -132,10 +147,10 @@ async def _send_approve_notification(client: Bot, user, chat):
                 await Seishiro.delete_user_request_link(user.id, chat.id)
             except Exception:
                 pass
-        
+
         asyncio.create_task(cleanup())
         print(f"✅ Approve notification sent to {user.id} for {chat.title}")
-        
+
     except Exception as e:
         print(f"⚠️ Could not send approve notification to {user.id}: {e}")
 

@@ -278,13 +278,8 @@ async def _send_invite_msg(message: Message, invite_link: str):
             InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=invite_link)
         ]])
     )
-    note_msg = await message.reply_text(
-        "<b>⚠️ Warning</b>\n\n"
-        "<blockquote><b><i>Yeh message aur link kuch minutes mein "
-        "auto-delete ho jayega.</i></b></blockquote>"
-    )
-    asyncio.create_task(delete_after_delay(note_msg, 300))
     asyncio.create_task(delete_after_delay(link_msg, 300))
+    return link_msg  # caller ke liye return karo taaki ID save ho sake
 
 
 async def delete_after_delay(msg, delay: int):
@@ -510,7 +505,15 @@ async def start_command(client: Bot, message: Message):
                         return await message.reply_text(
                             "<b><blockquote expandable>Invite link error. Dobara try karein.</blockquote></b>"
                         )
-                    return await _send_invite_msg(message, inv)
+                    sent = await _send_invite_msg(message, inv)
+                    # Request link tha → link_msg_id save karo for approve notification
+                    if is_request and sent:
+                        await Seishiro.save_user_request_link(
+                            uid, channel_id, b64,
+                            link_msg_id=sent.id,
+                            link_chat_id=sent.chat.id
+                        )
+                    return
 
                 # ── Free user → shortener flow ─────────────────────────
                 cfg          = await _get_bot_config()
@@ -523,7 +526,15 @@ async def start_command(client: Bot, message: Message):
                         return await message.reply_text(
                             "<b><blockquote expandable>Invite link error. Dobara try karein.</blockquote></b>"
                         )
-                    return await _send_invite_msg(message, inv)
+                    sent = await _send_invite_msg(message, inv)
+                    # Request link tha → link_msg_id save karo
+                    if is_request and sent:
+                        await Seishiro.save_user_request_link(
+                            uid, channel_id, b64,
+                            link_msg_id=sent.id,
+                            link_chat_id=sent.chat.id
+                        )
+                    return
 
                 # Shortener ON:
                 # 1. Token banao
