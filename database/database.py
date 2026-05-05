@@ -866,4 +866,107 @@ class Master:
         except Exception as e:
             logging.error(f"delete_old_tokens error: {e}")
 
+    # ══════════════════════════════════════════
+    # CHANNEL ALIAS METHODS
+    # Purana channel ban ho → naye channel pe redirect
+    # ══════════════════════════════════════════
+
+    async def set_channel_alias(self, old_channel_id: int, new_channel_id: int) -> bool:
+        """
+        Purane channel ka link naye channel pe point karo.
+        Jab bhi koi old channel ID ka link use karega, new channel ka invite milega.
+        """
+        try:
+            await self.database['channel_aliases'].update_one(
+                {"old_channel_id": old_channel_id},
+                {"$set": {
+                    "old_channel_id": old_channel_id,
+                    "new_channel_id": new_channel_id,
+                    "created_at": datetime.utcnow()
+                }},
+                upsert=True
+            )
+            logging.info(f"Alias set: {old_channel_id} → {new_channel_id}")
+            return True
+        except Exception as e:
+            logging.error(f"set_channel_alias error: {e}")
+            return False
+
+    async def get_channel_alias(self, channel_id: int) -> Optional[int]:
+        """
+        Agar channel ka alias set hai to naya channel ID return karo, warna None.
+        """
+        try:
+            doc = await self.database['channel_aliases'].find_one({"old_channel_id": channel_id})
+            return doc["new_channel_id"] if doc else None
+        except Exception as e:
+            logging.error(f"get_channel_alias error: {e}")
+            return None
+
+    async def remove_channel_alias(self, old_channel_id: int) -> bool:
+        """Alias remove karo."""
+        try:
+            result = await self.database['channel_aliases'].delete_one({"old_channel_id": old_channel_id})
+            return result.deleted_count > 0
+        except Exception as e:
+            logging.error(f"remove_channel_alias error: {e}")
+            return False
+
+    async def list_channel_aliases(self) -> list:
+        """Saare aliases list karo."""
+        try:
+            docs = await self.database['channel_aliases'].find({}).to_list(None)
+            return docs if docs else []
+        except Exception as e:
+            logging.error(f"list_channel_aliases error: {e}")
+            return []
+
+    # ══════════════════════════════════════════
+    # REQUEST NOTIFICATION - User ka pending link store karo
+    # Jab approve ho toh usse wahi link bhejo
+    # ══════════════════════════════════════════
+
+    async def save_user_request_link(self, user_id: int, channel_id: int, req_encoded: str) -> bool:
+        """
+        Jab user request link click kare, uska pending link save karo.
+        Approve hone ke baad yahi link bheja jayega.
+        """
+        try:
+            await self.database['user_request_links'].update_one(
+                {"user_id": user_id, "channel_id": channel_id},
+                {"$set": {
+                    "user_id": user_id,
+                    "channel_id": channel_id,
+                    "req_encoded": req_encoded,
+                    "created_at": datetime.utcnow()
+                }},
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logging.error(f"save_user_request_link error: {e}")
+            return False
+
+    async def get_user_request_link(self, user_id: int, channel_id: int) -> Optional[str]:
+        """User ka stored request encoded link fetch karo."""
+        try:
+            doc = await self.database['user_request_links'].find_one(
+                {"user_id": user_id, "channel_id": channel_id}
+            )
+            return doc["req_encoded"] if doc else None
+        except Exception as e:
+            logging.error(f"get_user_request_link error: {e}")
+            return None
+
+    async def delete_user_request_link(self, user_id: int, channel_id: int) -> bool:
+        """Notify ke baad link delete karo (cleanup)."""
+        try:
+            await self.database['user_request_links'].delete_one(
+                {"user_id": user_id, "channel_id": channel_id}
+            )
+            return True
+        except Exception as e:
+            logging.error(f"delete_user_request_link error: {e}")
+            return False
+
 Seishiro = Master(DB_URL, DB_NAME)
