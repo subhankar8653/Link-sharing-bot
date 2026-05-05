@@ -506,12 +506,12 @@ async def start_command(client: Bot, message: Message):
                             "<b><blockquote expandable>Invite link error. Dobara try karein.</blockquote></b>"
                         )
                     sent = await _send_invite_msg(message, inv)
-                    # Request link tha → link_msg_id save karo for approve notification
                     if is_request and sent:
                         await Seishiro.save_user_request_link(
                             uid, channel_id, b64,
                             link_msg_id=sent.id,
-                            link_chat_id=sent.chat.id
+                            link_chat_id=sent.chat.id,
+                            invite_link=inv
                         )
                     return
 
@@ -527,12 +527,12 @@ async def start_command(client: Bot, message: Message):
                             "<b><blockquote expandable>Invite link error. Dobara try karein.</blockquote></b>"
                         )
                     sent = await _send_invite_msg(message, inv)
-                    # Request link tha → link_msg_id save karo
                     if is_request and sent:
                         await Seishiro.save_user_request_link(
                             uid, channel_id, b64,
                             link_msg_id=sent.id,
-                            link_chat_id=sent.chat.id
+                            link_chat_id=sent.chat.id,
+                            invite_link=inv
                         )
                     return
 
