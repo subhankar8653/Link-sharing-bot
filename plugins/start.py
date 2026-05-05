@@ -444,9 +444,21 @@ async def start_command(client: Bot, message: Message):
                         "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>"
                     )
 
+                # ── Channel Alias Check ────────────────────────────────
+                # Agar purana channel ban ho gaya aur alias set hai,
+                # toh silently naye channel pe redirect karo
+                alias_id = await Seishiro.get_channel_alias(channel_id)
+                if alias_id:
+                    logger.info(f"Alias redirect: {channel_id} → {alias_id}")
+                    channel_id = alias_id
+
                 # Channel DB mein save
                 if not await Seishiro.channel_data.find_one({"channel_id": channel_id}):
                     await Seishiro.save_channel(channel_id)
+
+                # ── Request link save karo for approve notification ────
+                if is_request:
+                    await Seishiro.save_user_request_link(uid, channel_id, b64)
 
                 # Peer resolve
                 try:

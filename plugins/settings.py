@@ -1377,6 +1377,141 @@ async def gen_link_cmd(client: Bot, message: Message):
     except Exception as e:
         await message.reply(f"<b>ᴇʀʀᴏʀ:</b> <code>{str(e)}</code>")
 
+
+# ═══════════════════════════════════════════════════════
+# /linkalias - Channel Alias System
+# Purana channel ban ho jaye → naye channel pe redirect
+# ═══════════════════════════════════════════════════════
+
+@Bot.on_message(filters.command('linkalias') & filters.private & is_owner_or_admin)
+async def linkalias_cmd(client: Bot, message: Message):
+    """
+    Commands:
+      /linkalias set <purana_id> <naya_id>   → Alias set karo
+      /linkalias remove <purana_id>           → Alias hatao
+      /linkalias list                         → Saare aliases dekho
+    
+    Example:
+      /linkalias set -1003993344945 -1007282929287
+    """
+    args = message.command[1:]
+
+    if not args:
+        return await message.reply(
+            "<b>🔀 Channel Alias System</b>\n\n"
+            "<blockquote>"
+            "Jab purana channel ban ho jaye, naye channel pe redirect karo.\n"
+            "Purana wala link kaam karta rahega — users ko pata bhi nahi chalega!\n\n"
+            "<b>Commands:</b>\n"
+            "• <code>/linkalias set -100OLD_ID -100NEW_ID</code>\n"
+            "• <code>/linkalias remove -100OLD_ID</code>\n"
+            "• <code>/linkalias list</code>"
+            "</blockquote>"
+        )
+
+    sub = args[0].lower()
+
+    # ── SET ──────────────────────────────────────────────
+    if sub == "set":
+        if len(args) < 3:
+            return await message.reply(
+                "<b>Usage:</b> <code>/linkalias set -100OLD_ID -100NEW_ID</code>"
+            )
+        try:
+            old_id = int(args[1])
+            new_id = int(args[2])
+        except ValueError:
+            return await message.reply("<b>❌ Invalid channel IDs. Format: -100XXXXXXXXXX</b>")
+
+        # Verify new channel accessible hai
+        try:
+            new_chat = await client.get_chat(new_id)
+        except Exception as e:
+            return await message.reply(
+                f"<b>❌ New channel access nahi hua:</b> <code>{e}</code>\n\n"
+                "<i>Bot ko new channel mein admin banana mat bhoolo!</i>"
+            )
+
+        # Old channel title try karo (banned ho sakta hai)
+        try:
+            old_chat = await client.get_chat(old_id)
+            old_title = old_chat.title
+        except Exception:
+            old_title = str(old_id)
+
+        ok = await Seishiro.set_channel_alias(old_id, new_id)
+        if ok:
+            await message.reply(
+                f"<b>✅ Alias Set!</b>\n\n"
+                f"<blockquote>"
+                f"<b>Purana Channel:</b> {old_title}\n"
+                f"<code>{old_id}</code>\n\n"
+                f"<b>Naya Channel:</b> {new_chat.title}\n"
+                f"<code>{new_id}</code>\n\n"
+                f"Ab jo bhi purane link se aayega, naye channel ka invite milega.\n"
+                f"<i>Purane links share karne ki zarurat nahi!</i>"
+                f"</blockquote>"
+            )
+        else:
+            await message.reply("<b>❌ Alias save karne mein error. Dobara try karo.</b>")
+
+    # ── REMOVE ───────────────────────────────────────────
+    elif sub == "remove":
+        if len(args) < 2:
+            return await message.reply(
+                "<b>Usage:</b> <code>/linkalias remove -100OLD_ID</code>"
+            )
+        try:
+            old_id = int(args[1])
+        except ValueError:
+            return await message.reply("<b>❌ Invalid channel ID.</b>")
+
+        ok = await Seishiro.remove_channel_alias(old_id)
+        if ok:
+            await message.reply(
+                f"<b>✅ Alias removed for <code>{old_id}</code></b>\n\n"
+                f"<i>Ab purane link se koi redirect nahi hoga.</i>"
+            )
+        else:
+            await message.reply(f"<b>⚠️ <code>{old_id}</code> ka koi alias nahi mila.</b>")
+
+    # ── LIST ─────────────────────────────────────────────
+    elif sub == "list":
+        aliases = await Seishiro.list_channel_aliases()
+        if not aliases:
+            return await message.reply(
+                "<b>📋 Koi alias set nahi hai.</b>\n\n"
+                "<i>Use <code>/linkalias set</code> to add one.</i>"
+            )
+
+        text = "<b>🔀 Active Channel Aliases:</b>\n\n"
+        for i, doc in enumerate(aliases, 1):
+            # Try to get titles
+            try:
+                old_chat = await client.get_chat(doc['old_channel_id'])
+                old_name = old_chat.title
+            except Exception:
+                old_name = "—"
+            try:
+                new_chat = await client.get_chat(doc['new_channel_id'])
+                new_name = new_chat.title
+            except Exception:
+                new_name = "—"
+
+            text += (
+                f"<b>{i}.</b> <code>{doc['old_channel_id']}</code> ({old_name})\n"
+                f"    ➜ <code>{doc['new_channel_id']}</code> ({new_name})\n\n"
+            )
+
+        await message.reply(text)
+
+    else:
+        await message.reply(
+            "<b>❌ Unknown subcommand.</b>\n\n"
+            "Use: <code>set</code>, <code>remove</code>, or <code>list</code>"
+        )
+
+
 @Bot.on_message(filters.command('batch') & is_owner_or_admin)
 async def batch(client: Bot, message: Message):
     if len(message.command) < 2:
