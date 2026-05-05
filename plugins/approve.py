@@ -2,10 +2,50 @@ import os
 import asyncio
 from bot import Bot
 from config import *
-from pyrogram import Client, filters
+from pyrogram import Client, filters, raw
 from pyrogram.types import Message, User, ChatJoinRequest, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import FloodWait, ChatAdminRequired, UserNotParticipant, UserAlreadyParticipant
 from helper_func import *
+
+
+async def _get_last_message_link(client: Bot, chat_id: int) -> str | None:
+    """
+    Private channel ka last message link banao.
+    Format: https://t.me/c/CHANNEL_ID_WITHOUT_MINUS100/MSG_ID
+    
+    Raw API use karta hai — get_chat_history se zyada reliable.
+    """
+    try:
+        # -100XXXXXXXXXX → XXXXXXXXXX
+        raw_id = str(chat_id)
+        if raw_id.startswith("-100"):
+            raw_id = raw_id[4:]
+
+        # Raw API: GetHistory se sirf 1 message fetch karo
+        peer = await client.resolve_peer(chat_id)
+        history = await client.invoke(
+            raw.functions.messages.GetHistory(
+                peer=peer,
+                offset_id=0,
+                offset_date=0,
+                add_offset=0,
+                limit=1,
+                max_id=0,
+                min_id=0,
+                hash=0
+            )
+        )
+
+        # messages list mein pehla item last message hai
+        if history.messages:
+            last_id = history.messages[0].id
+            return f"https://t.me/c/{raw_id}/{last_id}"
+
+        return None
+
+    except Exception as e:
+        print(f"⚠️ _get_last_message_link error for {chat_id}: {e}")
+        return None
 
 @Client.on_chat_join_request((filters.group | filters.channel))
 async def on_join_request(client: Bot, message: ChatJoinRequest):
@@ -93,23 +133,11 @@ async def _send_approve_notification(client: Bot, user, chat):
                 except Exception as e:
                     print(f"⚠️ Could not delete old link_msg: {e}")
 
-        # ── Channel ka last message ID fetch karo ─────────────────────
-        # Private channel link format: https://t.me/c/CHANNEL_ID_WITHOUT_MINUS100/MSG_ID
-        join_url = None
-        try:
-            # Channel ID se -100 prefix hatao
-            raw_id = str(chat.id)
-            if raw_id.startswith("-100"):
-                raw_id = raw_id[4:]  # "-1003993344945" → "3993344945"
+        # ── Channel ka last message link fetch karo ───────────────────
+        join_url = await _get_last_message_link(client, chat.id)
 
-            # Last message ID get karo
-            async for msg in client.get_chat_history(chat.id, limit=1):
-                last_msg_id = msg.id
-                join_url = f"https://t.me/c/{raw_id}/{last_msg_id}"
-                break
-        except Exception as e:
-            print(f"⚠️ Could not get last message: {e}")
-            # Fallback: channel ka simple link
+        # Fallback: agar kisi wajah se link na mile
+        if not join_url:
             try:
                 if chat.username:
                     join_url = f"https://t.me/{chat.username}"
