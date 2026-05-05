@@ -926,20 +926,34 @@ class Master:
     # Jab approve ho toh usse wahi link bhejo
     # ══════════════════════════════════════════
 
-    async def save_user_request_link(self, user_id: int, channel_id: int, req_encoded: str) -> bool:
+    async def save_user_request_link(
+        self,
+        user_id: int,
+        channel_id: int,
+        req_encoded: str,
+        link_msg_id: int = None,
+        link_chat_id: int = None
+    ) -> bool:
         """
-        Jab user request link click kare, uska pending link save karo.
-        Approve hone ke baad yahi link bheja jayega.
+        Jab user request link click kare, uska pending data save karo.
+        link_msg_id  = bot ka 'HERE IS YOUR LINK' message ID (approve pe delete hoga)
+        link_chat_id = us message ka chat_id (user ka private chat)
         """
         try:
+            data = {
+                "user_id": user_id,
+                "channel_id": channel_id,
+                "req_encoded": req_encoded,
+                "created_at": datetime.utcnow()
+            }
+            if link_msg_id is not None:
+                data["link_msg_id"] = link_msg_id
+            if link_chat_id is not None:
+                data["link_chat_id"] = link_chat_id
+
             await self.database['user_request_links'].update_one(
                 {"user_id": user_id, "channel_id": channel_id},
-                {"$set": {
-                    "user_id": user_id,
-                    "channel_id": channel_id,
-                    "req_encoded": req_encoded,
-                    "created_at": datetime.utcnow()
-                }},
+                {"$set": data},
                 upsert=True
             )
             return True
@@ -947,7 +961,16 @@ class Master:
             logging.error(f"save_user_request_link error: {e}")
             return False
 
-    async def get_user_request_link(self, user_id: int, channel_id: int) -> Optional[str]:
+    async def get_user_request_doc(self, user_id: int, channel_id: int) -> Optional[dict]:
+        """Full document fetch karo — req_encoded + link_msg_id + link_chat_id."""
+        try:
+            doc = await self.database['user_request_links'].find_one(
+                {"user_id": user_id, "channel_id": channel_id}
+            )
+            return dict(doc) if doc else None
+        except Exception as e:
+            logging.error(f"get_user_request_doc error: {e}")
+            return None
         """User ka stored request encoded link fetch karo."""
         try:
             doc = await self.database['user_request_links'].find_one(
