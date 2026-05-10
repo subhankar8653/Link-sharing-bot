@@ -472,29 +472,47 @@ class Master:
             logging.error(f"Error fetching current invite link for channel {channel_id}: {e}")
             return None
 
-    async def add_fsub_channel(self, channel_id: int) -> bool:
-        """Add a channel to the FSub list."""
+    async def add_fsub_channel(self, channel_id: int, mode: str = "off", custom_name: str = None) -> bool:
+        """Add a channel to the FSub list with optional mode and custom display name."""
         if not isinstance(channel_id, int):
             logging.error(f"Invalid channel_id: {channel_id}")
             return False
 
         try:
+            set_data = {
+                "channel_id": channel_id,
+                "created_at": datetime.utcnow(),
+                "status": "active",
+                "mode": mode if mode in ("on", "off") else "off"
+            }
+            if custom_name:
+                set_data["custom_name"] = custom_name.strip()
+
             result = await self.fsub_data.update_one(
                 {"channel_id": channel_id},
-                {
-                    "$set": {
-                        "channel_id": channel_id,
-                        "created_at": datetime.utcnow(),
-                        "status": "active",
-                        "mode": "off"
-                    }
-                },
+                {"$set": set_data},
                 upsert=True
             )
             return result.matched_count == 0
         except Exception as e:
             logging.error(f"Error adding FSub channel {channel_id}: {e}")
             return False
+
+    async def get_fsub_channel_doc(self, channel_id: int) -> Optional[dict]:
+        """Get full document for a FSub channel (includes custom_name, mode etc)."""
+        try:
+            return await self.fsub_data.find_one({"channel_id": channel_id})
+        except Exception as e:
+            logging.error(f"Error fetching FSub channel doc {channel_id}: {e}")
+            return None
+
+    async def get_fsub_channels_full(self) -> list:
+        """Get all active FSub channels as full documents (with custom_name, mode)."""
+        try:
+            return await self.fsub_data.find({"status": "active"}).to_list(None)
+        except Exception as e:
+            logging.error(f"Error fetching full FSub channel list: {e}")
+            return []
 
     async def remove_fsub_channel(self, channel_id: int) -> bool:
         """Remove a channel from the FSub list."""
@@ -995,5 +1013,16 @@ class Master:
         except Exception as e:
             logging.error(f"delete_user_request_link error: {e}")
             return False
+
+    async def get_all_user_request_docs(self, user_id: int) -> list:
+        """Ek user ke SAARE pending request docs fetch karo (sab channels ke liye)."""
+        try:
+            docs = await self.database['user_request_links'].find(
+                {"user_id": user_id}
+            ).to_list(None)
+            return [dict(d) for d in docs] if docs else []
+        except Exception as e:
+            logging.error(f"get_all_user_request_docs error: {e}")
+            return []
 
 Seishiro = Master(DB_URL, DB_NAME)
