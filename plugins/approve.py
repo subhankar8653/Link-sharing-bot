@@ -5,80 +5,116 @@ from config import *
 from pyrogram import Client, filters
 from pyrogram.types import Message, User, ChatJoinRequest, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import FloodWait, ChatAdminRequired, UserNotParticipant, UserAlreadyParticipant
-from helper_func import *
 
 
-async def _send_approve_notification(client: Bot, user, chat):
+async def _auto_send_files(client: Bot, user_id: int):
     """
-    Jab user approve ho jaye:
-    1. Purana 'HERE IS YOUR LINK' message delete karo
-    2. Wahi invite link button mein do jo pehle generate hua tha (DB se)
-    3. Notification 5 min baad auto-delete
+    User ke join/approve ke baad uske pending link/files automatically bhejo.
+
+    Flow:
+    1. DB se user ka pending request doc lo (b64 encoded channel link)
+    2. Uss b64 se fresh invite link banao
+    3. User ko DM karo — koi button click nahi chahiye
+    4. Purana 'HERE IS YOUR LINK' message delete karo (agar tha)
     """
     from database.database import Seishiro
+    from helper_func import decode
 
     try:
-        doc = await Seishiro.get_user_request_doc(user.id, chat.id)
+        # Saare pending requests dhundo jis user ki abhi abhi join/approve hui
+        pending_docs = await Seishiro.get_all_user_request_docs(user_id)
 
-        # ── Purana link_msg delete karo ───────────────────────────────
-        if doc:
-            old_msg_id  = doc.get("link_msg_id")
-            old_chat_id = doc.get("link_chat_id")
-            if old_msg_id and old_chat_id:
+        if not pending_docs:
+            # Koi pending request nahi — kuch nahi karna
+            return
+
+        for doc in pending_docs:
+            channel_id  = doc.get("channel_id")
+            invite_link = doc.get("invite_link")
+            link_msg_id = doc.get("link_msg_id")
+            link_chat_id = doc.get("link_chat_id")
+            b64          = doc.get("b64")
+
+            # ── Purana link message delete karo ──────────────────────
+            if link_msg_id and link_chat_id:
                 try:
-                    await client.delete_messages(old_chat_id, old_msg_id)
-                    print(f"🗑️ Deleted old link_msg {old_msg_id} for user {user.id}")
+                    await client.delete_messages(link_chat_id, link_msg_id)
+                    print(f"🗑️ Deleted old link_msg {link_msg_id} for user {user_id}")
                 except Exception as e:
                     print(f"⚠️ Could not delete old link_msg: {e}")
 
-        # ── Saved invite link use karo (wahi jo pehle diya tha) ───────
-        join_url = doc.get("invite_link") if doc else None
+            # ── Invite link already saved hai toh use karo ───────────
+            if not invite_link and channel_id:
+                try:
+                    # Fresh invite link banao
+                    inv = await client.create_chat_invite_link(
+                        chat_id=channel_id,
+                        expire_date=None
+                    )
+                    invite_link = inv.invite_link
+                except Exception as e:
+                    print(f"⚠️ Could not create invite link for {channel_id}: {e}")
 
-        # Approve notification DM
-        text = (
-            f"<b>✅ Aapki request accept kar li gayi!</b>\n\n"
-            f"<blockquote>"
-            f"<b>Channel:</b> {chat.title}\n\n"
-            f"Niche button pe click karke channel join karein.\n"
-            f"<i>⚠️ Yeh message 5 minute mein auto-delete ho jayega.</i>"
-            f"</blockquote>"
-        )
+            # ── User ko DM bhejo ─────────────────────────────────────
+            if invite_link:
+                try:
+                    # Channel title
+                    try:
+                        chat = await client.get_chat(channel_id)
+                        ch_title = chat.title
+                    except Exception:
+                        ch_title = f"Channel ({channel_id})"
 
-        buttons = []
-        if join_url:
-            buttons.append([InlineKeyboardButton("• ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ •", url=join_url)])
+                    text = (
+                        f"<b>✅ Yeh raha aapka link!</b>\n\n"
+                        f"<blockquote>"
+                        f"<b>Channel:</b> {ch_title}\n\n"
+                        f"Niche button pe click karke channel join/access karein.\n"
+                        f"<i>⚠️ Yeh message 5 minute mein auto-delete ho jayega.</i>"
+                        f"</blockquote>"
+                    )
+                    buttons = [[InlineKeyboardButton("• ᴀᴄᴄᴇss ʟɪɴᴋ •", url=invite_link)]]
 
-        sent_msg = await client.send_message(
-            chat_id=user.id,
-            text=text,
-            reply_markup=InlineKeyboardMarkup(buttons) if buttons else None
-        )
+                    sent_msg = await client.send_message(
+                        chat_id=user_id,
+                        text=text,
+                        reply_markup=InlineKeyboardMarkup(buttons)
+                    )
+                    print(f"✅ Auto-sent file/link to {user_id} for channel {channel_id}")
 
-        # 5 min baad cleanup
-        async def cleanup():
-            await asyncio.sleep(300)
+                    # 5 min baad cleanup
+                    async def cleanup(msg=sent_msg, uid=user_id, cid=channel_id):
+                        await asyncio.sleep(300)
+                        try:
+                            await msg.delete()
+                        except Exception:
+                            pass
+                        try:
+                            await Seishiro.delete_user_request_link(uid, cid)
+                        except Exception:
+                            pass
+
+                    asyncio.create_task(cleanup())
+
+                except Exception as e:
+                    print(f"⚠️ Could not send auto-file to {user_id}: {e}")
+
+            # DB cleanup
             try:
-                await sent_msg.delete()
+                await Seishiro.delete_user_request_link(user_id, channel_id)
             except Exception:
                 pass
-            try:
-                await Seishiro.delete_user_request_link(user.id, chat.id)
-            except Exception:
-                pass
-
-        asyncio.create_task(cleanup())
-        print(f"✅ Approve notification sent to {user.id} for {chat.title}")
 
     except Exception as e:
-        print(f"⚠️ Could not send approve notification to {user.id}: {e}")
+        print(f"❌ _auto_send_files error for {user_id}: {e}")
 
 
 @Client.on_chat_join_request((filters.group | filters.channel))
 async def on_join_request(client: Bot, message: ChatJoinRequest):
     """
     🔥 SMART LOGIC:
-    - FSub channels: Sirf detect karo, auto-approve NAHI
-    - Normal channels: Auto-approve karo
+    - FSub channels: Detect karo + DB mein save karo (auto-approve NAHI)
+    - Normal channels: Auto-approve karo + files bhejo
     """
     from database.database import Seishiro
 
@@ -97,6 +133,7 @@ async def on_join_request(client: Bot, message: ChatJoinRequest):
             print(f"✅ This is a NORMAL channel")
 
         if is_fsub_channel:
+            # FSub channel: sirf DB mein note karo — admin manually approve karega
             await Seishiro.req_user(chat.id, user.id)
             print(f"✅ FSUB: Added {user.id} to request database (NO auto-approve)")
 
@@ -117,7 +154,8 @@ async def on_join_request(client: Bot, message: ChatJoinRequest):
             try:
                 await client.approve_chat_join_request(chat_id=chat.id, user_id=user.id)
                 print(f"✅ NORMAL: Auto-approved {user.first_name} ({user.id})")
-                await _send_approve_notification(client, user, chat)
+                # ✅ Auto files bhejo — koi button click nahi chahiye
+                await _auto_send_files(client, user.id)
             except UserAlreadyParticipant:
                 print(f"User {user.id} is already a participant")
             except Exception as e:
@@ -130,8 +168,9 @@ async def on_join_request(client: Bot, message: ChatJoinRequest):
 @Client.on_chat_member_updated((filters.group | filters.channel))
 async def on_member_approved(client: Bot, update):
     """
-    Jab admin manually approve kar deta hai (fsub channel),
-    database se cleanup karo + notification bhejo
+    Jab koi bhi user channel join kare (direct ya admin approve kare):
+    - DB cleanup karo
+    - Automatically files/link bhej do — koi button click nahi chahiye
     """
     try:
         from database.database import Seishiro
@@ -145,15 +184,22 @@ async def on_member_approved(client: Bot, update):
         old_status = update.old_chat_member.status if update.old_chat_member else None
         new_status = update.new_chat_member.status
 
+        # Sirf tab trigger karo jab user newly joined ho
         if new_status in ["member", "administrator", "creator"] and old_status != new_status:
+            print(f"📥 Member updated: {user.id} joined {chat.title} ({chat.id})")
+
+            # FSub channel ka request DB cleanup
             try:
                 exists = await Seishiro.req_user_exist(chat.id, user.id)
                 if exists:
                     await Seishiro.del_req_user(chat.id, user.id)
-                    print(f"✅ User {user.id} approved in {chat.title} - Removed from request DB")
-                    await _send_approve_notification(client, user, chat)
+                    print(f"✅ User {user.id} req DB se remove kiya for {chat.title}")
             except Exception as e:
                 print(f"⚠️ Error cleaning request for {user.id}: {e}")
 
+            # ✅ Automatically files/link bhej do — no button needed
+            await _auto_send_files(client, user.id)
+
     except Exception as e:
         print(f"Error in on_member_approved: {e}")
+

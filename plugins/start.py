@@ -238,7 +238,10 @@ async def not_joined(client: Client, message: Message):
                     )
                     link = inv.invite_link
 
-                buttons.append([InlineKeyboardButton(text=data.title, url=link)])
+                # Custom name DB se lo, nahi toh channel ka real title use karo
+                fsub_doc    = await Seishiro.get_fsub_channel_doc(cid)
+                button_text = (fsub_doc.get("custom_name") if fsub_doc else None) or data.title
+                buttons.append([InlineKeyboardButton(text=button_text, url=link)])
                 count += 1
                 try:
                     await temp.edit(f"<b>{'! ' * count}</b>")
