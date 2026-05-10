@@ -149,11 +149,17 @@ def check_fsub(func):
             if await Seishiro.has_premium_access(uid):
                 logger.info(f"User {uid} premium — FSub bypassed")
                 return True
-            for cid in channels:
-                if not await is_sub(uid, cid):
+            # ── PARALLEL CHECK (fast) ─────────────────────────────────
+            # Sab channels simultaneously check karo — ek ke baad ek nahi
+            results = await asyncio.gather(*[is_sub(uid, cid) for cid in channels], return_exceptions=True)
+            for cid, res in zip(channels, results):
+                # Exception aa gayi toh False maano
+                sub_ok = res if isinstance(res, bool) else False
+                if not sub_ok:
                     if await Seishiro.get_channel_mode(cid) == "on":
-                        await asyncio.sleep(2)
-                        if await is_sub(uid, cid):
+                        # Request mode: ek baar aur check karo (no sleep)
+                        sub_ok = await is_sub(uid, cid)
+                        if sub_ok:
                             continue
                     return False
             return True
@@ -238,7 +244,10 @@ async def not_joined(client: Client, message: Message):
                     )
                     link = inv.invite_link
 
-                buttons.append([InlineKeyboardButton(text=data.title, url=link)])
+                # Custom name check — agar set hai toh wahi use karo, warna channel title
+                custom_name = await Seishiro.get_fsub_channel_name(cid)
+                btn_text = custom_name if custom_name else data.title
+                buttons.append([InlineKeyboardButton(text=btn_text, url=link)])
                 count += 1
                 try:
                     await temp.edit(f"<b>{'! ' * count}</b>")

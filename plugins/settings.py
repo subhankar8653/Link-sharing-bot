@@ -376,6 +376,7 @@ async def settings_callback(client: Bot, callback_query):
             btn = [
                 [InlineKeyboardButton("Aᴅᴅ Cʜᴀɴɴᴇʟ", callback_data="add_fsub_channel"), InlineKeyboardButton("Rᴇᴍᴏᴠᴇ Cʜᴀɴɴᴇʟ", callback_data="delete_fsub_channel")],
                 [InlineKeyboardButton("Lɪsᴛ Cʜᴀɴɴᴇʟs", callback_data="list_fsub_channels")],
+                [InlineKeyboardButton("✏️ Rᴇɴᴀᴍᴇ Bᴜᴛᴛᴏɴ", callback_data="rename_fsub_channel")],
                 [InlineKeyboardButton("Tᴏᴏɢʟᴇ Rᴇǫ A", callback_data="fsub_all_channels"), InlineKeyboardButton("Tᴏᴏɢʟᴇ Rᴇǫ B", callback_data="fsub_particular")],
                 [InlineKeyboardButton("back", callback_data="settings_main")]
             ]
@@ -669,6 +670,85 @@ async def settings_callback(client: Bot, callback_query):
             except Exception as e:
                 print(f"Error deleting channel {msg.text}: {e}")
                 await msg.reply(f"Unexpected Error: {str(e)}", reply_markup=InlineKeyboardMarkup(btn))
+
+        # ✏️ Rename FSub Channel Button Text
+        elif cb_data == "rename_fsub_channel":
+            if not is_admin_user:
+                await callback_query.answer("Only admins can rename channels!", show_alert=True)
+                return
+
+            btn = [[InlineKeyboardButton("back", callback_data="fsub_settings_menu")]]
+            await callback_query.message.edit_text(
+                "<b>✏️ FSub Button Rename</b>\n\n"
+                "<blockquote>Channel ID bhejo jiska button rename karna hai.\n"
+                "(e.g., -100123456789)\n\n"
+                "/cancel to cancel</blockquote>",
+                reply_markup=InlineKeyboardMarkup(btn)
+            )
+
+            try:
+                msg_id = await client.listen(chat_id=callback_query.message.chat.id, timeout=300)
+                await callback_query.message.delete()
+
+                if msg_id.text == '/cancel':
+                    await msg_id.reply("ᴄᴀɴᴄᴇʟʟᴇᴅ!", reply_markup=InlineKeyboardMarkup(btn))
+                    return
+
+                if not re.match(r"^-100\d{10,}$", msg_id.text.strip()):
+                    await msg_id.reply(
+                        "<b><blockquote expandable>Invalid channel ID format. Must be -100XXXXXXXXXX</blockquote></b>",
+                        reply_markup=InlineKeyboardMarkup(btn)
+                    )
+                    return
+
+                channel_id = int(msg_id.text.strip())
+
+                # Verify channel exists in fsub
+                channels = await Seishiro.get_fsub_channels()
+                if channel_id not in channels:
+                    await msg_id.reply(
+                        "<b><blockquote expandable>⚠️ Yeh channel FSub mein nahi hai. Pehle add karo.</blockquote></b>",
+                        reply_markup=InlineKeyboardMarkup(btn)
+                    )
+                    return
+
+                await msg_id.reply(
+                    "<b>Ab naya button naam bhejo:</b>\n<blockquote>Jo bhi text likhoge wahi button pe dikhega.</blockquote>\n\n/cancel to cancel",
+                    reply_markup=InlineKeyboardMarkup(btn)
+                )
+
+                msg_name = await client.listen(chat_id=callback_query.message.chat.id, timeout=300)
+
+                if msg_name.text == '/cancel':
+                    await msg_name.reply("ᴄᴀɴᴄᴇʟʟᴇᴅ!", reply_markup=InlineKeyboardMarkup(btn))
+                    return
+
+                new_name = msg_name.text.strip()
+                if len(new_name) > 50:
+                    await msg_name.reply(
+                        "<b><blockquote expandable>⚠️ Name too long! 50 characters se kam rakho.</blockquote></b>",
+                        reply_markup=InlineKeyboardMarkup(btn)
+                    )
+                    return
+
+                await Seishiro.set_fsub_channel_name(channel_id, new_name)
+                await msg_name.reply(
+                    f"<b>✅ Done!</b>\n\n"
+                    f"<blockquote>Channel <code>{channel_id}</code> ka button ab dikhega:\n"
+                    f"<b>» {new_name} «</b></blockquote>",
+                    reply_markup=InlineKeyboardMarkup(btn)
+                )
+
+            except asyncio.TimeoutError:
+                await callback_query.message.reply(
+                    "<b>Timeout! Please try again.</b>",
+                    reply_markup=InlineKeyboardMarkup(btn)
+                )
+            except Exception as e:
+                await callback_query.message.reply(
+                    f"<b>Error: {e}</b>",
+                    reply_markup=InlineKeyboardMarkup(btn)
+                )
 
         # List Fsub Channels - NEW FEATURE
         elif cb_data == "list_fsub_channels":
