@@ -472,29 +472,53 @@ class Master:
             logging.error(f"Error fetching current invite link for channel {channel_id}: {e}")
             return None
 
-    async def add_fsub_channel(self, channel_id: int) -> bool:
+    async def add_fsub_channel(self, channel_id: int, custom_name: str = None) -> bool:
         """Add a channel to the FSub list."""
         if not isinstance(channel_id, int):
             logging.error(f"Invalid channel_id: {channel_id}")
             return False
 
         try:
+            set_data = {
+                "channel_id": channel_id,
+                "created_at": datetime.utcnow(),
+                "status": "active",
+                "mode": "off"
+            }
+            if custom_name:
+                set_data["custom_name"] = custom_name.strip()
+
             result = await self.fsub_data.update_one(
                 {"channel_id": channel_id},
-                {
-                    "$set": {
-                        "channel_id": channel_id,
-                        "created_at": datetime.utcnow(),
-                        "status": "active",
-                        "mode": "off"
-                    }
-                },
+                {"$set": set_data},
                 upsert=True
             )
             return result.matched_count == 0
         except Exception as e:
             logging.error(f"Error adding FSub channel {channel_id}: {e}")
             return False
+
+    async def set_fsub_channel_name(self, channel_id: int, custom_name: str) -> bool:
+        """Set a custom display name for a FSub channel button."""
+        try:
+            await self.fsub_data.update_one(
+                {"channel_id": channel_id},
+                {"$set": {"custom_name": custom_name.strip()}},
+                upsert=False
+            )
+            return True
+        except Exception as e:
+            logging.error(f"Error setting custom name for {channel_id}: {e}")
+            return False
+
+    async def get_fsub_channel_name(self, channel_id: int) -> str | None:
+        """Get custom name of a FSub channel (None if not set)."""
+        try:
+            data = await self.fsub_data.find_one({"channel_id": channel_id})
+            return data.get("custom_name") if data else None
+        except Exception as e:
+            logging.error(f"Error fetching custom name for {channel_id}: {e}")
+            return None
 
     async def remove_fsub_channel(self, channel_id: int) -> bool:
         """Remove a channel from the FSub list."""
