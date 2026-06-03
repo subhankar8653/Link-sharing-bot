@@ -93,6 +93,12 @@ async def _safe_get_member(client, cid: int, uid: int, retries: int = 3):
 chat_data_cache = {}
 channel_locks   = defaultdict(Lock)
 
+# ── Per-user processing lock ───────────────────────────────────────────────────
+# Pyrogram workers=40 hone ki wajah se same user ka /start ek saath 2 workers
+# process kar sakte hain (Telegram retry ya double tap se). Yeh set us case ko
+# rokta hai — agar ek worker pehle se chal raha hai toh doosra silently skip karega.
+_user_processing: set = set()
+
 # ═══════════════════════════════════════════
 # ADMIN FILTER
 # ═══════════════════════════════════════════
@@ -118,6 +124,15 @@ def check_fsub(func):
     @wraps(func)
     async def wrapper(client, message, *args, **kwargs):
         uid = message.from_user.id
+
+        # ── Race condition fix ────────────────────────────────────────
+        # workers=40 hone se same user ka message 2 workers simultaneously
+        # process kar sakte hain → double message. Agar pehle se chal raha
+        # hai toh silently skip karo.
+        if uid in _user_processing:
+            logger.warning(f"Duplicate /start skipped for user {uid}")
+            return
+        _user_processing.add(uid)
 
         async def is_sub(uid, cid):
             try:
@@ -171,9 +186,9 @@ def check_fsub(func):
             return await func(client, message, *args, **kwargs)
         except Exception as e:
             logger.error(f"check_fsub error: {e}", exc_info=True)
-            # NOTE: func ke andar se exception bubble up ho toh yahan mat pakdo
-            # kyunki func already apna message send kar chuka hoga
-            # Sirf is_subscribed ya not_joined ke errors yahan aate hain
+        finally:
+            # Processing khatam — lock release karo (success ya exception dono case)
+            _user_processing.discard(uid)
     return wrapper
 
 
@@ -682,7 +697,7 @@ async def start_command(client: Bot, message: Message):
                 await message.reply_text(
                     "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>"
                 )
-                return  # ← outer except fire na ho
+                return
 
         # ── Normal /start ──────────────────────────────────────────────
         else:
@@ -708,19 +723,15 @@ async def start_command(client: Bot, message: Message):
                     photo=START_PIC, caption=caption,
                     reply_markup=InlineKeyboardMarkup(btns)
                 )
-                return  # ← Photo sent, bas karo — outer try ka except fire na ho
+                return
             except Exception as e:
                 logger.warning(f"Photo failed: {e}")
                 await message.reply_text(caption, reply_markup=InlineKeyboardMarkup(btns))
-                return  # ← Text bhi send ho gaya, bas
+                return
 
     except Exception as e:
         logger.error(f"FATAL start_command: {e}", exc_info=True)
-        # Sirf tab fire hoga jab upar koi message send nahi hua
-        try:
-            await message.reply_text("<b>Unexpected error. Please try again later.</b>")
-        except Exception:
-            pass
+        await message.reply_text("<b>Unexpected error. Please try again later.</b>")
 
 
 # ═══════════════════════════════════════════
