@@ -170,8 +170,10 @@ def check_fsub(func):
                 return await not_joined(client, message)
             return await func(client, message, *args, **kwargs)
         except Exception as e:
-            logger.error(f"check_fsub error: {e}")
-            await message.reply_text("An unexpected error occurred. Please contact the developer.")
+            logger.error(f"check_fsub error: {e}", exc_info=True)
+            # NOTE: func ke andar se exception bubble up ho toh yahan mat pakdo
+            # kyunki func already apna message send kar chuka hoga
+            # Sirf is_subscribed ya not_joined ke errors yahan aate hain
     return wrapper
 
 
@@ -680,6 +682,7 @@ async def start_command(client: Bot, message: Message):
                 await message.reply_text(
                     "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>"
                 )
+                return  # ← outer except fire na ho
 
         # ── Normal /start ──────────────────────────────────────────────
         else:
@@ -705,13 +708,19 @@ async def start_command(client: Bot, message: Message):
                     photo=START_PIC, caption=caption,
                     reply_markup=InlineKeyboardMarkup(btns)
                 )
+                return  # ← Photo sent, bas karo — outer try ka except fire na ho
             except Exception as e:
                 logger.warning(f"Photo failed: {e}")
                 await message.reply_text(caption, reply_markup=InlineKeyboardMarkup(btns))
+                return  # ← Text bhi send ho gaya, bas
 
     except Exception as e:
         logger.error(f"FATAL start_command: {e}", exc_info=True)
-        await message.reply_text("<b>Unexpected error. Please try again later.</b>")
+        # Sirf tab fire hoga jab upar koi message send nahi hua
+        try:
+            await message.reply_text("<b>Unexpected error. Please try again later.</b>")
+        except Exception:
+            pass
 
 
 # ═══════════════════════════════════════════
