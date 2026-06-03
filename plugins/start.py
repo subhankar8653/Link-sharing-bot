@@ -14,7 +14,7 @@ from pyrogram.types import (
 from pyrogram.errors import (
     FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid, RPCError
 )
-from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
+from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant, MessageNotModified
 
 from bot import Bot, _force_resolve_peer, check_bot_permissions
 from datetime import datetime, timedelta
@@ -172,6 +172,11 @@ def check_fsub(func):
             return True
 
         try:
+            # ── Duplicate /start guard (check_fsub level) ─────────────
+            async with _user_locks[uid]:
+                if _user_processing.get(uid, False):
+                    logger.info(f"Duplicate request from {uid} in check_fsub — skipping")
+                    return
             if not await is_subscribed(uid):
                 return await not_joined(client, message)
             return await func(client, message, *args, **kwargs)
@@ -258,7 +263,7 @@ async def not_joined(client: Client, message: Message):
                 count += 1
                 try:
                     await temp.edit(f"<b>{'! ' * count}</b>")
-                except Exception:
+                except (MessageNotModified, Exception):
                     pass
 
             except Exception as e:

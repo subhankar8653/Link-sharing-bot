@@ -7,6 +7,7 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, InputMediaPhoto
 from pyrogram.errors import UserNotParticipant, FloodWait, ChatAdminRequired, RPCError, PeerIdInvalid
 from pyrogram.errors import InviteHashExpired, InviteRequestSent
+from pyrogram.errors.exceptions.bad_request_400 import MessageNotModified
 from database.database import Seishiro
 from config import *
 from helper_func import *
@@ -1132,12 +1133,20 @@ async def settings_callback(client: Bot, callback_query):
                 print(f"Error in depromoting admin: {e}")
                 await msg.reply(f"Uɴᴇxᴘᴇᴄᴛᴇᴅ Eʀʀᴏʀ: {str(e)}", reply_markup=InlineKeyboardMarkup(btn))
 
+    except MessageNotModified:
+        # Same content pe dobara edit — silently ignore, koi message nahi
+        try:
+            await callback_query.answer()
+        except Exception:
+            pass
+
     except Exception as e:
         print(f"Error in callback: {e}")
-        await callback_query.message.edit_text(
-            f"Unexpected Error: {str(e)}",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("back", callback_data="settings_main")]])
-        )
+        try:
+            # edit_text ki jagah answer() use karo — isse MESSAGE_NOT_MODIFIED loop nahi hoga
+            await callback_query.answer(f"Error: {str(e)[:180]}", show_alert=True)
+        except Exception:
+            pass
         
 # Replace the send_channel_page function:
 
