@@ -55,7 +55,9 @@ async def set_tutorial_fsub(client: Bot, message: Message):
 
     try:
         response: Message = await client.listen(
-            chat_id=message.chat.id, timeout=300
+            chat_id=message.chat.id,
+            filters=filters.video | filters.document | filters.animation,
+            timeout=300
         )
     except asyncio.TimeoutError:
         await prompt.edit("<b>⏰ Timeout! Dobara /set_tutorial_fsub try karo.</b>")
@@ -114,7 +116,9 @@ async def set_tutorial_linkshortner(client: Bot, message: Message):
 
     try:
         response: Message = await client.listen(
-            chat_id=message.chat.id, timeout=300
+            chat_id=message.chat.id,
+            filters=filters.video | filters.document | filters.animation,
+            timeout=300
         )
     except asyncio.TimeoutError:
         await prompt.edit("<b>⏰ Timeout! Dobara /set_tutorial_linkshortner try karo.</b>")

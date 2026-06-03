@@ -93,11 +93,13 @@ async def _safe_get_member(client, cid: int, uid: int, retries: int = 3):
 chat_data_cache = {}
 channel_locks   = defaultdict(Lock)
 
-# ── Per-user processing lock ───────────────────────────────────────────────────
-# Pyrogram workers=40 hone ki wajah se same user ka /start ek saath 2 workers
-# process kar sakte hain (Telegram retry ya double tap se). Yeh set us case ko
-# rokta hai — agar ek worker pehle se chal raha hai toh doosra silently skip karega.
-_user_processing: set = set()
+# ── Per-user asyncio.Lock ─────────────────────────────────────────────────────
+# workers=40 hone se same user ka /start ek saath 2 workers process kar sakte
+# hain (Telegram duplicate update ya double-tap). Per-user Lock se ensure hota
+# hai ki agar ek worker chal raha hai toh doosra skip ho jaye — double message nahi.
+# Lock poori processing ke dauran held rehta hai, finally mein release hota hai.
+_user_locks: dict[int, asyncio.Lock] = {}  # {user_id: Lock}
+_user_active: set[int] = set()             # currently processing users
 
 # ═══════════════════════════════════════════
 # ADMIN FILTER
@@ -126,13 +128,19 @@ def check_fsub(func):
         uid = message.from_user.id
 
         # ── Race condition fix ────────────────────────────────────────
-        # workers=40 hone se same user ka message 2 workers simultaneously
-        # process kar sakte hain → double message. Agar pehle se chal raha
-        # hai toh silently skip karo.
-        if uid in _user_processing:
-            logger.warning(f"Duplicate /start skipped for user {uid}")
+        # workers=40 hone se same user ke 2 concurrent /start aate hain.
+        # Per-user Lock: agar ek worker already chal raha hai toh doosra
+        # lock NAHI milega (non-blocking check) → silently skip.
+        if uid not in _user_locks:
+            _user_locks[uid] = asyncio.Lock()
+        lock = _user_locks[uid]
+
+        if lock.locked():
+            logger.warning(f"Duplicate /start blocked for user {uid} (lock busy)")
             return
-        _user_processing.add(uid)
+
+        await lock.acquire()
+        _user_active.add(uid)
 
         async def is_sub(uid, cid):
             try:
@@ -187,8 +195,12 @@ def check_fsub(func):
         except Exception as e:
             logger.error(f"check_fsub error: {e}", exc_info=True)
         finally:
-            # Processing khatam — lock release karo (success ya exception dono case)
-            _user_processing.discard(uid)
+            # Lock release — poori processing khatam hone ke baad hi release hoga
+            _user_active.discard(uid)
+            try:
+                lock.release()
+            except RuntimeError:
+                pass
     return wrapper
 
 
