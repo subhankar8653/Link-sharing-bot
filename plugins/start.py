@@ -655,7 +655,6 @@ async def start_command(client: Bot, message: Message):
                 short_url = await shorten_link(bot_link)
                 logger.info(f"Shortener URL for user {uid}, channel {channel_id}")
 
-                # ── LinkShortner Tutorial: 30s baad check, complete nahi kiya toh video ──
                 asyncio.create_task(
                     send_linkshortner_tutorial_if_not_verified(client, uid, token)
                 )
