@@ -56,7 +56,7 @@ async def add_channel_cmd(client: Client, message: Message):
             reply_markup=InlineKeyboardMarkup(btn)
         )
         
-        msg = await client.listen(chat_id=message.chat.id, timeout=300)
+        msg = await client.listen(chat_id=message.chat.id, filters=filters.text, timeout=300)
         
         if msg.text == '/cancel':
             await sent.delete()
@@ -98,7 +98,7 @@ async def del_channel_cmd(client: Client, message: Message):
             reply_markup=InlineKeyboardMarkup(btn)
         )
         
-        msg = await client.listen(chat_id=message.chat.id, timeout=300)
+        msg = await client.listen(chat_id=message.chat.id, filters=filters.text, timeout=300)
         
         if msg.text == '/cancel':
             await sent.delete()
@@ -163,7 +163,7 @@ async def ban_user_cmd(client: Client, message: Message):
             reply_markup=InlineKeyboardMarkup(btn)
         )
         
-        msg = await client.listen(chat_id=message.chat.id, timeout=300)
+        msg = await client.listen(chat_id=message.chat.id, filters=filters.text, timeout=300)
         
         if msg.text == '/cancel':
             await sent.delete()
@@ -210,7 +210,7 @@ async def unban_user_cmd(client: Client, message: Message):
             reply_markup=InlineKeyboardMarkup(btn)
         )
         
-        msg = await client.listen(chat_id=message.chat.id, timeout=300)
+        msg = await client.listen(chat_id=message.chat.id, filters=filters.text, timeout=300)
         
         if msg.text == '/cancel':
             await sent.delete()
@@ -278,7 +278,7 @@ async def add_fsub_cmd(client: Client, message: Message):
             reply_markup=InlineKeyboardMarkup(btn)
         )
         
-        msg = await client.listen(chat_id=message.chat.id, timeout=300)
+        msg = await client.listen(chat_id=message.chat.id, filters=filters.text, timeout=300)
         
         if msg.text == '/cancel':
             await sent.delete()
@@ -320,7 +320,7 @@ async def remove_fsub_cmd(client: Client, message: Message):
             reply_markup=InlineKeyboardMarkup(btn)
         )
         
-        msg = await client.listen(chat_id=message.chat.id, timeout=300)
+        msg = await client.listen(chat_id=message.chat.id, filters=filters.text, timeout=300)
         
         if msg.text == '/cancel':
             await sent.delete()
@@ -383,7 +383,7 @@ async def toggle_req_cmd(client: Client, message: Message):
             reply_markup=InlineKeyboardMarkup(btn)
         )
         
-        msg = await client.listen(chat_id=message.chat.id, timeout=300)
+        msg = await client.listen(chat_id=message.chat.id, filters=filters.text, timeout=300)
         
         if msg.text == '/cancel':
             await sent.delete()
