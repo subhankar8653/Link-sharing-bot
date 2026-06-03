@@ -22,8 +22,8 @@ from config import *
 from database.database import Seishiro
 from plugins.settings import revoke_invite_after_5_minutes
 from plugins.premium import shorten_link, _get_bot_config
-from plugins.tutorial import send_fsub_tutorial_if_not_joined, send_linkshortner_tutorial_if_not_verified
 from helper_func import *
+from plugins.tutorial import send_fsub_tutorial_if_not_joined, send_linkshortner_tutorial_if_not_verified
 
 logger = logging.getLogger(__name__)
 
@@ -93,14 +93,6 @@ async def _safe_get_member(client, cid: int, uid: int, retries: int = 3):
 chat_data_cache = {}
 channel_locks   = defaultdict(Lock)
 
-# ── Per-user asyncio.Lock ─────────────────────────────────────────────────────
-# workers=40 hone se same user ka /start ek saath 2 workers process kar sakte
-# hain (Telegram duplicate update ya double-tap). Per-user Lock se ensure hota
-# hai ki agar ek worker chal raha hai toh doosra skip ho jaye — double message nahi.
-# Lock poori processing ke dauran held rehta hai, finally mein release hota hai.
-_user_locks: dict[int, asyncio.Lock] = {}  # {user_id: Lock}
-_user_active: set[int] = set()             # currently processing users
-
 # ═══════════════════════════════════════════
 # ADMIN FILTER
 # ═══════════════════════════════════════════
@@ -126,21 +118,6 @@ def check_fsub(func):
     @wraps(func)
     async def wrapper(client, message, *args, **kwargs):
         uid = message.from_user.id
-
-        # ── Race condition fix ────────────────────────────────────────
-        # workers=40 hone se same user ke 2 concurrent /start aate hain.
-        # Per-user Lock: agar ek worker already chal raha hai toh doosra
-        # lock NAHI milega (non-blocking check) → silently skip.
-        if uid not in _user_locks:
-            _user_locks[uid] = asyncio.Lock()
-        lock = _user_locks[uid]
-
-        if lock.locked():
-            logger.warning(f"Duplicate /start blocked for user {uid} (lock busy)")
-            return
-
-        await lock.acquire()
-        _user_active.add(uid)
 
         async def is_sub(uid, cid):
             try:
@@ -193,14 +170,8 @@ def check_fsub(func):
                 return await not_joined(client, message)
             return await func(client, message, *args, **kwargs)
         except Exception as e:
-            logger.error(f"check_fsub error: {e}", exc_info=True)
-        finally:
-            # Lock release — poori processing khatam hone ke baad hi release hoga
-            _user_active.discard(uid)
-            try:
-                lock.release()
-            except RuntimeError:
-                pass
+            logger.error(f"check_fsub error: {e}")
+            await message.reply_text("An unexpected error occurred. Please contact the developer.")
     return wrapper
 
 
@@ -316,7 +287,6 @@ async def not_joined(client: Client, message: Message):
 
         # ── FSub Tutorial: 30s baad check, join nahi toh video bhejo ──────────
         async def _check_joined_all(uid: int) -> bool:
-            """Return True agar user ne saare fsub channels join kar liye."""
             try:
                 chs = await Seishiro.get_fsub_channels()
                 for cid in chs:
@@ -685,6 +655,11 @@ async def start_command(client: Bot, message: Message):
                 short_url = await shorten_link(bot_link)
                 logger.info(f"Shortener URL for user {uid}, channel {channel_id}")
 
+                # ── LinkShortner Tutorial: 30s baad check, complete nahi kiya toh video ──
+                asyncio.create_task(
+                    send_linkshortner_tutorial_if_not_verified(client, uid, token)
+                )
+
                 await message.reply_text(
                     "<b>🔗 Aapka Link Ready Hai!</b>\n\n"
                     "<blockquote>"
@@ -699,17 +674,11 @@ async def start_command(client: Bot, message: Message):
                     ])
                 )
 
-                # ── LinkShortner Tutorial: 30s baad check, complete nahi kiya toh video ──
-                asyncio.create_task(
-                    send_linkshortner_tutorial_if_not_verified(client, uid, token)
-                )
-
             except Exception as e:
                 logger.error(f"Deep link error: {e}", exc_info=True)
                 await message.reply_text(
                     "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>"
                 )
-                return
 
         # ── Normal /start ──────────────────────────────────────────────
         else:
@@ -735,11 +704,9 @@ async def start_command(client: Bot, message: Message):
                     photo=START_PIC, caption=caption,
                     reply_markup=InlineKeyboardMarkup(btns)
                 )
-                return
             except Exception as e:
                 logger.warning(f"Photo failed: {e}")
                 await message.reply_text(caption, reply_markup=InlineKeyboardMarkup(btns))
-                return
 
     except Exception as e:
         logger.error(f"FATAL start_command: {e}", exc_info=True)

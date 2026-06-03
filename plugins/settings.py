@@ -224,7 +224,7 @@ async def settings_callback(client: Bot, callback_query):
             )
             
             try:
-                msg = await client.listen(chat_id=callback_query.message.chat.id, filters=filters.text, timeout=300)
+                msg = await client.listen(chat_id=callback_query.message.chat.id, timeout=300)
                 await callback_query.message.delete()
                 
                 if msg.text == '/cancel':
@@ -280,7 +280,7 @@ async def settings_callback(client: Bot, callback_query):
             )
             
             try:
-                msg = await client.listen(chat_id=callback_query.message.chat.id, filters=filters.text, timeout=300)
+                msg = await client.listen(chat_id=callback_query.message.chat.id, timeout=300)
                 await callback_query.message.delete()
                 
                 if msg.text == '/cancel':
@@ -548,7 +548,7 @@ async def settings_callback(client: Bot, callback_query):
             )
             
             try:
-                msg = await client.listen(chat_id=callback_query.message.chat.id, filters=filters.text, timeout=300)
+                msg = await client.listen(chat_id=callback_query.message.chat.id, timeout=300)
                 temp = await msg.reply("<i>Pʟᴇᴀsᴇ ᴡᴀɪᴛ...</i>")
                 await callback_query.message.delete()
                 
@@ -649,7 +649,7 @@ async def settings_callback(client: Bot, callback_query):
             )
             
             try:
-                msg = await client.listen(chat_id=callback_query.message.chat.id, filters=filters.text, timeout=300)
+                msg = await client.listen(chat_id=callback_query.message.chat.id, timeout=300)
                 await callback_query.message.delete()
                 
                 if msg.text == '/cancel':
@@ -687,7 +687,7 @@ async def settings_callback(client: Bot, callback_query):
             )
 
             try:
-                msg_id = await client.listen(chat_id=callback_query.message.chat.id, filters=filters.text, timeout=300)
+                msg_id = await client.listen(chat_id=callback_query.message.chat.id, timeout=300)
                 await callback_query.message.delete()
 
                 if msg_id.text == '/cancel':
@@ -717,7 +717,7 @@ async def settings_callback(client: Bot, callback_query):
                     reply_markup=InlineKeyboardMarkup(btn)
                 )
 
-                msg_name = await client.listen(chat_id=callback_query.message.chat.id, filters=filters.text, timeout=300)
+                msg_name = await client.listen(chat_id=callback_query.message.chat.id, timeout=300)
 
                 if msg_name.text == '/cancel':
                     await msg_name.reply("ᴄᴀɴᴄᴇʟʟᴇᴅ!", reply_markup=InlineKeyboardMarkup(btn))
@@ -879,7 +879,7 @@ async def settings_callback(client: Bot, callback_query):
             )
                 
             try:
-                msg = await client.listen(chat_id=callback_query.message.chat.id, filters=filters.text, timeout=300)
+                msg = await client.listen(chat_id=callback_query.message.chat.id, timeout=300)
                 temp = await msg.reply("<i>Pʀᴏᴄᴇssɪɴɢ...</i>")
                 await callback_query.message.delete()
                     
@@ -970,7 +970,7 @@ async def settings_callback(client: Bot, callback_query):
             )
             
             try:
-                msg = await client.listen(chat_id=callback_query.message.chat.id, filters=filters.text, timeout=300)
+                msg = await client.listen(chat_id=callback_query.message.chat.id, timeout=300)
                 await callback_query.message.delete()
                 
                 if msg.text == '/cancel':
@@ -1075,7 +1075,7 @@ async def settings_callback(client: Bot, callback_query):
             )
             
             try:
-                msg = await client.listen(chat_id=callback_query.message.chat.id, filters=filters.text, timeout=300)
+                msg = await client.listen(chat_id=callback_query.message.chat.id, timeout=300)
                 await callback_query.message.delete()
                 
                 if msg.text == '/cancel':
@@ -1110,7 +1110,7 @@ async def settings_callback(client: Bot, callback_query):
             )
             
             try:
-                msg = await client.listen(chat_id=callback_query.message.chat.id, filters=filters.text, timeout=300)
+                msg = await client.listen(chat_id=callback_query.message.chat.id, timeout=300)
                 await callback_query.message.delete()
                 
                 if msg.text == '/cancel':
