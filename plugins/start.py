@@ -28,10 +28,8 @@ from plugins.tutorial import send_fsub_tutorial_if_not_joined, send_linkshortner
 logger = logging.getLogger(__name__)
 
 # ── TTL Chat Cache (10 minute) ────────────────────────────────────────────────
-# Ek hi channel ko baar baar GetFullChannel se fetch karne pe FloodWait aata hai.
-# Cache mein rakhne se Telegram API calls drastically kam ho jaate hain.
-_CHAT_CACHE: dict[int, tuple] = {}   # {channel_id: (chat_object, timestamp)}
-_CHAT_CACHE_TTL = 600                # 10 minute
+_CHAT_CACHE: dict[int, tuple] = {}
+_CHAT_CACHE_TTL = 600
 
 def _get_cached_chat(cid: int):
     entry = _CHAT_CACHE.get(cid)
@@ -46,15 +44,9 @@ def _set_cached_chat(cid: int, obj):
 
 
 async def _safe_get_chat(client, cid: int, retries: int = 3):
-    """
-    get_chat ka flood-safe wrapper.
-    FloodWait aaye toh wait karke retry karo (max 3 baar).
-    Cache se milega toh Telegram call hi nahi hoga.
-    """
     cached = _get_cached_chat(cid)
     if cached:
         return cached
-
     for attempt in range(retries):
         try:
             data = await client.get_chat(cid)
@@ -73,10 +65,6 @@ async def _safe_get_chat(client, cid: int, retries: int = 3):
 
 
 async def _safe_get_member(client, cid: int, uid: int, retries: int = 3):
-    """
-    get_chat_member ka flood-safe wrapper.
-    FloodWait aaye toh wait karke retry karo.
-    """
     for attempt in range(retries):
         try:
             return await client.get_chat_member(cid, uid)
@@ -89,15 +77,16 @@ async def _safe_get_member(client, cid: int, uid: int, retries: int = 3):
     raise Exception(f"get_chat_member({cid},{uid}) failed after {retries} retries (FloodWait)")
 
 
-# Legacy dict — kuch jagah directly use hota tha, ab _safe_get_chat use karo
 chat_data_cache = {}
 channel_locks   = defaultdict(Lock)
 
-# ── Per-user Lock: duplicate /start requests se bachne ke liye ────────────────
-# Agar ek user baar baar /start bheje (ya Telegram retry kare),
-# toh pehla request complete hone tak dusra silently skip ho jayega.
-_user_processing: dict[int, bool] = {}
-_user_locks: dict[int, Lock] = defaultdict(Lock)
+# ── Per-user Lock ─────────────────────────────────────────────────────────────
+# SAHI TARIKA: ek asyncio.Lock() per user.
+# Jab tak pehla /start complete nahi hota, dusra WAIT karega — aur
+# complete hone ke baad check karega ki kaam ho chuka hai, toh return.
+# Boolean flag nahi — Lock hi sufficient hai agar hum "try_acquire" use karein.
+_user_start_locks: dict[int, Lock] = defaultdict(Lock)
+
 
 # ═══════════════════════════════════════════
 # ADMIN FILTER
@@ -152,37 +141,42 @@ def check_fsub(func):
             channels = await Seishiro.get_fsub_channels()
             if not channels or uid == OWNER_ID:
                 return True
-            # Premium users FSub bypass karte hain
             if await Seishiro.has_premium_access(uid):
                 logger.info(f"User {uid} premium — FSub bypassed")
                 return True
-            # ── PARALLEL CHECK (fast) ─────────────────────────────────
-            # Sab channels simultaneously check karo — ek ke baad ek nahi
             results = await asyncio.gather(*[is_sub(uid, cid) for cid in channels], return_exceptions=True)
             for cid, res in zip(channels, results):
-                # Exception aa gayi toh False maano
                 sub_ok = res if isinstance(res, bool) else False
                 if not sub_ok:
                     if await Seishiro.get_channel_mode(cid) == "on":
-                        # Request mode: ek baar aur check karo (no sleep)
                         sub_ok = await is_sub(uid, cid)
                         if sub_ok:
                             continue
                     return False
             return True
 
+        # ── THE REAL FIX ──────────────────────────────────────────────
+        # asyncio.Lock() — agar locked() hai toh duplicate hai, drop karo.
+        # agar nahi hai toh acquire karo, process karo, finally release karo.
+        # Yeh 100% thread-safe hai asyncio event loop mein.
+        lock = _user_start_locks[uid]
+
+        if lock.locked():
+            # Koi aur /start pehle se chal raha hai is user ke liye
+            logger.info(f"Duplicate /start from {uid} — dropped")
+            return
+
+        await lock.acquire()
         try:
-            # ── Duplicate /start guard (check_fsub level) ─────────────
-            async with _user_locks[uid]:
-                if _user_processing.get(uid, False):
-                    logger.info(f"Duplicate request from {uid} in check_fsub — skipping")
-                    return
             if not await is_subscribed(uid):
                 return await not_joined(client, message)
             return await func(client, message, *args, **kwargs)
         except Exception as e:
             logger.error(f"check_fsub error: {e}")
             await message.reply_text("An unexpected error occurred. Please contact the developer.")
+        finally:
+            lock.release()
+
     return wrapper
 
 
@@ -202,7 +196,6 @@ async def not_joined(client: Client, message: Message):
     try:
         channels = await Seishiro.get_fsub_channels()
 
-        # Fake link sabse pehle
         if channels:
             fake = await Seishiro.get_fake_link()
             if fake:
@@ -256,7 +249,6 @@ async def not_joined(client: Client, message: Message):
                     )
                     link = inv.invite_link
 
-                # Custom name check — agar set hai toh wahi use karo, warna channel title
                 custom_name = await Seishiro.get_fsub_channel_name(cid)
                 btn_text = custom_name if custom_name else data.title
                 buttons.append([InlineKeyboardButton(text=btn_text, url=link)])
@@ -296,8 +288,7 @@ async def not_joined(client: Client, message: Message):
             reply_markup=InlineKeyboardMarkup(buttons),
         )
 
-        # ── FSub Tutorial: 30s baad check, join nahi toh video bhejo ──────────
-        async def _check_joined_all(uid: int) -> bool:
+        async def _check_joined_all_fsub(uid: int) -> bool:
             try:
                 chs = await Seishiro.get_fsub_channels()
                 for cid in chs:
@@ -320,7 +311,7 @@ async def not_joined(client: Client, message: Message):
                 return False
 
         asyncio.create_task(
-            send_fsub_tutorial_if_not_joined(client, uid, _check_joined_all)
+            send_fsub_tutorial_if_not_joined(client, uid, _check_joined_all_fsub)
         )
 
     except Exception as e:
@@ -336,21 +327,16 @@ async def not_joined(client: Client, message: Message):
 # ═══════════════════════════════════════════
 
 async def _resolve_peer_safe(client: Bot, channel_id: int) -> bool:
-    """Peer resolve karo — PeerIdInvalid pe deep resolve, FloodWait pe retry."""
     try:
         await _safe_get_chat(client, channel_id)
         return True
     except PeerIdInvalid:
         return await _force_resolve_peer(client, channel_id)
     except Exception:
-        return True  # Other errors — channel exist karta hai
+        return True
 
 
 async def _get_fresh_invite_link(client: Bot, channel_id: int, is_request: bool) -> str | None:
-    """
-    Fresh invite link banao aur DB mein save karo.
-    4 minute ke andar purana link reuse hoga.
-    """
     async with channel_locks[channel_id]:
         old = await Seishiro.get_current_invite_link(channel_id)
         if old:
@@ -385,7 +371,6 @@ async def _get_fresh_invite_link(client: Bot, channel_id: int, is_request: bool)
 
 
 async def _send_invite_msg(message: Message, invite_link: str):
-    """Direct invite link bhejo (premium user ya shortener off)."""
     wait = await message.reply_text("<b><i>ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ...</i></b>")
     await asyncio.sleep(0.5)
     await wait.delete()
@@ -397,7 +382,7 @@ async def _send_invite_msg(message: Message, invite_link: str):
         ]])
     )
     asyncio.create_task(delete_after_delay(link_msg, 300))
-    return link_msg  # caller ke liye return karo taaki ID save ho sake
+    return link_msg
 
 
 async def delete_after_delay(msg, delay: int):
@@ -410,20 +395,9 @@ async def delete_after_delay(msg, delay: int):
 
 # ═══════════════════════════════════════════
 # VERIFY TOKEN HANDLER
-# User shortener complete karke vfy_<token> ke
-# saath bot pe aata hai
 # ═══════════════════════════════════════════
 
 async def _handle_verify_token(client: Bot, message: Message, uid: int, token: str):
-    """
-    Flow:
-    1. Token DB mein dhundo
-    2. Already used? → reject
-    3. Dusre user ka token? → reject
-    4. Temp premium do (setverifytime duration)
-    5. Fresh invite link banao aur do
-    6. Token mark used
-    """
     doc = await Seishiro.get_verify_token(token)
 
     if not doc:
@@ -452,18 +426,14 @@ async def _handle_verify_token(client: Bot, message: Message, uid: int, token: s
     channel_id = doc["channel_id"]
     is_request = doc.get("is_request", False)
 
-    # Temp premium duration
     cfg     = await _get_bot_config()
-    seconds = cfg.get("verify_premium_seconds", 86400)  # default 24h
+    seconds = cfg.get("verify_premium_seconds", 86400)
 
-    # Temp premium do
     await Seishiro.add_premium(uid, seconds)
     logger.info(f"Temp premium: user={uid}, seconds={seconds}, channel={channel_id}")
 
-    # Peer resolve
     await _resolve_peer_safe(client, channel_id)
 
-    # Fresh invite link
     invite_link = await _get_fresh_invite_link(client, channel_id, is_request)
     if not invite_link:
         return await message.reply_text(
@@ -473,7 +443,6 @@ async def _handle_verify_token(client: Bot, message: Message, uid: int, token: s
             "</blockquote></b>"
         )
 
-    # Token use mark karo
     await Seishiro.mark_token_used(token)
 
     hours = seconds // 3600
@@ -493,7 +462,6 @@ async def _handle_verify_token(client: Bot, message: Message, uid: int, token: s
         ])
     )
 
-    # 5 min baad delete + revoke
     async def cleanup():
         await asyncio.sleep(300)
         try:
@@ -515,25 +483,10 @@ async def _handle_verify_token(client: Bot, message: Message, uid: int, token: s
 @Bot.on_message(filters.command('start') & filters.private)
 @check_fsub
 async def start_command(client: Bot, message: Message):
+    # check_fsub decorator ke andar lock pehle se handle ho raha hai.
+    # Yahan sirf actual logic hai — koi extra guard nahi chahiye.
     uid = message.from_user.id
 
-    # ── Duplicate request guard ────────────────────────────────────────────────
-    # Agar same user ka /start pehle se process ho raha hai, toh silently skip.
-    # Yeh fix karta hai: dobara /start pe duplicate messages aana.
-    async with _user_locks[uid]:
-        if _user_processing.get(uid, False):
-            logger.info(f"Duplicate /start from {uid} — skipping")
-            return
-        _user_processing[uid] = True
-
-    try:
-        await _start_command_inner(client, message, uid)
-    finally:
-        _user_processing[uid] = False
-
-
-async def _start_command_inner(client: Bot, message: Message, uid: int):
-    # Ban check
     if await Seishiro.is_user_banned(uid):
         return await message.reply_text(
             "🚫 Yᴏᴜ ᴀʀᴇ ʙᴀɴɴᴇᴅ!",
@@ -552,11 +505,9 @@ async def _start_command_inner(client: Bot, message: Message, uid: int):
             try:
                 param = text.split(" ", 1)[1]
 
-                # ── Verify token (shortener complete ke baad) ──────────
                 if param.startswith("vfy_"):
                     return await _handle_verify_token(client, message, uid, param[4:])
 
-                # ── Normal encoded channel link ────────────────────────
                 is_request = param.startswith("req_")
                 b64        = param[4:] if is_request else param
 
@@ -573,23 +524,17 @@ async def _start_command_inner(client: Bot, message: Message, uid: int):
                         "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>"
                     )
 
-                # ── Channel Alias Check ────────────────────────────────
-                # Agar purana channel ban ho gaya aur alias set hai,
-                # toh silently naye channel pe redirect karo
                 alias_id = await Seishiro.get_channel_alias(channel_id)
                 if alias_id:
                     logger.info(f"Alias redirect: {channel_id} → {alias_id}")
                     channel_id = alias_id
 
-                # Channel DB mein save
                 if not await Seishiro.channel_data.find_one({"channel_id": channel_id}):
                     await Seishiro.save_channel(channel_id)
 
-                # ── Request link save karo for approve notification ────
                 if is_request:
                     await Seishiro.save_user_request_link(uid, channel_id, b64)
 
-                # Peer resolve
                 try:
                     chat = await _safe_get_chat(client, channel_id)
                     logger.info(f"Peer OK: {channel_id} → {chat.title}")
@@ -605,7 +550,6 @@ async def _start_command_inner(client: Bot, message: Message, uid: int):
                         f"<b><blockquote expandable>Channel error: {str(e)[:80]}</blockquote></b>"
                     )
 
-                # Admin check
                 is_admin_ch, can_invite, reason = await check_bot_permissions(client, channel_id)
                 if not is_admin_ch:
                     return await message.reply_text(
@@ -616,13 +560,11 @@ async def _start_command_inner(client: Bot, message: Message, uid: int):
                         "<b><blockquote expandable>⚠️ Bot ko 'Invite Users' permission chahiye.</blockquote></b>"
                     )
 
-                # Encoded link save
                 if is_request:
                     await Seishiro.save_encoded_link2(channel_id, b64)
                 else:
                     await Seishiro.save_encoded_link(channel_id)
 
-                # Original link check
                 orig = await Seishiro.get_original_link(channel_id)
                 if orig:
                     return await message.reply_text(
@@ -632,7 +574,6 @@ async def _start_command_inner(client: Bot, message: Message, uid: int):
                         ]])
                     )
 
-                # ── Premium → direct link ──────────────────────────────
                 if await Seishiro.has_premium_access(uid):
                     inv = await _get_fresh_invite_link(client, channel_id, is_request)
                     if not inv:
@@ -649,12 +590,10 @@ async def _start_command_inner(client: Bot, message: Message, uid: int):
                         )
                     return
 
-                # ── Free user → shortener flow ─────────────────────────
                 cfg          = await _get_bot_config()
                 shortener_on = cfg.get("shortener_enabled", False) and bool(cfg.get("shortener_api"))
 
                 if not shortener_on:
-                    # Shortener off — direct link do
                     inv = await _get_fresh_invite_link(client, channel_id, is_request)
                     if not inv:
                         return await message.reply_text(
@@ -670,11 +609,6 @@ async def _start_command_inner(client: Bot, message: Message, uid: int):
                         )
                     return
 
-                # Shortener ON:
-                # 1. Token banao
-                # 2. Bot verify link → shortener se pass karo
-                # 3. User ko shortened URL do
-                # 4. User ad complete kare → vfy_<token> pe aaye → temp premium + fresh link
                 token = secrets.token_urlsafe(12)
                 await Seishiro.create_verify_token(uid, channel_id, token)
 
@@ -735,7 +669,7 @@ async def _start_command_inner(client: Bot, message: Message, uid: int):
                 await message.reply_text(caption, reply_markup=InlineKeyboardMarkup(btns))
 
     except Exception as e:
-        logger.error(f"FATAL _start_command_inner: {e}", exc_info=True)
+        logger.error(f"FATAL start_command: {e}", exc_info=True)
         await message.reply_text("<b>Unexpected error. Please try again later.</b>")
 
 
