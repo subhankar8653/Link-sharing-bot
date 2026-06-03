@@ -93,6 +93,12 @@ async def _safe_get_member(client, cid: int, uid: int, retries: int = 3):
 chat_data_cache = {}
 channel_locks   = defaultdict(Lock)
 
+# ── Per-user Lock: duplicate /start requests se bachne ke liye ────────────────
+# Agar ek user baar baar /start bheje (ya Telegram retry kare),
+# toh pehla request complete hone tak dusra silently skip ho jayega.
+_user_processing: dict[int, bool] = {}
+_user_locks: dict[int, Lock] = defaultdict(Lock)
+
 # ═══════════════════════════════════════════
 # ADMIN FILTER
 # ═══════════════════════════════════════════
@@ -506,6 +512,22 @@ async def _handle_verify_token(client: Bot, message: Message, uid: int, token: s
 async def start_command(client: Bot, message: Message):
     uid = message.from_user.id
 
+    # ── Duplicate request guard ────────────────────────────────────────────────
+    # Agar same user ka /start pehle se process ho raha hai, toh silently skip.
+    # Yeh fix karta hai: dobara /start pe duplicate messages aana.
+    async with _user_locks[uid]:
+        if _user_processing.get(uid, False):
+            logger.info(f"Duplicate /start from {uid} — skipping")
+            return
+        _user_processing[uid] = True
+
+    try:
+        await _start_command_inner(client, message, uid)
+    finally:
+        _user_processing[uid] = False
+
+
+async def _start_command_inner(client: Bot, message: Message, uid: int):
     # Ban check
     if await Seishiro.is_user_banned(uid):
         return await message.reply_text(
@@ -708,7 +730,7 @@ async def start_command(client: Bot, message: Message):
                 await message.reply_text(caption, reply_markup=InlineKeyboardMarkup(btns))
 
     except Exception as e:
-        logger.error(f"FATAL start_command: {e}", exc_info=True)
+        logger.error(f"FATAL _start_command_inner: {e}", exc_info=True)
         await message.reply_text("<b>Unexpected error. Please try again later.</b>")
 
 
