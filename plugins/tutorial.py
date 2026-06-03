@@ -11,7 +11,7 @@ Flow:
   - Jab user FSub join nahi karta → 30s wait
   - 30s mein join kar liya → video nahi jaata
   - 30s baad bhi nahi joya → tutorial video bheja jaata hai (10 min baad auto-delete)
-  - LinkShortner ke liye same flow (shortener page pe aaya, ad complete nahi kiya)
+  - Per-user lock: ek user ke liye sirf EK tutorial task kabhi bhi active rahega
 """
 
 import asyncio
@@ -23,6 +23,11 @@ from bot import Bot
 from config import OWNER_ID
 
 logger = logging.getLogger(__name__)
+
+# ── Per-user task guard: ek user ke liye sirf ek tutorial task ───────────────
+# Set mein user_id store hoga jab tak task active hai
+_fsub_tutorial_active: set[int] = set()
+_shortner_tutorial_active: set[int] = set()
 
 
 # ── Admin Filter ──────────────────────────────────────────────────────────────
@@ -63,7 +68,6 @@ async def set_tutorial_fsub(client: Bot, message: Message):
         await prompt.edit("<b>⏰ Timeout! Dobara /set_tutorial_fsub try karo.</b>")
         return
 
-    # Video/document check
     file_id = None
     if response.video:
         file_id = response.video.file_id
@@ -263,44 +267,55 @@ async def send_fsub_tutorial_if_not_joined(client: Bot, user_id: int, check_func
     Agar user join kar leta hai → kuch mat karo.
     Agar nahi kiya → tutorial video bhejo (10 min baad delete).
 
-    check_func: async function jo user_id leke True/False return kare
-                (True = user ne join kar liya)
+    KEY FIX: _fsub_tutorial_active set se check karo — agar pehle se
+    task chal raha hai is user ke liye, silently return karo.
+    Isse duplicate /start pe duplicate tutorial messages NAHI aayenge.
     """
-    tutorial = await Seishiro.get_tutorial("fsub")
-    if not tutorial:
-        return  # Tutorial set nahi ya disabled
-
-    await asyncio.sleep(30)
-
-    # Check karo user ne join kiya ya nahi
-    try:
-        joined = await check_func(user_id)
-    except Exception as e:
-        logger.error(f"fsub tutorial check_func error: {e}")
+    # ── Duplicate task guard ──────────────────────────────────────────
+    if user_id in _fsub_tutorial_active:
+        logger.info(f"FSub tutorial already scheduled for {user_id} — skipping duplicate")
         return
+    _fsub_tutorial_active.add(user_id)
 
-    if joined:
-        return  # Join kar liya, tutorial ki zarurat nahi
-
-    # Tutorial video bhejo
     try:
-        sent = await client.send_video(
-            chat_id=user_id,
-            video=tutorial["file_id"],
-            caption=(
-                "<b>📹 FSub Join Kaise Karein?</b>\n\n"
-                "<blockquote>"
-                "Lagta hai aapko channel join karne mein problem aa rahi hai.\n"
-                "Upar diya gaya tutorial dekho aur step follow karo! 👆\n\n"
-                "⏰ Yeh message 10 minute mein delete ho jaega."
-                "</blockquote>"
+        tutorial = await Seishiro.get_tutorial("fsub")
+        if not tutorial:
+            return  # Tutorial set nahi ya disabled
+
+        await asyncio.sleep(30)
+
+        # Check karo user ne join kiya ya nahi
+        try:
+            joined = await check_func(user_id)
+        except Exception as e:
+            logger.error(f"fsub tutorial check_func error: {e}")
+            return
+
+        if joined:
+            return  # Join kar liya, tutorial ki zarurat nahi
+
+        # Tutorial video bhejo
+        try:
+            sent = await client.send_video(
+                chat_id=user_id,
+                video=tutorial["file_id"],
+                caption=(
+                    "<b>📹 FSub Join Kaise Karein?</b>\n\n"
+                    "<blockquote>"
+                    "Lagta hai aapko channel join karne mein problem aa rahi hai.\n"
+                    "Upar diya gaya tutorial dekho aur step follow karo! 👆\n\n"
+                    "⏰ Yeh message 10 minute mein delete ho jaega."
+                    "</blockquote>"
+                )
             )
-        )
-        # 10 min baad delete
-        asyncio.create_task(_delete_after(sent, 600))
-        logger.info(f"FSub tutorial sent to user {user_id}")
-    except Exception as e:
-        logger.error(f"send_fsub_tutorial error for {user_id}: {e}")
+            asyncio.create_task(_delete_after(sent, 600))
+            logger.info(f"FSub tutorial sent to user {user_id}")
+        except Exception as e:
+            logger.error(f"send_fsub_tutorial error for {user_id}: {e}")
+
+    finally:
+        # ── Guard hamesha remove karo — chahe kuch bhi ho ─────────────
+        _fsub_tutorial_active.discard(user_id)
 
 
 async def send_linkshortner_tutorial_if_not_verified(client: Bot, user_id: int, token: str):
@@ -308,40 +323,54 @@ async def send_linkshortner_tutorial_if_not_verified(client: Bot, user_id: int, 
     30 second wait karo.
     Agar user ne verify kar liya (token used) → kuch mat karo.
     Agar nahi → tutorial video bhejo (10 min baad delete).
+
+    KEY FIX: _shortner_tutorial_active set se check karo — agar pehle se
+    task chal raha hai is user ke liye, silently return karo.
     """
-    tutorial = await Seishiro.get_tutorial("linkshortner")
-    if not tutorial:
+    # ── Duplicate task guard ──────────────────────────────────────────
+    if user_id in _shortner_tutorial_active:
+        logger.info(f"Shortner tutorial already scheduled for {user_id} — skipping duplicate")
         return
+    _shortner_tutorial_active.add(user_id)
 
-    await asyncio.sleep(30)
-
-    # Token used hua kya check karo
     try:
-        doc = await Seishiro.get_verify_token(token)
-        if doc and doc.get("used"):
-            return  # User ne complete kar liya
-    except Exception as e:
-        logger.error(f"linkshortner tutorial token check error: {e}")
-        return
+        tutorial = await Seishiro.get_tutorial("linkshortner")
+        if not tutorial:
+            return
 
-    # Tutorial video bhejo
-    try:
-        sent = await client.send_video(
-            chat_id=user_id,
-            video=tutorial["file_id"],
-            caption=(
-                "<b>📹 Link Shortner Kaise Complete Karein?</b>\n\n"
-                "<blockquote>"
-                "Lagta hai aapko link shortener complete karne mein problem aa rahi hai.\n"
-                "Upar diya gaya tutorial dekho aur step follow karo! 👆\n\n"
-                "⏰ Yeh message 10 minute mein delete ho jaega."
-                "</blockquote>"
+        await asyncio.sleep(30)
+
+        # Token used hua kya check karo
+        try:
+            doc = await Seishiro.get_verify_token(token)
+            if doc and doc.get("used"):
+                return  # User ne complete kar liya
+        except Exception as e:
+            logger.error(f"linkshortner tutorial token check error: {e}")
+            return
+
+        # Tutorial video bhejo
+        try:
+            sent = await client.send_video(
+                chat_id=user_id,
+                video=tutorial["file_id"],
+                caption=(
+                    "<b>📹 Link Shortner Kaise Complete Karein?</b>\n\n"
+                    "<blockquote>"
+                    "Lagta hai aapko link shortener complete karne mein problem aa rahi hai.\n"
+                    "Upar diya gaya tutorial dekho aur step follow karo! 👆\n\n"
+                    "⏰ Yeh message 10 minute mein delete ho jaega."
+                    "</blockquote>"
+                )
             )
-        )
-        asyncio.create_task(_delete_after(sent, 600))
-        logger.info(f"LinkShortner tutorial sent to user {user_id}")
-    except Exception as e:
-        logger.error(f"send_linkshortner_tutorial error for {user_id}: {e}")
+            asyncio.create_task(_delete_after(sent, 600))
+            logger.info(f"LinkShortner tutorial sent to user {user_id}")
+        except Exception as e:
+            logger.error(f"send_linkshortner_tutorial error for {user_id}: {e}")
+
+    finally:
+        # ── Guard hamesha remove karo — chahe kuch bhi ho ─────────────
+        _shortner_tutorial_active.discard(user_id)
 
 
 async def _delete_after(msg, delay: int):
