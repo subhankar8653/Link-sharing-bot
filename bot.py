@@ -1,5 +1,6 @@
 import asyncio
 import os
+import signal
 import stat
 from datetime import datetime
 from pyrogram import Client
@@ -255,4 +256,18 @@ class Bot(Client):
 
 
 if __name__ == "__main__":
-    Bot().run()
+    import signal as _signal
+    _bot = Bot()
+    _loop = asyncio.get_event_loop()
+
+    def _shutdown(sig):
+        LOGGER(__name__).info(f"Signal {sig.name} — graceful shutdown...")
+        _loop.create_task(_bot.stop())
+
+    for _sig in (_signal.SIGTERM, _signal.SIGINT):
+        try:
+            _loop.add_signal_handler(_sig, _shutdown, _sig)
+        except Exception:
+            pass
+
+    _bot.run()
