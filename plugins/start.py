@@ -23,6 +23,7 @@ from database.database import Seishiro
 from plugins.settings import revoke_invite_after_5_minutes
 from plugins.premium import shorten_link, _get_bot_config
 from helper_func import *
+from plugins.tutorial import send_fsub_tutorial_if_not_joined, send_linkshortner_tutorial_if_not_verified
 
 logger = logging.getLogger(__name__)
 
@@ -282,6 +283,33 @@ async def not_joined(client: Client, message: Message):
                 "channels join karein ya request karein.</blockquote></b>"
             ),
             reply_markup=InlineKeyboardMarkup(buttons),
+        )
+
+        # ── FSub Tutorial: 30s baad check, join nahi kiya toh video ──
+        async def _check_joined_all(check_uid: int) -> bool:
+            try:
+                chs = await Seishiro.get_fsub_channels()
+                for cid in chs:
+                    try:
+                        m = await _safe_get_member(client, cid, check_uid)
+                        if m.status not in {
+                            ChatMemberStatus.OWNER,
+                            ChatMemberStatus.ADMINISTRATOR,
+                            ChatMemberStatus.MEMBER,
+                        }:
+                            return False
+                    except Exception:
+                        if await Seishiro.get_channel_mode(cid) == "on":
+                            if not await Seishiro.req_user_exist(cid, check_uid):
+                                return False
+                        else:
+                            return False
+                return True
+            except Exception:
+                return False
+
+        asyncio.create_task(
+            send_fsub_tutorial_if_not_joined(client, uid, _check_joined_all)
         )
 
     except Exception as e:
@@ -639,6 +667,11 @@ async def start_command(client: Bot, message: Message):
                         [InlineKeyboardButton("🔗 Get Channel Link", url=short_url)],
                         [InlineKeyboardButton("💎 Buy Premium — No Ads Ever", callback_data="prem_plans")],
                     ])
+                )
+
+                # ── LinkShortner Tutorial: 30s baad check ──
+                asyncio.create_task(
+                    send_linkshortner_tutorial_if_not_verified(client, uid, token)
                 )
 
             except Exception as e:
