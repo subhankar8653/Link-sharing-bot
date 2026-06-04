@@ -1132,6 +1132,11 @@ async def settings_callback(client: Bot, callback_query):
                 print(f"Error in depromoting admin: {e}")
                 await msg.reply(f"Uɴᴇxᴘᴇᴄᴛᴇᴅ Eʀʀᴏʀ: {str(e)}", reply_markup=InlineKeyboardMarkup(btn))
 
+        else:
+            # Unknown callback — silently ignore, let other handlers deal with it
+            await callback_query.answer()
+            return
+
     except Exception as e:
         print(f"Error in callback: {e}")
         await callback_query.message.edit_text(
