@@ -191,11 +191,12 @@ async def not_joined(client: Client, message: Message):
     try:
         channels = await Seishiro.get_fsub_channels()
 
-        # Fake link sabse pehle
+        # Multi fake links with row positioning (Jojo system)
         if channels:
-            fake = await Seishiro.get_fake_link()
-            if fake:
-                buttons.append([InlineKeyboardButton(text=fake["button_text"], url=fake["url"])])
+            fake_links = await Seishiro.get_fake_links()
+            for fake in fake_links:
+                pos = max(0, min(int(fake.get("row", 1)) - 1, len(buttons)))
+                buttons.insert(pos, [InlineKeyboardButton(text=fake["button_text"], url=fake["url"])])
 
         for cid in channels:
             await message.reply_chat_action(ChatAction.TYPING)

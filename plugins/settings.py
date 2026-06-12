@@ -1646,117 +1646,212 @@ async def batch(client: Bot, message: Message):
 
 
 # ==================== FAKE LINK COMMANDS ====================
+# Jojo multi-link system: multiple fake links, row positioning
+# Commands: /setfakelink, /deletefakelink, /listfakelink
+# Legacy (single-link): /removefakelink, /viewfakelink  ← pehle wale still work karte hain
 
 @Bot.on_message(filters.command("setfakelink") & filters.private & is_owner_or_admin)
 async def set_fake_link_command(client: Client, message: Message):
     """
-    Command: /setfakelink <url> <button_text>
-    Example: /setfakelink https://t.me/channel Join Channel
+    /setfakelink <url> <button_text> [row]
+    Example: /setfakelink https://t.me/channel Join Mera Channel 2
+    Row optional hai (default 1). Multiple links add ho sakte hain.
     """
     try:
-        # Parse command
         parts = message.text.split(maxsplit=2)
-        
+
         if len(parts) < 3:
             await message.reply_text(
                 "<b>❌ Gᴀʟᴀᴛ ғᴏʀᴍᴀᴛ!</b>\n\n"
                 "<b>Usᴀɢᴇ:</b>\n"
-                "<code>/setfakelink [URL] [Button Text]</code>\n\n"
-                "<b>Exᴀᴍᴘʟᴇ:</b>\n"
-                "<code>/setfakelink https://t.me/channel Join Mera Channel</code>",
+                "<code>/setfakelink [URL] [Button Text] [Row]</code>\n\n"
+                "<b>Exᴀᴍᴘʟᴇs:</b>\n"
+                "<code>/setfakelink https://t.me/channel Join Mera Channel</code>\n"
+                "<code>/setfakelink https://t.me/channel2 Another Button 2</code>\n\n"
+                "<i>💡 Row optional (default 1). Multiple buttons add kar sakte ho!\n"
+                "List dekhne ke liye /listfakelink</i>",
                 parse_mode=ParseMode.HTML
             )
             return
-        
+
         url = parts[1]
-        button_text = parts[2]
-        
-        # Validate URL
+        rest = parts[2]
+
+        # Last word row number hai agar integer ho
+        row = 1
+        rest_parts = rest.rsplit(maxsplit=1)
+        if len(rest_parts) == 2 and rest_parts[1].isdigit():
+            button_text = rest_parts[0]
+            row = max(1, int(rest_parts[1]))
+        else:
+            button_text = rest
+
         if not url.startswith(('http://', 'https://', 't.me/')):
             await message.reply_text(
                 "<b>❌ Iɴᴠᴀʟɪᴅ URL!</b>\n\n"
-                "URL should start with <code>http://</code>, <code>https://</code>, or <code>t.me/</code>",
+                "URL <code>http://</code>, <code>https://</code> ya <code>t.me/</code> se shuru hona chahiye.",
                 parse_mode=ParseMode.HTML
             )
             return
-        
-        # Save to database
-        success = await Seishiro.set_fake_link(url, button_text)
-        
+
+        success = await Seishiro.add_fake_link(url, button_text, row)
+
         if success:
+            total = len(await Seishiro.get_fake_links())
             await message.reply_text(
-                "<b>✅ Fᴀᴋᴇ Lɪɴᴋ Sᴇᴛ Hᴏ Gᴀʏᴀ!</b>\n\n"
+                "<b>✅ Fᴀᴋᴇ Lɪɴᴋ Aᴅᴅ Hᴏ Gᴀʏᴀ!</b>\n\n"
                 f"<b>Bᴜᴛᴛᴏɴ Tᴇxᴛ:</b> <code>{button_text}</code>\n"
-                f"<b>URL:</b> <code>{url}</code>\n\n"
-                "<i>Yᴇʜ ʙᴜᴛᴛᴏɴ sɪʀғ ᴛᴀʙ ᴅɪᴋʜᴇɢᴀ ᴊᴀʙ FSᴜʙ ᴄʜᴀɴɴᴇʟs sᴇᴛ ʜᴏɴɢᴇ!</i>",
+                f"<b>URL:</b> <code>{url}</code>\n"
+                f"<b>Row:</b> <code>{row}</code>\n\n"
+                f"<i>Total fake links: {total}. List ke liye /listfakelink</i>",
                 parse_mode=ParseMode.HTML
             )
         else:
             await message.reply_text(
-                "<b>❌ Eʀʀᴏʀ!</b>\n\n"
-                "Fᴀᴋᴇ ʟɪɴᴋ sᴇᴛ ɴᴀʜɪ ʜᴏ sᴀᴋᴀ. Pʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ.",
+                "<b>❌ Eʀʀᴏʀ!</b> Fake link save nahi hua. Dobara try karo.",
                 parse_mode=ParseMode.HTML
             )
-            
+
     except Exception as e:
         logger.error(f"Error in set_fake_link_command: {e}")
         await message.reply_text(
-            f"<b>❌ Eʀʀᴏʀ ᴏᴄᴄᴜʀʀᴇᴅ:</b>\n<code>{str(e)}</code>",
+            f"<b>❌ Eʀʀᴏʀ:</b>\n<code>{str(e)}</code>",
             parse_mode=ParseMode.HTML
         )
 
 
-@Bot.on_message(filters.command("removefakelink") & filters.private & is_owner_or_admin)
-async def remove_fake_link_command(client: Client, message: Message):
-    """Remove fake link"""
+@Bot.on_message(filters.command("deletefakelink") & filters.private & is_owner_or_admin)
+async def delete_fake_link_command(client: Client, message: Message):
+    """
+    /deletefakelink <number>
+    Number /listfakelink se lo.
+    """
     try:
-        success = await Seishiro.remove_fake_link()
-        
+        if len(message.command) < 2 or not message.command[1].isdigit():
+            return await message.reply_text(
+                "<b>❌ Usage:</b> <code>/deletefakelink [number]</code>\n\n"
+                "Number dekhne ke liye <code>/listfakelink</code> use karo.",
+                parse_mode=ParseMode.HTML
+            )
+
+        index = int(message.command[1])
+        success = await Seishiro.remove_fake_link_by_index(index)
+
         if success:
             await message.reply_text(
-                "<b>✅ Fᴀᴋᴇ Lɪɴᴋ Rᴇᴍᴏᴠᴇ Hᴏ Gᴀʏᴀ!</b>\n\n"
-                "<i>Aʙ ғᴀᴋᴇ ʟɪɴᴋ ʙᴜᴛᴛᴏɴ ɴᴀʜɪ ᴅɪᴋʜᴇɢᴀ.</i>",
+                f"<b>✅ Fᴀᴋᴇ Lɪɴᴋ #{index} Hᴀᴛᴀ Dɪʏᴀ!</b>\n\n"
+                "<i>Baki fake links jaise the waise hi hain.</i>",
                 parse_mode=ParseMode.HTML
             )
         else:
             await message.reply_text(
-                "<b>❌ Kᴏɪ Fᴀᴋᴇ Lɪɴᴋ Sᴇᴛ Nᴀʜɪ Hᴀɪ!</b>",
+                f"<b>❌ Fᴀᴋᴇ Lɪɴᴋ #{index} Nᴀʜɪ Mɪʟᴀ!</b>\n\n"
+                "Valid number ke liye /listfakelink dekho.",
                 parse_mode=ParseMode.HTML
             )
-            
+
+    except Exception as e:
+        logger.error(f"Error in delete_fake_link_command: {e}")
+        await message.reply_text(
+            f"<b>❌ Eʀʀᴏʀ:</b>\n<code>{str(e)}</code>",
+            parse_mode=ParseMode.HTML
+        )
+
+
+@Bot.on_message(filters.command("listfakelink") & filters.private & is_owner_or_admin)
+async def list_fake_link_command(client: Client, message: Message):
+    """View all fake links with index numbers."""
+    try:
+        fakes = await Seishiro.get_fake_links()
+
+        if not fakes:
+            return await message.reply_text(
+                "<b>❌ Kᴏɪ Fᴀᴋᴇ Lɪɴᴋ Sᴇᴛ Nᴀʜɪ Hᴀɪ!</b>\n\n"
+                "Set karne ke liye:\n"
+                "<code>/setfakelink https://t.me/channel Button Text [row]</code>",
+                parse_mode=ParseMode.HTML
+            )
+
+        lines = ["<b>📝 Fᴀᴋᴇ Lɪɴᴋs:</b>\n"]
+        for i, fake in enumerate(fakes, 1):
+            lines.append(
+                f"<b>{i}.</b> <code>{fake['button_text']}</code>\n"
+                f"   🔗 <code>{fake['url']}</code>\n"
+                f"   📍 Row: <code>{fake['row']}</code>"
+            )
+
+        lines.append("\n<i>Delete karne ke liye: /deletefakelink (number)</i>")
+        await message.reply_text("\n\n".join(lines), parse_mode=ParseMode.HTML)
+
+    except Exception as e:
+        logger.error(f"Error in list_fake_link_command: {e}")
+        await message.reply_text(
+            f"<b>❌ Eʀʀᴏʀ:</b>\n<code>{str(e)}</code>",
+            parse_mode=ParseMode.HTML
+        )
+
+
+# ── Legacy single-link commands (pehle wale — still work karte hain) ──
+
+@Bot.on_message(filters.command("removefakelink") & filters.private & is_owner_or_admin)
+async def remove_fake_link_command(client: Client, message: Message):
+    """Legacy: sabhi fake links ek saath remove karo (purani wali DB bhi)."""
+    try:
+        # Purani single-link DB
+        old_success = await Seishiro.remove_fake_link()
+        # Nayi multi-link DB se bhi sab delete karo
+        fakes = await Seishiro.get_fake_links()
+        multi_success = False
+        for i in range(len(fakes), 0, -1):
+            await Seishiro.remove_fake_link_by_index(i)
+            multi_success = True
+
+        if old_success or multi_success:
+            await message.reply_text(
+                "<b>✅ Sᴀʙʜɪ Fᴀᴋᴇ Lɪɴᴋs Rᴇᴍᴏᴠᴇ Hᴏ Gᴀʏᴇ!</b>",
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await message.reply_text(
+                "<b>❌ Kᴏɪ Fᴀᴋᴇ Lɪɴᴋ Sᴇᴛ Nᴀʜɪ Tʜᴀ!</b>",
+                parse_mode=ParseMode.HTML
+            )
+
     except Exception as e:
         logger.error(f"Error in remove_fake_link_command: {e}")
         await message.reply_text(
-            f"<b>❌ Eʀʀᴏʀ ᴏᴄᴄᴜʀʀᴇᴅ:</b>\n<code>{str(e)}</code>",
+            f"<b>❌ Eʀʀᴏʀ:</b>\n<code>{str(e)}</code>",
             parse_mode=ParseMode.HTML
         )
 
 
 @Bot.on_message(filters.command("viewfakelink") & filters.private & is_owner_or_admin)
 async def view_fake_link_command(client: Client, message: Message):
-    """View current fake link"""
+    """Legacy alias for /listfakelink — multi links dikhata hai."""
     try:
-        fake_link = await Seishiro.get_fake_link()
-        
-        if fake_link:
-            await message.reply_text(
-                "<b>📝 Cᴜʀʀᴇɴᴛ Fᴀᴋᴇ Lɪɴᴋ Sᴇᴛᴛɪɴɢs:</b>\n\n"
-                f"<b>Bᴜᴛᴛᴏɴ Tᴇxᴛ:</b> <code>{fake_link['button_text']}</code>\n"
-                f"<b>URL:</b> <code>{fake_link['url']}</code>\n\n"
-                "<i>Yᴇʜ ʙᴜᴛᴛᴏɴ FSᴜʙ ᴍᴇssᴀɢᴇ ᴍᴇɪɴ ᴘᴇʜʟᴇ ᴘᴏsɪᴛɪᴏɴ ᴘᴇ ᴅɪᴋʜᴇɢᴀ.</i>",
-                parse_mode=ParseMode.HTML
-            )
+        fakes = await Seishiro.get_fake_links()
+
+        if fakes:
+            lines = ["<b>📝 Fᴀᴋᴇ Lɪɴᴋ Sᴇᴛᴛɪɴɢs:</b>\n"]
+            for i, fake in enumerate(fakes, 1):
+                lines.append(
+                    f"<b>{i}.</b> <code>{fake['button_text']}</code>\n"
+                    f"   🔗 <code>{fake['url']}</code>\n"
+                    f"   📍 Row: <code>{fake['row']}</code>"
+                )
+            lines.append("\n<i>Delete: /deletefakelink (number) | List: /listfakelink</i>")
+            await message.reply_text("\n\n".join(lines), parse_mode=ParseMode.HTML)
         else:
             await message.reply_text(
                 "<b>❌ Kᴏɪ Fᴀᴋᴇ Lɪɴᴋ Sᴇᴛ Nᴀʜɪ Hᴀɪ!</b>\n\n"
-                "<i>Usᴇ <code>/setfakelink</code> ᴛᴏ sᴇᴛ ᴀ ғᴀᴋᴇ ʟɪɴᴋ.</i>",
+                "<i>Use <code>/setfakelink</code> to set a fake link.</i>",
                 parse_mode=ParseMode.HTML
             )
-            
+
     except Exception as e:
         logger.error(f"Error in view_fake_link_command: {e}")
         await message.reply_text(
-            f"<b>❌ Eʀʀᴏʀ ᴏᴄᴄᴜʀʀᴇᴅ:</b>\n<code>{str(e)}</code>",
+            f"<b>❌ Eʀʀᴏʀ:</b>\n<code>{str(e)}</code>",
             parse_mode=ParseMode.HTML
         )
 
