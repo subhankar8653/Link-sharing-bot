@@ -751,6 +751,61 @@ class Master:
             logging.error(f"Error removing fake link: {e}")
             return False
 
+    # ── Multi Fake Link (Jojo system) ────────────────────────────
+    # Each doc: {url, button_text, row, order}  (no fixed _id)
+
+    async def add_fake_link(self, url: str, button_text: str, row: int = 1) -> bool:
+        """Add a new fake link (multi-link support). Purana delete nahi hoga."""
+        try:
+            col = self.database['fake_link_multi']
+            last = await col.find_one(sort=[("order", -1)])
+            order = (last["order"] + 1) if last else 1
+            await col.insert_one({
+                "url": url,
+                "button_text": button_text,
+                "row": row,
+                "order": order,
+            })
+            logging.info(f"add_fake_link: {button_text} -> {url} (row={row})")
+            return True
+        except Exception as e:
+            logging.error(f"add_fake_link error: {e}")
+            return False
+
+    async def get_fake_links(self) -> list:
+        """Return all fake links sorted by order."""
+        try:
+            col = self.database['fake_link_multi']
+            cursor = col.find().sort("order", 1)
+            links = []
+            async for doc in cursor:
+                links.append({
+                    "id": str(doc["_id"]),
+                    "url": doc["url"],
+                    "button_text": doc["button_text"],
+                    "row": doc.get("row", 1),
+                })
+            return links
+        except Exception as e:
+            logging.error(f"get_fake_links error: {e}")
+            return []
+
+    async def remove_fake_link_by_index(self, index: int) -> bool:
+        """index is 1-based as shown in /listfakelink."""
+        try:
+            links = await self.get_fake_links()
+            if index < 1 or index > len(links):
+                return False
+            target = links[index - 1]
+            result = await self.database['fake_link_multi'].delete_one({
+                "url": target["url"],
+                "button_text": target["button_text"],
+            })
+            return result.deleted_count > 0
+        except Exception as e:
+            logging.error(f"remove_fake_link_by_index error: {e}")
+            return False
+
     # ══════════════════════════════════════════
     # PREMIUM SYSTEM  (DreamXBotz se liya)
     # ══════════════════════════════════════════
