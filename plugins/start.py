@@ -231,20 +231,14 @@ async def not_joined(client: Client, message: Message):
                         chat_data_cache[cid] = data
 
                 mode = await Seishiro.get_channel_mode(cid)
-                if mode == "on" and not data.username:
-                    inv  = await client.create_chat_invite_link(
-                        chat_id=cid, creates_join_request=True,
-                        expire_date=datetime.utcnow() + timedelta(seconds=FSUB_LINK_EXPIRY) if FSUB_LINK_EXPIRY else None
-                    )
-                    link = inv.invite_link
-                elif data.username:
+                if data.username:
                     link = f"https://t.me/{data.username}"
                 else:
-                    inv  = await client.create_chat_invite_link(
-                        chat_id=cid,
-                        expire_date=datetime.utcnow() + timedelta(seconds=FSUB_LINK_EXPIRY) if FSUB_LINK_EXPIRY else None
-                    )
-                    link = inv.invite_link
+                    # ── SHARED link: ek hi channel ke liye ek hi link, sab users ke liye ──
+                    # (mode == "on" -> single shared REQUEST link, warna single shared JOIN link)
+                    link = await _get_fresh_invite_link(client, cid, is_request=(mode == "on"))
+                    if not link:
+                        continue
 
                 # Custom name check — agar set hai toh wahi use karo, warna channel title
                 custom_name = await Seishiro.get_fsub_channel_name(cid)
@@ -346,7 +340,9 @@ async def _get_fresh_invite_link(client: Bot, channel_id: int, is_request: bool)
         if old:
             ch  = await Seishiro.channel_data.find_one({"channel_id": channel_id})
             cat = ch.get("invite_link_created_at") if ch else None
-            if cat and (datetime.now() - cat).total_seconds() < 240:
+            # Cached link sirf tab reuse karo jab type (join/request) bhi match kare —
+            # warna dusre mode ka link galat type mein sabko mil jayega (conflict).
+            if cat and old.get("is_request") == is_request and (datetime.now() - cat).total_seconds() < 240:
                 return old["invite_link"]
             try:
                 await client.revoke_chat_invite_link(channel_id, old["invite_link"])
@@ -483,15 +479,16 @@ async def _handle_verify_token(client: Bot, message: Message, uid: int, token: s
         ])
     )
 
-    # 5 min baad delete + revoke
+    # 5 min baad sirf message delete karo — link ko FORCE revoke NAHI karna,
+    # kyunki yeh SAME shared invite link fsub gate aur doosre users ke saath
+    # bhi cached/shared hota hai. Force-revoke karne se dusre features (fsub
+    # gate, doosre users ka same-link) achanak toot jaate the — conflict bug.
+    # Link apne aap hi _get_fresh_invite_link() se 4 min baad naturally rotate
+    # ho jaata hai jab agla request aata hai.
     async def cleanup():
         await asyncio.sleep(300)
         try:
             await link_msg.delete()
-        except Exception:
-            pass
-        try:
-            await client.revoke_chat_invite_link(channel_id, invite_link)
         except Exception:
             pass
 

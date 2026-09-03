@@ -779,18 +779,25 @@ async def settings_callback(client: Bot, callback_query):
                         status_emoji = "ON" if mode == "on" else "OFF"
                         status_text = "Rᴇǫᴜᴇsᴛ ON" if mode == "on" else "Rᴇǫᴜᴇsᴛ OFF"
                         
-                        # Try to get invite link
-                        try:
-                            link = await client.export_chat_invite_link(chat.id)
+                        # Invite link ke liye ab naya link generate NAHI karte (export_chat_invite_link
+                        # har baar ek NAYA primary link bana deta hai jo purana link invalid kar deta hai).
+                        # Isके bajaye wahi CACHED/SHARED link dikhao jo fsub gate sab users ko deta hai.
+                        if chat.username:
+                            link = f"https://t.me/{chat.username}"
                             fsub_list += f"{idx}. <a href='{link}'>{chat.title}</a> {status_emoji}\n"
-                        except:
-                            if chat.username:
-                                link = f"https://t.me/{chat.username}"
-                                fsub_list += f"{idx}. <a href='{link}'>{chat.title}</a> {status_emoji}\n"
+                        else:
+                            cached = await Seishiro.get_current_invite_link(channel_id)
+                            if cached:
+                                fsub_list += f"{idx}. <a href='{cached['invite_link']}'>{chat.title}</a> {status_emoji}\n"
                             else:
                                 fsub_list += f"{idx}. {chat.title} {status_emoji}\n"
-                        
-                        fsub_list += f"    <code>{channel_id}</code> - {status_text}\n\n"
+
+                        stats = await Seishiro.get_fsub_stats(channel_id)
+                        fsub_list += f"    <code>{channel_id}</code> - {status_text}\n"
+                        fsub_list += (
+                            f"    👥 Jᴏɪɴᴇᴅ: <b>{stats['join_count']}</b> | "
+                            f"📥 Rᴇǫᴜᴇsᴛs: <b>{stats['request_count']}</b>\n\n"
+                        )
                         
                     except Exception as e:
                         print(f"Error fetching channel {channel_id}: {e}")

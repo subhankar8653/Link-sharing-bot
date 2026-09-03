@@ -98,6 +98,7 @@ async def on_join_request(client: Bot, message: ChatJoinRequest):
 
         if is_fsub_channel:
             await Seishiro.req_user(chat.id, user.id)
+            await Seishiro.increment_fsub_request_count(chat.id)
             print(f"✅ FSUB: Added {user.id} to request database (NO auto-approve)")
 
         else:
@@ -145,8 +146,14 @@ async def on_member_approved(client: Bot, update):
         old_status = update.old_chat_member.status if update.old_chat_member else None
         new_status = update.new_chat_member.status
 
-        if new_status in ["member", "administrator", "creator"] and old_status != new_status:
+        if new_status in ["member", "administrator", "creator"] and old_status not in ["member", "administrator", "creator"]:
             try:
+                # ── Fsub stats: is channel ke fsub se hi yeh join hua? Tabhi count karo ──
+                fsub_channels = await Seishiro.get_fsub_channels()
+                if chat.id in fsub_channels:
+                    await Seishiro.increment_fsub_join_count(chat.id)
+                    print(f"📊 Fsub join_count +1 for {chat.title} ({chat.id})")
+
                 exists = await Seishiro.req_user_exist(chat.id, user.id)
                 if exists:
                     await Seishiro.del_req_user(chat.id, user.id)
