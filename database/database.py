@@ -472,8 +472,31 @@ class Master:
             logging.error(f"Error fetching current invite link for channel {channel_id}: {e}")
             return None
 
+    async def clear_invite_link(self, channel_id: int) -> bool:
+        """Remove the cached invite-link fields for a channel (after it's been revoked)."""
+        if not isinstance(channel_id, int):
+            return False
+        try:
+            await self.channel_data.update_one(
+                {"channel_id": channel_id},
+                {"$unset": {
+                    "current_invite_link": "",
+                    "is_request_link": "",
+                    "invite_link_created_at": ""
+                }}
+            )
+            return True
+        except Exception as e:
+            logging.error(f"Error clearing invite link for channel {channel_id}: {e}")
+            return False
+
     async def add_fsub_channel(self, channel_id: int, custom_name: str = None) -> bool:
-        """Add a channel to the FSub list."""
+        """Add a channel to the FSub list.
+
+        Naye channels hamesha REQUEST mode ("on") mein add hote hain by default —
+        normal fsub nahi. Chahiye toh baad mein /togglereq ya settings panel se
+        "off" (normal join) mein switch kiya ja sakta hai.
+        """
         if not isinstance(channel_id, int):
             logging.error(f"Invalid channel_id: {channel_id}")
             return False
@@ -483,7 +506,7 @@ class Master:
                 "channel_id": channel_id,
                 "created_at": datetime.utcnow(),
                 "status": "active",
-                "mode": "off"
+                "mode": "on"
             }
             if custom_name:
                 set_data["custom_name"] = custom_name.strip()
@@ -568,9 +591,13 @@ class Master:
             return False
 
     async def get_fsub_channels(self) -> List[int]:
-        """Get all active FSub channel IDs."""
+        """Get all active FSub channel IDs, oldest-added first.
+
+        Sorted by created_at so channel position (1st added, 2nd added, ...)
+        stays stable — used for default button naming (Join/Request channel 01, 02...).
+        """
         try:
-            channels = await self.fsub_data.find({"status": "active"}).to_list(None)
+            channels = await self.fsub_data.find({"status": "active"}).sort("created_at", 1).to_list(None)
             return [channel["channel_id"] for channel in channels if "channel_id" in channel]
         except Exception as e:
             logging.error(f"Error fetching FSub channels: {e}")
