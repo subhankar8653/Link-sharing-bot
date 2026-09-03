@@ -520,6 +520,44 @@ class Master:
             logging.error(f"Error fetching custom name for {channel_id}: {e}")
             return None
 
+    async def increment_fsub_join_count(self, channel_id: int) -> bool:
+        """Fsub ke through channel join hone par counter +1 (bot ke fsub se hua join)."""
+        try:
+            await self.fsub_data.update_one(
+                {"channel_id": channel_id},
+                {"$inc": {"join_count": 1}},
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logging.error(f"Error incrementing fsub join_count for {channel_id}: {e}")
+            return False
+
+    async def increment_fsub_request_count(self, channel_id: int) -> bool:
+        """Fsub ke through join REQUEST aane par counter +1 (bot ke fsub se hua request)."""
+        try:
+            await self.fsub_data.update_one(
+                {"channel_id": channel_id},
+                {"$inc": {"request_count": 1}},
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logging.error(f"Error incrementing fsub request_count for {channel_id}: {e}")
+            return False
+
+    async def get_fsub_stats(self, channel_id: int) -> dict:
+        """Get join_count & request_count (bot ke fsub ki madad se hue) for a channel."""
+        try:
+            data = await self.fsub_data.find_one({"channel_id": channel_id})
+            return {
+                "join_count": data.get("join_count", 0) if data else 0,
+                "request_count": data.get("request_count", 0) if data else 0,
+            }
+        except Exception as e:
+            logging.error(f"Error fetching fsub stats for {channel_id}: {e}")
+            return {"join_count": 0, "request_count": 0}
+
     async def remove_fsub_channel(self, channel_id: int) -> bool:
         """Remove a channel from the FSub list."""
         try:
