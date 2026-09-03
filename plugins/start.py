@@ -237,9 +237,9 @@ async def not_joined(client: Client, message: Message):
                 if data.username:
                     link = f"https://t.me/{data.username}"
                 else:
-                    # ── SHARED link: ek hi channel ke liye ek hi link, sab users ke liye ──
-                    # (mode == "on" -> single shared REQUEST link, warna single shared JOIN link)
-                    link = await _get_fresh_invite_link(client, cid, is_request=(mode == "on"))
+                    # ── PERMANENT link: ek hi channel ke liye ek hi link, koi expiry/timer nahi ──
+                    # (mode == "on" -> single permanent REQUEST link, warna single permanent JOIN link)
+                    link = await _get_persistent_fsub_link(client, cid, is_request=(mode == "on"))
                     if not link:
                         continue
 
@@ -367,6 +367,50 @@ async def _get_fresh_invite_link(client: Bot, channel_id: int, is_request: bool)
                         chat_id=channel_id,
                         expire_date=datetime.now() + timedelta(minutes=5),
                         creates_join_request=is_request
+                    )
+                    await Seishiro.save_invite_link(channel_id, inv.invite_link, is_request)
+                    return inv.invite_link
+                except FloodWait as fw:
+                    wait = fw.value + 2
+                    logger.warning(f"FloodWait {wait}s on create_invite_link({channel_id}), attempt {attempt+1}/3")
+                    await asyncio.sleep(wait)
+            logger.error(f"create_invite_link({channel_id}) failed after 3 retries")
+            return None
+        except Exception as e:
+            logger.error(f"create_invite_link failed {channel_id}: {e}")
+            return None
+
+
+async def _get_persistent_fsub_link(client: Bot, channel_id: int, is_request: bool) -> str | None:
+    """
+    FSub channel ke liye EK PERMANENT invite link banao — koi expire_date nahi,
+    koi 4-minute rotation nahi. Ek baar ban gaya toh hamesha wahi ek link reuse
+    hoga aur usi se sab users join/request karenge (Telegram admin panel mein
+    bhi koi expiry timer nahi dikhega).
+
+    Sirf FSub button banane ke liye use hota hai (not_joined). Link-sharing
+    feature (verify/premium/shortener flow) apna _get_fresh_invite_link() hi
+    use karta rehta hai — us feature se koi conflict nahi hai.
+    """
+    async with channel_locks[channel_id]:
+        old = await Seishiro.get_current_invite_link(channel_id)
+        if old and old.get("invite_link"):
+            # Mode (join/request) same hai toh purana permanent link seedha reuse karo.
+            if old.get("is_request") == is_request:
+                return old["invite_link"]
+            # Mode badla (join <-> request) — purana revoke karke naya permanent link banao.
+            try:
+                await client.revoke_chat_invite_link(channel_id, old["invite_link"])
+            except Exception:
+                pass
+
+        try:
+            for attempt in range(3):
+                try:
+                    inv = await client.create_chat_invite_link(
+                        chat_id=channel_id,
+                        creates_join_request=is_request
+                        # expire_date jaan-bujhkar NAHI diya — link permanent rahega.
                     )
                     await Seishiro.save_invite_link(channel_id, inv.invite_link, is_request)
                     return inv.invite_link
