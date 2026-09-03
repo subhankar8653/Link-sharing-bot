@@ -296,7 +296,7 @@ async def add_fsub_cmd(client: Client, message: Message):
             chat = await client.get_chat(channel_id)
             await Seishiro.add_fsub_channel(channel_id)
             await sent.delete()
-            await msg.reply(f"<b>✅ Fsᴜʙ Cʜᴀɴɴᴇʟ {chat.title} (<code>{channel_id}</code>) ᴀᴅᴅᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ!</b>")
+            await msg.reply(f"<b>✅ Fsᴜʙ Cʜᴀɴɴᴇʟ {chat.title} (<code>{channel_id}</code>) ᴀᴅᴅᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ! Mᴏᴅᴇ: Rᴇǫᴜᴇsᴛ (auto)</b>")
         except PeerIdInvalid:
             await sent.delete()
             await msg.reply("<b>❌ Iɴᴠᴀʟɪᴅ ᴄʜᴀɴɴᴇʟ ID. Mᴀᴋᴇ sᴜʀᴇ ᴛʜᴇ ʙᴏᴛ ɪs ᴀɴ ᴀᴅᴍɪɴ ɪɴ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ.</b>")
@@ -333,11 +333,13 @@ async def remove_fsub_cmd(client: Client, message: Message):
             return
         
         channel_id = int(msg.text)
-        result = await Seishiro.delete_fsub_channel(channel_id)
+        # Pehle join/request link revoke karo, fir fsub list se channel remove karo.
+        await revoke_fsub_channel_link(client, channel_id)
+        removed = await Seishiro.remove_fsub_channel(channel_id)
         
         await sent.delete()
-        if result.deleted_count > 0:
-            await msg.reply(f"<b>✅ Fsᴜʙ Cʜᴀɴɴᴇʟ <code>{channel_id}</code> ʀᴇᴍᴏᴠᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ!</b>")
+        if removed:
+            await msg.reply(f"<b>✅ Fsᴜʙ Cʜᴀɴɴᴇʟ <code>{channel_id}</code> ʀᴇᴍᴏᴠᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ! Iᴛs ɪɴᴠɪᴛᴇ ʟɪɴᴋ ʜᴀs ʙᴇᴇɴ ʀᴇᴠᴏᴋᴇᴅ.</b>")
         else:
             await msg.reply(f"<b>❌ Cʜᴀɴɴᴇʟ <code>{channel_id}</code> ɴᴏᴛ ғᴏᴜɴᴅ ɪɴ Fsᴜʙ ʟɪsᴛ.</b>")
             

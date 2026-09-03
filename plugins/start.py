@@ -190,6 +190,9 @@ async def not_joined(client: Client, message: Message):
 
     try:
         channels = await Seishiro.get_fsub_channels()
+        # Position map: jo channel pehle add hua uska 01, baad mein add hua uska 02...
+        # (get_fsub_channels() ab created_at ke hisaab se sorted aata hai)
+        position_map = {cid: idx for idx, cid in enumerate(channels, start=1)}
 
         # Multi fake links with row positioning (Jojo system)
         if channels:
@@ -240,9 +243,17 @@ async def not_joined(client: Client, message: Message):
                     if not link:
                         continue
 
-                # Custom name check — agar set hai toh wahi use karo, warna channel title
+                # Custom name check — agar set hai toh wahi use karo, warna default naam:
+                # Request mode ON  -> "⚡ Request channel 01 ⚡"
+                # Request mode OFF -> "⚡ Join channel 01 ⚡"
+                # (number = channel add hone ka order, pehla channel = 01, dusra = 02...)
                 custom_name = await Seishiro.get_fsub_channel_name(cid)
-                btn_text = custom_name if custom_name else data.title
+                if custom_name:
+                    btn_text = custom_name
+                else:
+                    pos = position_map.get(cid, count + 1)
+                    label = "Request" if mode == "on" else "Join"
+                    btn_text = f"⚡ {label} channel {pos:02d} ⚡"
                 buttons.append([InlineKeyboardButton(text=btn_text, url=link)])
                 count += 1
                 try:

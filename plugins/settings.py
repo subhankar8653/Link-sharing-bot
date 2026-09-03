@@ -620,7 +620,8 @@ async def settings_callback(client: Bot, callback_query):
                 await temp.edit(
                     f"<b>Fᴏʀᴄᴇ-sᴜʙ ᴄʜᴀɴɴᴇʟ ᴀᴅᴅᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ!</b>\n\n"
                     f"<b>Nᴀᴍᴇ:</b> <a href='{link}'>{chat.title}</a>\n"
-                    f"<b>Iᴅ:</b> <code>{channel_id}</code>",
+                    f"<b>Iᴅ:</b> <code>{channel_id}</code>\n"
+                    f"<b>Mᴏᴅᴇ:</b> Rᴇǫᴜᴇsᴛ (auto)",
                     disable_web_page_preview=True,
                     reply_markup=InlineKeyboardMarkup(btn)
                 )
@@ -657,9 +658,13 @@ async def settings_callback(client: Bot, callback_query):
                     return
                 
                 channel_id = int(msg.text)
+                # Pehle join/request link revoke karo (jis link se members is channel
+                # mein aaye the), fir hi fsub list se channel remove karo.
+                await revoke_fsub_channel_link(client, channel_id)
                 await Seishiro.remove_fsub_channel(channel_id)
                 await msg.reply(
-                    f"<b><blockquote expandable>Cʜᴀɴɴᴇʟ {channel_id} ʜᴀs ʙᴇᴇɴ ʀᴇᴍᴏᴠᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ.</blockquote></b>",
+                    f"<b><blockquote expandable>Cʜᴀɴɴᴇʟ {channel_id} ʜᴀs ʙᴇᴇɴ ʀᴇᴍᴏᴠᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ.\n"
+                    f"Iᴛs ɪɴᴠɪᴛᴇ/ʀᴇǫᴜᴇsᴛ ʟɪɴᴋ ʜᴀs ʙᴇᴇɴ ʀᴇᴠᴏᴋᴇᴅ.</blockquote></b>",
                     reply_markup=InlineKeyboardMarkup(btn)
                 )
             except (ValueError, IndexError):
