@@ -23,6 +23,26 @@ async def decode(base64_string):
     string = string_bytes.decode("ascii")
     return string
 
+async def revoke_fsub_channel_link(client, channel_id: int) -> bool:
+    """
+    Channel ko FSub se remove karte waqt call karo — jis invite link se
+    members join/request kar rahe the (current_invite_link), usko Telegram
+    par revoke kar do taaki purana link kaam na kare, aur cache clear kar do.
+    Channel remove ho chuka ho ya bot admin na ho tab bhi silently continue karta hai.
+    """
+    try:
+        cached = await Seishiro.get_current_invite_link(channel_id)
+        if cached and cached.get("invite_link"):
+            try:
+                await client.revoke_chat_invite_link(channel_id, cached["invite_link"])
+            except Exception:
+                pass  # link already invalid/expired, or bot no longer admin — ignore
+        await Seishiro.clear_invite_link(channel_id)
+        return True
+    except Exception:
+        return False
+
+
 def get_readable_time(seconds: int) -> str:
     count = 0
     up_time = ""
