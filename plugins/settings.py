@@ -43,6 +43,31 @@ async def is_admin_user(filter, client, message):
 
 is_admin_user = filters.create(is_admin_user)
 
+# Build the unified "Mode" menu — one row per channel (name) + one row below it
+# (its own Request/Normal toggle). Every channel's toggle is fully independent,
+# so switching one channel's mode never touches any other channel's mode.
+async def build_fsub_mode_menu(client):
+    channels = await Seishiro.get_fsub_channels()
+    buttons = []
+    for cid in channels:
+        try:
+            chat = await client.get_chat(cid)
+            mode = await Seishiro.get_channel_mode(cid)
+            mode_label = "Rᴇǫᴜᴇsᴛ ✅" if mode == "on" else "Nᴏʀᴍᴀʟ ⭕️"
+            buttons.append([InlineKeyboardButton(f"{chat.title}", callback_data=f"fsub_mode_info_{cid}")])
+            buttons.append([InlineKeyboardButton(f"Mᴏᴅᴇ: {mode_label}  (ᴛᴀᴘ ᴛᴏ sᴡɪᴛᴄʜ)", callback_data=f"fsub_toggle_mode_{cid}")])
+        except Exception as e:
+            print(f"Error fetching channel {cid}: {e}")
+            continue
+
+    buttons.append([InlineKeyboardButton("back", callback_data="fsub_settings_menu")])
+
+    text = (
+        "<blockquote><b><i>ᴛᴀᴘ ᴀ ᴄʜᴀɴɴᴇʟ's ᴍᴏᴅᴇ ʙᴜᴛᴛᴏɴ ᴛᴏ sᴡɪᴛᴄʜ ɪᴛ ʙᴇᴛᴡᴇᴇɴ Rᴇǫᴜᴇsᴛ ᴀɴᴅ Nᴏʀᴍᴀʟ.\n"
+        "Eᴀᴄʜ ᴄʜᴀɴɴᴇʟ's ᴍᴏᴅᴇ ɪs sᴇᴘᴀʀᴀᴛᴇ — ᴄʜᴀɴɢɪɴɢ ᴏɴᴇ ᴡᴏɴ'ᴛ ᴀғғᴇᴄᴛ ᴀɴʏ ᴏᴛʜᴇʀ ᴄʜᴀɴɴᴇʟ.</i></b></blockquote>"
+    )
+    return text, buttons
+
 # Settings command to show the main menu
 @Bot.on_message(filters.command('settings') & filters.private & is_owner_or_admin)
 async def settings_command(client: Client, message: Message):
@@ -377,7 +402,7 @@ async def settings_callback(client: Bot, callback_query):
                 [InlineKeyboardButton("Aᴅᴅ Cʜᴀɴɴᴇʟ", callback_data="add_fsub_channel"), InlineKeyboardButton("Rᴇᴍᴏᴠᴇ Cʜᴀɴɴᴇʟ", callback_data="delete_fsub_channel")],
                 [InlineKeyboardButton("Lɪsᴛ Cʜᴀɴɴᴇʟs", callback_data="list_fsub_channels")],
                 [InlineKeyboardButton("✏️ Rᴇɴᴀᴍᴇ Bᴜᴛᴛᴏɴ", callback_data="rename_fsub_channel")],
-                [InlineKeyboardButton("Tᴏᴏɢʟᴇ Rᴇǫ A", callback_data="fsub_all_channels"), InlineKeyboardButton("Tᴏᴏɢʟᴇ Rᴇǫ B", callback_data="fsub_particular")],
+                [InlineKeyboardButton("Mᴏᴅᴇ", callback_data="fsub_mode_menu")],
                 [InlineKeyboardButton("back", callback_data="settings_main")]
             ]
             await callback_query.message.edit_text(
@@ -385,153 +410,57 @@ async def settings_callback(client: Bot, callback_query):
                 reply_markup=InlineKeyboardMarkup(btn)
             )
 
-        # All Channels Toggle
-        elif cb_data == "fsub_all_channels":
+        # Unified Mode Menu — every channel gets its own name row + its own
+        # Request/Normal toggle row directly below it. No shared "all channels"
+        # switch anymore, so toggling one channel can never bleed into another.
+        elif cb_data == "fsub_mode_menu":
             if not is_admin_user:
                 await callback_query.answer("Only admins can access this!", show_alert=True)
                 return
-            
+
             fsub_channels = await Seishiro.get_fsub_channels()
-            
             if not fsub_channels:
                 await callback_query.answer("No fsub channels found! Add channels first.", show_alert=True)
                 return
-            
-            btn = [
-                [InlineKeyboardButton("Eɴᴀʙʟᴇ Aʟʟ", callback_data="fsub_enable_all"),
-                 InlineKeyboardButton("Dɪsᴀʙʟᴇ Aʟʟ", callback_data="fsub_disable_all")],
-                [InlineKeyboardButton("back", callback_data="fsub_settings_menu")]
-            ]
-            
+
+            text, buttons = await build_fsub_mode_menu(client)
             await callback_query.message.edit_text(
-                f"<blockquote><b>Iɴ ᴛʜɪs ʏᴏᴜ ᴄᴀɴ ᴛᴏɢɢʟᴇ ʏᴏᴜʀ ʀᴇǫᴜᴇsᴛ ғᴏʀᴄᴇ sᴜʙ ᴡɪᴛʜ ᴀ sɪɴɢʟᴇ ᴄʟɪᴄᴋ.\n"
-                f"Tᴏᴛᴀʟ Fsᴜʙ Cʜᴀɴɴᴇʟs: {len(fsub_channels)}</b></blockquote>",
-                reply_markup=InlineKeyboardMarkup(btn)
-            )
-
-        # Enable All Channels
-        elif cb_data == "fsub_enable_all":
-            if not is_admin_user:
-                await callback_query.answer("Only admins can perform this action!", show_alert=True)
-                return
-            
-            await callback_query.answer("Pʟᴇᴀsᴇ ᴡᴀɪᴛ")
-            
-            try:
-                status = await Seishiro.set_channel_mode_all("on")
-                
-                btn = [[InlineKeyboardButton("back", callback_data="fsub_all_channels")]]
-                await callback_query.message.edit_text(
-                    f"<b>Rᴇǫᴜᴇsᴛ Fsᴜʙ Eɴᴀʙʟᴇᴅ!</b>",
-                    reply_markup=InlineKeyboardMarkup(btn)
-                )
-            except Exception as e:
-                btn = [[InlineKeyboardButton("back", callback_data="fsub_all_channels")]]
-                await callback_query.message.edit_text(
-                    f"<b>Eʀʀᴏʀ: {str(e)}</b>",
-                    reply_markup=InlineKeyboardMarkup(btn)
-                )
-
-        # Disable All Channels
-        elif cb_data == "fsub_disable_all":
-            if not is_admin_user:
-                await callback_query.answer("Only admins can perform this action!", show_alert=True)
-                return
-            
-            await callback_query.answer("Pʟᴇᴀsᴇ ᴡᴀɪᴛ")
-            
-            try:
-                status = await Seishiro.set_channel_mode_all("off")
-                
-                btn = [[InlineKeyboardButton("back", callback_data="fsub_all_channels")]]
-                await callback_query.message.edit_text(
-                    f"<b>Rᴇǫᴜᴇsᴛ Fsᴜʙ Dɪsᴀʙʟᴇᴅ!</b>",
-                    reply_markup=InlineKeyboardMarkup(btn)
-                )
-            except Exception as e:
-                btn = [[InlineKeyboardButton("back", callback_data="fsub_all_channels")]]
-                await callback_query.message.edit_text(
-                    f"<b>Eʀʀᴏʀ: {str(e)}</b>",
-                    reply_markup=InlineKeyboardMarkup(btn)
-                )
-
-        # Particular Fsub Channel Management
-        elif cb_data == "fsub_particular":
-            if not is_admin_user:
-                await callback_query.answer("Only admins can access this!", show_alert=True)
-                return
-            
-            channels = await Seishiro.get_fsub_channels()
-            if not channels:
-                await callback_query.answer("No fsub channels found!", show_alert=True)
-                return
-            
-            buttons = []
-            for cid in channels:
-                try:
-                    chat = await client.get_chat(cid)
-                    mode = await Seishiro.get_channel_mode(cid)
-                    status = "ON" if mode == "on" else "OFF"
-                    buttons.append([InlineKeyboardButton(
-                        f"{chat.title}", 
-                        callback_data=f"rfs_ch_{cid}"
-                    )])
-                except Exception as e:
-                    print(f"Error fetching channel {cid}: {e}")
-                    continue
-
-            buttons.append([InlineKeyboardButton("back", callback_data="fsub_settings_menu")])
-            
-            await callback_query.message.edit_text(
-                "<b><i><u>sᴇʟᴇᴄᴛ ᴀ ᴄʜᴀɴɴᴇʟ ᴛᴏ ᴛᴏɢɢʟᴇ ɪᴛs ғᴏʀᴄᴇ-sᴜʙ ᴍᴏᴅᴇ:</u></i></b>",
+                text,
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
 
-        # Handle specific channel fsub toggle
-        elif cb_data.startswith("rfs_ch_"):
-            cid = int(cb_data.split("_")[2])
+        # Tapping a channel's name — just confirms which channel that row is for
+        elif cb_data.startswith("fsub_mode_info_"):
+            cid = int(cb_data.split("_")[-1])
             try:
                 chat = await client.get_chat(cid)
                 mode = await Seishiro.get_channel_mode(cid)
-                status = "ON" if mode == "on" else "OFF"
-                new_mode = "off" if mode == "on" else "on"
-                buttons = [
-                    [InlineKeyboardButton(
-                        f"ʀᴇǫ ᴍᴏᴅᴇ {'OFF' if mode == 'on' else 'ON'}", 
-                        callback_data=f"rfs_toggle_{cid}_{new_mode}"
-                    )],
-                    [InlineKeyboardButton("back", callback_data="fsub_particular")]
-                ]
-                await callback_query.message.edit_text(
-                    f"Cʜᴀɴɴᴇʟ: {chat.title}\nCᴜʀʀᴇɴᴛ Fᴏʀᴄᴇ-Sᴜʙ Mᴏᴅᴇ: {status}",
-                    reply_markup=InlineKeyboardMarkup(buttons)
-                )
-            except Exception as e:
+                mode_label = "Rᴇǫᴜᴇsᴛ Mᴏᴅᴇ (ON)" if mode == "on" else "Nᴏʀᴍᴀʟ Mᴏᴅᴇ (OFF)"
+                await callback_query.answer(f"{chat.title}\nCurrent: {mode_label}", show_alert=True)
+            except Exception:
                 await callback_query.answer("Failed to fetch channel info", show_alert=True)
 
-        # Toggle specific channel mode
-        elif cb_data.startswith("rfs_toggle_"):
-            parts = cb_data.split("_")
-            cid = int(parts[2])
-            action = parts[3]
-            mode = "on" if action == "on" else "off"
+        # One-click, per-channel Request/Normal toggle — only the tapped
+        # channel's mode changes; every other channel is left untouched.
+        elif cb_data.startswith("fsub_toggle_mode_"):
+            if not is_admin_user:
+                await callback_query.answer("Only admins can perform this action!", show_alert=True)
+                return
 
-            await Seishiro.set_channel_mode(cid, mode)
-            await callback_query.answer(f"Force-Sub set to {'ON' if mode == 'on' else 'OFF'}")
+            cid = int(cb_data.split("_")[-1])
+            try:
+                current_mode = await Seishiro.get_channel_mode(cid)
+                new_mode = "off" if current_mode == "on" else "on"
+                await Seishiro.set_channel_mode(cid, new_mode)
+                await callback_query.answer(f"Switched to {'Request' if new_mode == 'on' else 'Normal'} mode")
+            except Exception as e:
+                await callback_query.answer(f"Error: {str(e)}", show_alert=True)
+                return
 
-            # Refresh the channel's mode view
-            chat = await client.get_chat(cid)
-            status = "ON" if mode == "on" else "OFF"
-            new_mode = "off" if mode == "on" else "on"
-            buttons = [
-                [InlineKeyboardButton(
-                    f"ʀᴇǫ ᴍᴏᴅᴇ {'OFF' if mode == 'on' else 'ON'}", 
-                    callback_data=f"rfs_toggle_{cid}_{new_mode}"
-                )],
-                [InlineKeyboardButton("back", callback_data="fsub_particular")]
-            ]
+            # Re-render the menu so the updated status is visible immediately
+            text, buttons = await build_fsub_mode_menu(client)
             await callback_query.message.edit_text(
-                f"Channel: {chat.title}\nCurrent Force-Sub Mode: {status}",
+                text,
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
 

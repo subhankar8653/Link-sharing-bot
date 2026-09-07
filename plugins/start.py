@@ -220,6 +220,15 @@ async def not_joined(client: Client, message: Message):
             if is_member:
                 continue
 
+            # Request mode: agar user pehle se hi is channel pe join-request
+            # bhej chuka hai, toh yeh channel dobara button list mein nahi
+            # aana chahiye — chahe koi naya fsub channel add kyun na hua ho.
+            try:
+                if await Seishiro.get_channel_mode(cid) == "on" and await Seishiro.req_user_exist(cid, uid):
+                    continue
+            except Exception as e:
+                logger.error(f"Req-exist check {cid}: {e}")
+
             try:
                 if cid in chat_data_cache:
                     data = chat_data_cache[cid]
