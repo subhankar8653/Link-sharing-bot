@@ -102,6 +102,14 @@ async def on_join_request(client: Bot, message: ChatJoinRequest):
             print(f"✅ FSUB: Added {user.id} to request database (NO auto-approve)")
 
         else:
+            # ── Auto Request Accept setting check ─────────────────────
+            # Agar OFF hai, to normal channels (jaha bot admin hai) mein
+            # bhi request auto-accept nahi hogi — sirf detect/skip karo.
+            auto_accept_on = await Seishiro.get_auto_accept()
+            if not auto_accept_on:
+                print(f"⏸️ Auto Request Accept OFF hai — skipping auto-approve for {user.id} in {chat.title}")
+                return
+
             await asyncio.sleep(1)
 
             try:

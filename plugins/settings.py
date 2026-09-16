@@ -119,12 +119,34 @@ async def settings_callback(client: Bot, callback_query):
                 pass
 
         elif cb_data == "link_share":
+            auto_accept_on = await Seishiro.get_auto_accept()
+            auto_accept_label = f"Aᴜᴛᴏ Rᴇǫᴜᴇsᴛ Aᴄᴄᴇᴘᴛ: {'✅ ON' if auto_accept_on else '❌ OFF'}"
             btn = [
                 [InlineKeyboardButton("Aᴅᴅ Cʜᴀɴɴᴇʟ", callback_data="add_channel"), InlineKeyboardButton("Dᴇʟᴇᴛᴇ Cʜᴀɴɴᴇʟ", callback_data="delete_channel")],
                 [InlineKeyboardButton("Nᴏʀᴍᴀʟ Lɪɴᴋs", callback_data="channel_links"), InlineKeyboardButton("Rᴇǫᴜᴇsᴛ Lɪɴᴋs", callback_data="request_links")],
                 [InlineKeyboardButton("Lɪsᴛ Cʜᴀɴɴᴇʟs", callback_data="list_channels")],
+                [InlineKeyboardButton(auto_accept_label, callback_data="toggle_auto_accept")],
                 [InlineKeyboardButton("back", callback_data="settings_main")]]
             await callback_query.message.edit_text("<blockquote><b><i>Iɴ ᴛʜɪs ʏᴏᴜ ᴄᴀɴ ᴄʜᴀɴɢᴇ ᴀɴᴅ ᴠɪᴇᴡ ʏᴏᴜʀs ᴄʜᴀɴɴᴇʟs...!!</i></b></blockquote>", reply_markup=InlineKeyboardMarkup(btn))
+
+        elif cb_data == "toggle_auto_accept":
+            if not is_admin_user:
+                await callback_query.answer("Only admins can change this setting!", show_alert=True)
+                return
+
+            current = await Seishiro.get_auto_accept()
+            new_status = not current
+            await Seishiro.set_auto_accept(new_status)
+
+            auto_accept_label = f"Aᴜᴛᴏ Rᴇǫᴜᴇsᴛ Aᴄᴄᴇᴘᴛ: {'✅ ON' if new_status else '❌ OFF'}"
+            btn = [
+                [InlineKeyboardButton("Aᴅᴅ Cʜᴀɴɴᴇʟ", callback_data="add_channel"), InlineKeyboardButton("Dᴇʟᴇᴛᴇ Cʜᴀɴɴᴇʟ", callback_data="delete_channel")],
+                [InlineKeyboardButton("Nᴏʀᴍᴀʟ Lɪɴᴋs", callback_data="channel_links"), InlineKeyboardButton("Rᴇǫᴜᴇsᴛ Lɪɴᴋs", callback_data="request_links")],
+                [InlineKeyboardButton("Lɪsᴛ Cʜᴀɴɴᴇʟs", callback_data="list_channels")],
+                [InlineKeyboardButton(auto_accept_label, callback_data="toggle_auto_accept")],
+                [InlineKeyboardButton("back", callback_data="settings_main")]]
+            await callback_query.message.edit_text("<blockquote><b><i>Iɴ ᴛʜɪs ʏᴏᴜ ᴄᴀɴ ᴄʜᴀɴɢᴇ ᴀɴᴅ ᴠɪᴇᴡ ʏᴏᴜʀs ᴄʜᴀɴɴᴇʟs...!!</i></b></blockquote>", reply_markup=InlineKeyboardMarkup(btn))
+            await callback_query.answer(f"Auto Request Accept {'ON kar diya ✅' if new_status else 'OFF kar diya ❌'}")
 
         elif cb_data == "view_status":
             total_users = await Seishiro.total_users_count()
