@@ -1207,4 +1207,32 @@ class Master:
             logging.error(f"get_tutorial_status error: {e}")
             return {"exists": False, "enabled": False, "file_id": None}
 
+    async def get_auto_accept(self) -> bool:
+        """
+        Auto Request Accept setting fetch karo (normal channels ke liye,
+        jahan bot admin hai). Default True (ON) — yeh purana/existing
+        behaviour hai, isliye off tabhi hoga jab explicitly off kiya jaye.
+        """
+        try:
+            doc = await self.database['bot_settings'].find_one({"_id": "auto_request_accept"})
+            if doc is None:
+                return True
+            return doc.get("enabled", True)
+        except Exception as e:
+            logging.error(f"get_auto_accept error: {e}")
+            return True
+
+    async def set_auto_accept(self, enabled: bool) -> bool:
+        """Auto Request Accept ON/OFF set karo."""
+        try:
+            await self.database['bot_settings'].update_one(
+                {"_id": "auto_request_accept"},
+                {"$set": {"enabled": enabled, "updated_at": datetime.utcnow()}},
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logging.error(f"set_auto_accept error: {e}")
+            return False
+
 Seishiro = Master(DB_URL, DB_NAME)
