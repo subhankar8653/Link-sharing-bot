@@ -277,7 +277,7 @@ async def not_joined(client: Client, message: Message):
         try:
             buttons.append([InlineKeyboardButton(
                 text='• Jᴏɪɴᴇᴅ •',
-                url=f"https://t.me/{BOT_USERNAME}?start={message.command[1]}"
+                url=f"https://t.me/{client.username}?start={message.command[1]}"
             )])
         except (IndexError, AttributeError):
             pass
@@ -713,7 +713,7 @@ async def start_command(client: Bot, message: Message):
                 token = secrets.token_urlsafe(12)
                 await Seishiro.create_verify_token(uid, channel_id, token)
 
-                bot_link  = f"https://t.me/{BOT_USERNAME}?start=vfy_{token}"
+                bot_link  = f"https://t.me/{client.username}?start=vfy_{token}"
                 short_url = await shorten_link(bot_link)
                 logger.info(f"Shortener URL for user {uid}, channel {channel_id}")
 

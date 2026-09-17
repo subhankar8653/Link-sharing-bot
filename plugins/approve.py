@@ -78,7 +78,9 @@ async def on_join_request(client: Bot, message: ChatJoinRequest):
     """
     🔥 SMART LOGIC:
     - FSub channels: Sirf detect karo, auto-approve NAHI
-    - Normal channels: Auto-approve karo
+    - Registered normal channels (jo /getlink se add ki gayi hain): Auto-approve karo
+    - Koi bhi random/unregistered channel (bot sirf admin hai, /getlink se add
+      nahi ki gayi): Bot kuchh nahi karega, request untouched chhod dega
     """
     from database.database import Seishiro
 
@@ -93,44 +95,53 @@ async def on_join_request(client: Bot, message: ChatJoinRequest):
         if chat.id in fsub_channels:
             is_fsub_channel = True
             print(f"✅ This is a FSUB channel")
-        else:
-            print(f"✅ This is a NORMAL channel")
 
         if is_fsub_channel:
             await Seishiro.req_user(chat.id, user.id)
             await Seishiro.increment_fsub_request_count(chat.id)
             print(f"✅ FSUB: Added {user.id} to request database (NO auto-approve)")
+            return
 
-        else:
-            # ── Auto Request Accept setting check ─────────────────────
-            # Agar OFF hai, to normal channels (jaha bot admin hai) mein
-            # bhi request auto-accept nahi hogi — sirf detect/skip karo.
-            auto_accept_on = await Seishiro.get_auto_accept()
-            if not auto_accept_on:
-                print(f"⏸️ Auto Request Accept OFF hai — skipping auto-approve for {user.id} in {chat.title}")
+        # ── Registered channel check ───────────────────────────────────
+        # Sirf un channels mein auto-approve karo jo /getlink (Add Channel)
+        # se bot ke system mein register ki gayi hain. Koi aur channel
+        # jaha bot sirf admin hai (registered nahi), use ignore karo.
+        registered_channels = await Seishiro.get_channels()
+        if chat.id not in registered_channels:
+            print(f"⏭️ {chat.title} ({chat.id}) is not a registered channel — ignoring join request")
+            return
+
+        print(f"✅ This is a registered NORMAL channel")
+
+        # ── Auto Request Accept setting check ─────────────────────────
+        # Agar OFF hai, to registered normal channels mein bhi request
+        # auto-accept nahi hogi — sirf detect/skip karo.
+        auto_accept_on = await Seishiro.get_auto_accept()
+        if not auto_accept_on:
+            print(f"⏸️ Auto Request Accept OFF hai — skipping auto-approve for {user.id} in {chat.title}")
+            return
+
+        await asyncio.sleep(1)
+
+        try:
+            member = await client.get_chat_member(chat.id, user.id)
+            if member.status in ["member", "administrator", "creator"]:
+                print(f"User {user.id} is already a member, skipping")
                 return
+        except UserNotParticipant:
+            pass
+        except Exception as e:
+            print(f"Error checking membership: {e}")
+            return
 
-            await asyncio.sleep(1)
-
-            try:
-                member = await client.get_chat_member(chat.id, user.id)
-                if member.status in ["member", "administrator", "creator"]:
-                    print(f"User {user.id} is already a member, skipping")
-                    return
-            except UserNotParticipant:
-                pass
-            except Exception as e:
-                print(f"Error checking membership: {e}")
-                return
-
-            try:
-                await client.approve_chat_join_request(chat_id=chat.id, user_id=user.id)
-                print(f"✅ NORMAL: Auto-approved {user.first_name} ({user.id})")
-                await _send_approve_notification(client, user, chat)
-            except UserAlreadyParticipant:
-                print(f"User {user.id} is already a participant")
-            except Exception as e:
-                print(f"❌ Error approving: {e}")
+        try:
+            await client.approve_chat_join_request(chat_id=chat.id, user_id=user.id)
+            print(f"✅ NORMAL: Auto-approved {user.first_name} ({user.id})")
+            await _send_approve_notification(client, user, chat)
+        except UserAlreadyParticipant:
+            print(f"User {user.id} is already a participant")
+        except Exception as e:
+            print(f"❌ Error approving: {e}")
 
     except Exception as e:
         print(f"❌ Error in on_join_request: {e}")
