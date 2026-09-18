@@ -22,6 +22,7 @@ class Master:
         self.fsub_data = self.database['fsub']
         self.rqst_fsub_data = self.database['request_forcesub']
         self.rqst_fsub_Channel_data = self.database['request_forcesub_channel']
+        self.broadcast_data = self.database['channel_broadcast']
 
         # Main collection reference (for backward compatibility)
         self.col = self.user_data
@@ -1233,6 +1234,54 @@ class Master:
             return True
         except Exception as e:
             logging.error(f"set_auto_accept error: {e}")
+            return False
+
+    # ============================================
+    # ADMIN CHANNELS (Fban/Funban/Gbroadcast/Gdescription ke liye)
+    # "channel_data" (link-share channels) + "fsub_data" (FSub channels)
+    # dono jagah bot admin hota hai — dono ko union+dedupe karke
+    # ek combined list return karta hai.
+    # ============================================
+    async def get_admin_channels(self) -> List[int]:
+        """Un sab channels ki list jaha bot admin hai (link-share + FSub, duplicate hataakar)."""
+        try:
+            link_channels = await self.get_channels()
+            fsub_channels = await self.get_fsub_channels()
+            combined = list(dict.fromkeys(list(link_channels) + list(fsub_channels)))
+            return combined
+        except Exception as e:
+            logging.error(f"Error fetching admin channels: {e}")
+            return []
+
+    async def save_last_broadcast(self, entries: list) -> bool:
+        """Sabse latest /gbroadcast ke (channel_id, message_id) pairs save karo,
+        taaki /cbroadcast baad mein unhe delete kar sake. Har naye /gbroadcast pe overwrite hota hai."""
+        try:
+            await self.broadcast_data.update_one(
+                {"_id": "last_broadcast"},
+                {"$set": {"entries": entries, "created_at": datetime.utcnow()}},
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logging.error(f"Error saving last broadcast: {e}")
+            return False
+
+    async def get_last_broadcast(self) -> Optional[dict]:
+        """Sabse latest /gbroadcast ka record laao (entries list ke saath)."""
+        try:
+            return await self.broadcast_data.find_one({"_id": "last_broadcast"})
+        except Exception as e:
+            logging.error(f"Error fetching last broadcast: {e}")
+            return None
+
+    async def clear_last_broadcast(self) -> bool:
+        """/cbroadcast ke baad record clear kar do taaki dobara /cbroadcast chalane pe kuch delete na ho."""
+        try:
+            await self.broadcast_data.delete_one({"_id": "last_broadcast"})
+            return True
+        except Exception as e:
+            logging.error(f"Error clearing last broadcast: {e}")
             return False
 
     async def get_community(self) -> dict:
