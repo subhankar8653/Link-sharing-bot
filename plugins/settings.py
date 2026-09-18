@@ -159,10 +159,11 @@ async def settings_callback(client: Bot, callback_query):
             
         elif cb_data == "about":
             user = await client.get_users(OWNER_ID)
+            community = await Seishiro.get_community()
             await callback_query.edit_message_media(
                 InputMediaPhoto(
                     "https://ibb.co/cSfdrzRh",
-                    ABOUT_TXT
+                    get_about_txt(community["name"], community["link"])
                 ),
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton('• ʙᴀᴄᴋ', callback_data='start'), 

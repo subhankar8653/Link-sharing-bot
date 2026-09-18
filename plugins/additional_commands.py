@@ -5,6 +5,7 @@
 # ========================================
 
 import asyncio
+import re
 import time
 from datetime import date, datetime
 from bot import Bot
@@ -23,6 +24,67 @@ async def is_owner_or_admin(filter, client, message):
         return False
         
 is_owner_or_admin = filters.create(is_owner_or_admin)
+
+# /community command — Creator/Founder/Developer link, username aur
+# naam (Aʙᴏᴜᴛ page pe dikhta hai) ko badalne ke liye. Sirf owner/admin
+# use kar sakte hain.
+@Bot.on_message(filters.command('community') & filters.private & is_owner_or_admin)
+async def community_cmd(client: Client, message: Message):
+    """
+    Usage:
+      /community                     -> current community info dikhata hai
+      /community @username           -> naam, username, link teeno usi se set
+      /community @username | Naam    -> username/link @username se, naam alag
+    """
+    try:
+        args = message.text.split(None, 1)
+
+        if len(args) < 2:
+            current = await Seishiro.get_community()
+            await message.reply_text(
+                "<b>Cᴜʀʀᴇɴᴛ Cᴏᴍᴍᴜɴɪᴛʏ:</b>\n"
+                f"• Nᴀᴍᴇ: {current['name']}\n"
+                f"• Usᴇʀɴᴀᴍᴇ: @{current['username']}\n"
+                f"• Lɪɴᴋ: {current['link']}\n\n"
+                "<b>Usᴀɢᴇ:</b>\n"
+                "<code>/community @sbbots</code>\n"
+                "<code>/community @sbbots | Sb Bots</code>"
+            )
+            return
+
+        raw = args[1].strip()
+        display_name = None
+        if "|" in raw:
+            raw, display_name = [part.strip() for part in raw.split("|", 1)]
+
+        # @username, https://t.me/username ya plain username — sabse
+        # username nikaal lo
+        username = re.sub(r'^https?://(t\.me|telegram\.me)/', '', raw, flags=re.IGNORECASE)
+        username = username.lstrip('@').strip('/').strip()
+
+        if not re.match(r'^[A-Za-z0-9_]{3,32}$', username):
+            await message.reply_text(
+                "<b>❌ Gᴀʟᴀᴛ ᴜsᴇʀɴᴀᴍᴇ.</b>\n"
+                "Exᴀᴍᴘʟᴇ: <code>/community @sbbots</code>"
+            )
+            return
+
+        link = f"https://t.me/{username}"
+        community_name = display_name if display_name else username
+
+        ok = await Seishiro.set_community(community_name, username, link)
+        if ok:
+            await message.reply_text(
+                "<b>✅ Cᴏᴍᴍᴜɴɪᴛʏ ᴜᴘᴅᴀᴛᴇ ʜᴏ ɢᴀʏᴀ!</b>\n\n"
+                f"• Nᴀᴍᴇ: {community_name}\n"
+                f"• Usᴇʀɴᴀᴍᴇ: @{username}\n"
+                f"• Lɪɴᴋ: {link}\n\n"
+                "Yᴇ ᴀʙ Aʙᴏᴜᴛ ᴘᴀɢᴇ ᴀᴜʀ ʙᴏᴛ ᴋᴇ ʙᴀᴋɪ community credits mein turant dikhega."
+            )
+        else:
+            await message.reply_text("<b>❌ Dᴀᴛᴀʙᴀsᴇ ᴇʀʀᴏʀ, ᴅᴏʙᴀʀᴀ ᴛʀʏ ᴋᴀʀᴏ.</b>")
+    except Exception as e:
+        await message.reply_text(f"<b>Eʀʀᴏʀ: {e}</b>")
 
 # /help command
 @Bot.on_message(filters.command('help') & filters.private)

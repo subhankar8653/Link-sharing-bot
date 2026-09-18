@@ -283,7 +283,8 @@ async def not_joined(client: Client, message: Message):
             pass
 
         if not buttons:
-            return await temp.edit("<b><i>No valid channels found. Contact @suhanibots</i></b>")
+            community = await Seishiro.get_community()
+            return await temp.edit(f"<b><i>No valid channels found. Contact @{community['username']}</i></b>")
 
         try:
             await temp.delete()
@@ -330,7 +331,8 @@ async def not_joined(client: Client, message: Message):
     except Exception as e:
         logger.error(f"not_joined error: {e}")
         try:
-            await temp.edit(f"<b><i>Error! Contact @suhanibots</i></b>\n<blockquote expandable>{e}</blockquote>")
+            community = await Seishiro.get_community()
+            await temp.edit(f"<b><i>Error! Contact @{community['username']}</i></b>\n<blockquote expandable>{e}</blockquote>")
         except Exception:
             pass
 
@@ -570,10 +572,11 @@ async def start_command(client: Bot, message: Message):
 
     # Ban check
     if await Seishiro.is_user_banned(uid):
+        community = await Seishiro.get_community()
         return await message.reply_text(
             "🚫 Yᴏᴜ ᴀʀᴇ ʙᴀɴɴᴇᴅ!",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("Contact", url="https://t.me/suhanibots")
+                InlineKeyboardButton("Contact", url=community["link"])
             ]])
         )
 
