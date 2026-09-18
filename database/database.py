@@ -1235,4 +1235,44 @@ class Master:
             logging.error(f"set_auto_accept error: {e}")
             return False
 
+    async def get_community(self) -> dict:
+        """
+        Community info (name/username/link) fetch karo — /community
+        command se set kiya hua. Kuch set nahi hai toh config.py wale
+        DEFAULT_COMMUNITY_* defaults return honge.
+        """
+        try:
+            doc = await self.database['bot_settings'].find_one({"_id": "community"})
+            if not doc:
+                return {
+                    "name": DEFAULT_COMMUNITY_NAME,
+                    "username": DEFAULT_COMMUNITY_USERNAME,
+                    "link": DEFAULT_COMMUNITY_LINK
+                }
+            return {
+                "name": doc.get("name", DEFAULT_COMMUNITY_NAME),
+                "username": doc.get("username", DEFAULT_COMMUNITY_USERNAME),
+                "link": doc.get("link", DEFAULT_COMMUNITY_LINK)
+            }
+        except Exception as e:
+            logging.error(f"get_community error: {e}")
+            return {
+                "name": DEFAULT_COMMUNITY_NAME,
+                "username": DEFAULT_COMMUNITY_USERNAME,
+                "link": DEFAULT_COMMUNITY_LINK
+            }
+
+    async def set_community(self, name: str, username: str, link: str) -> bool:
+        """Community naam/username/link set karo (/community command se)."""
+        try:
+            await self.database['bot_settings'].update_one(
+                {"_id": "community"},
+                {"$set": {"name": name, "username": username, "link": link, "updated_at": datetime.utcnow()}},
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logging.error(f"set_community error: {e}")
+            return False
+
 Seishiro = Master(DB_URL, DB_NAME)
