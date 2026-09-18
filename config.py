@@ -38,7 +38,7 @@ def get_about_txt(community_name: str = DEFAULT_COMMUNITY_NAME, community_link: 
         "◈ ꜰᴏᴜɴᴅᴇʀ ᴏꜰ : "
         f"<a href='{community_link}'>{community_name}</a>\n"
         "◈ ᴅᴀᴛᴀʙᴀsᴇ: <a href='https://www.mongodb.com/docs/'>ᴍᴏɴɢᴏ ᴅʙ</a>\n"
-        f"» ᴅᴇᴠᴇʟᴏᴘᴇʀ: <a href='{community_link}'>Suhani</a></blockquote></b></i>"
+        f"» ᴅᴇᴠᴇʟᴏᴘᴇʀ: <a href='{community_link}'>{community_name}</a></blockquote></b></i>"
     )
 
 # Backward-compatible static default (env override se ya kisi purane
