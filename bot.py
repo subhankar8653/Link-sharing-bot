@@ -18,7 +18,7 @@ from aiohttp import web
 
 pyrogram.utils.MIN_CHANNEL_ID = -1002449417637
 
-name = "Link share bot started ✨ Credit:- @Suhanibots"
+name = f"Link share bot started ✨ Credit:- @{DEFAULT_COMMUNITY_USERNAME}"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -224,14 +224,26 @@ class Bot(Client):
             logger.error(f"Peer resolution error: {e}")
             logger.warning("Bot will continue — some channels may show PeerIdInvalid")
 
-        # ── 3. Restart Notification ───────────────────────────────────
+        # ── 3. Community Info (set via /community command) ─────────────
+        community = {
+            "name": DEFAULT_COMMUNITY_NAME,
+            "username": DEFAULT_COMMUNITY_USERNAME,
+            "link": DEFAULT_COMMUNITY_LINK
+        }
+        try:
+            from database.database import Seishiro
+            community = await Seishiro.get_community()
+        except Exception as e:
+            logger.warning(f"Community info fetch failed, using default: {e}")
+
+        # ── 4. Restart Notification ───────────────────────────────────
         try:
             await self.send_photo(
                 chat_id=DATABASE_CHANNEL,
                 photo="https://ibb.co/jky6J3D7",
                 caption="<b>I ʀᴇsᴛᴀʀᴛᴇᴅ ᴀɢᴀɪɴ !</b>",
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("ᴜᴘᴅᴀᴛᴇs", url="https://t.me/Suhanibots")]]
+                    [[InlineKeyboardButton("ᴜᴘᴅᴀᴛᴇs", url=community["link"])]]
                 )
             )
         except Exception as e:
@@ -239,9 +251,9 @@ class Bot(Client):
 
         self.set_parse_mode(ParseMode.HTML)
         logger.info(f"Bot is running ⚡  @{self.username}")
-        logger.info(name)
+        logger.info(f"Link share bot started ✨ Credit:- @{community['username']}")
 
-        # ── 4. Web Server ─────────────────────────────────────────────
+        # ── 5. Web Server ─────────────────────────────────────────────
         try:
             app = web.AppRunner(await web_server())
             await app.setup()

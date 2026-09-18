@@ -15,7 +15,36 @@ TG_BOT_WORKERS = int(os.environ.get("TG_BOT_WORKERS", "40"))
 COMMAND_PHOTO = os.environ.get("COMMAND_PHOTO", "https://ibb.co/cSfdrzRh")  # Replace with your photo URL
 START_PIC = os.environ.get("START_PIC", "https://ibb.co/cSfdrzRh")
 START_MSG = os.environ.get("START_MESSAGE", "Hᴇʟʟᴏ {mention} ~\n\n <i><b><blockquote>Iᴀᴍ ᴀ ᴀᴅᴠᴀɴᴄᴇ ʟɪɴᴋ sʜᴀʀᴇ ʙᴏᴛ ᴛʜʀᴏᴜɢʜ ᴡʜɪᴄʜ ʏᴏᴜ ᴄᴀɴ ɢᴇᴛ ᴛʜᴇ ʟɪɴᴋs ᴏғ sᴘᴇᴄɪғɪᴄ ᴄʜᴀɴɴᴇʟs ᴡʜɪᴄʜ sᴀᴠᴇ ʏᴏᴜʀ ᴄʜᴀɴɴᴇʟs ғʀᴏᴍ enemy.</blockquote></b></i>")
-ABOUT_TXT = os.environ.get("HELP_MESSAGE", "<i><b><blockquote>◈ ᴄʀᴇᴀᴛᴏʀ: <a href=https://t.me/suhanibots>Suhanibots</a>\n◈ ꜰᴏᴜɴᴅᴇʀ ᴏꜰ : <a href=https://t.me/suhanibots>Suhanibots</a>\n◈ ᴅᴀᴛᴀʙᴀsᴇ: <a href='https://www.mongodb.com/docs/'>ᴍᴏɴɢᴏ ᴅʙ</a>\n» ᴅᴇᴠᴇʟᴏᴘᴇʀ: <a href='https://t.me/suhanibots'>Suhani</a></blockquote></b></i>")
+# ============================================
+# COMMUNITY CONFIG (/community command se overridden hota hai)
+# Yeh defaults tabhi use hote hain jab admin ne /community se
+# kabhi kuch set na kiya ho. Actual value DB (bot_settings ->
+# "community") se aati hai — dekho database/database.py
+# get_community() / set_community().
+# ============================================
+DEFAULT_COMMUNITY_NAME = "Suhanibots"
+DEFAULT_COMMUNITY_USERNAME = "suhanibots"
+DEFAULT_COMMUNITY_LINK = "https://t.me/suhanibots"
+
+def get_about_txt(community_name: str = DEFAULT_COMMUNITY_NAME, community_link: str = DEFAULT_COMMUNITY_LINK) -> str:
+    """
+    About page ka text banata hai. community_name/community_link
+    dynamic hote hain — /community command se jo set kiya gaya
+    hoga wahi yahan (Creator/Founder ke against) use hoga.
+    """
+    return (
+        "<i><b><blockquote>◈ ᴄʀᴇᴀᴛᴏʀ: "
+        f"<a href='{community_link}'>{community_name}</a>\n"
+        "◈ ꜰᴏᴜɴᴅᴇʀ ᴏꜰ : "
+        f"<a href='{community_link}'>{community_name}</a>\n"
+        "◈ ᴅᴀᴛᴀʙᴀsᴇ: <a href='https://www.mongodb.com/docs/'>ᴍᴏɴɢᴏ ᴅʙ</a>\n"
+        f"» ᴅᴇᴠᴇʟᴏᴘᴇʀ: <a href='{community_link}'>Suhani</a></blockquote></b></i>"
+    )
+
+# Backward-compatible static default (env override se ya kisi purane
+# import ke liye) — live about page hamesha get_about_txt() use karta
+# hai taaki /community se kiya gaya change turant dikhe.
+ABOUT_TXT = os.environ.get("HELP_MESSAGE", get_about_txt())
 
 # ============================================
 # NEW HELP MESSAGE - VERSION 3 (BEST & MOST ATTRACTIVE)
@@ -82,7 +111,7 @@ SUBSCRIPTION_IMG = os.environ.get(
 # UPI payment details (manual payment ke liye)
 QR_CODE      = os.environ.get("QR_CODE", "")
 OWNER_UPI_ID = os.environ.get("OWNER_UPI_ID", "N/A")
-OWNER_LNK    = os.environ.get("OWNER_LNK", "https://t.me/suhanibots")
+OWNER_LNK    = os.environ.get("OWNER_LNK", DEFAULT_COMMUNITY_LINK)
 
 # ============================================
 # LINK SHORTENER CONFIG  (DreamXBotz se liya)
