@@ -163,22 +163,39 @@ async def _channel_join_status(client, uid: int, cid: int) -> bool:
         return False
 
 
-async def _get_fsub_step_state(client, uid: int):
-    """Return (pending, total) — pending = [(step_num, channel_id), ...] jo
-    abhi join/request nahi hue (channel-add order mein), total = total active
-    FSub channels ki ginti (yehi 'Total Steps' ke roop mein dikhta hai)."""
+async def _compute_fresh_pending_order(client, uid: int) -> list:
+    """Naya stepwise session shuru hote waqt call hota hai — ABHI (real-time) ke
+    hisaab se jo FSub channels join/request nahi hue unki FIXED, ordered list
+    banata hai. Yehi list poore session ke dauraan stable rehti hai (isse hi
+    'Total Steps' nikalta hai) — chahe user pehle kitna bhi join kar chuka ho ya
+    baad mein kisi channel ko leave kyun na kar de, session shuru hote hi sirf
+    UTNE hi steps count honge jitne us waqt sach mein pending the."""
     channels = await Seishiro.get_fsub_channels()
-    total = len(channels)
-    pending = []
-    for idx, cid in enumerate(channels, start=1):
+    pending_order = []
+    for cid in channels:
         try:
             joined = await _channel_join_status(client, uid, cid)
         except Exception as e:
-            logger.error(f"_get_fsub_step_state check error {cid}: {e}")
+            logger.error(f"_compute_fresh_pending_order check error {cid}: {e}")
             joined = False
         if not joined:
-            pending.append((idx, cid))
-    return pending, total
+            pending_order.append(cid)
+    return pending_order
+
+
+async def _current_pending_within_order(client, uid: int, channel_order: list) -> list:
+    """channel_order (fixed session list) mein se abhi bhi kaun se pending hain,
+    check karo — usi fixed order mein."""
+    pending = []
+    for cid in channel_order:
+        try:
+            joined = await _channel_join_status(client, uid, cid)
+        except Exception as e:
+            logger.error(f"_current_pending_within_order check error {cid}: {e}")
+            joined = False
+        if not joined:
+            pending.append(cid)
+    return pending
 
 
 async def _build_fsub_channel_button(client, cid: int, position: int):
@@ -225,16 +242,19 @@ def _fsub_step_caption(step_num: int, total: int) -> str:
         f"Tᴏᴛᴀʟ Sᴛᴇᴘs: {total:02d}</blockquote>\n\n"
         f"📍 <b>Sᴛᴇᴘ {step_num:02d}/{total:02d}</b>\n"
         "<blockquote>🔴 Niche diya gaya channel join ya request karein — karte hi "
-        "agla step khud-ba-khud yahin dikh jayega.\n"
+        "agla step khud-ba-khud NAYE message mein dikh jayega.\n"
         "Turant check karwana ho toh niche wala 🔵 button dabayein.</blockquote>"
     )
 
 
-async def _build_next_step(client, pending: list, total: int):
-    """pending list mein se pehla wala channel try karo jiska button ban jaaye
-    (agar koi channel resolve nahi ho paaya toh agle wale pe skip ho jaata hai).
+async def _build_next_step(client, channel_order: list, pending_cids: list, total: int):
+    """pending_cids (channel_order ke fixed order mein) se pehla wala channel try
+    karo jiska button ban jaaye (koi resolve na ho paaye toh agle pe skip).
+    step_num = us channel ki position channel_order mein (1-based) — yehi number
+    caption aur button dono mein consistent dikhta hai.
     Return: (step_num, cid, caption, buttons) ya None."""
-    for step_num, cid in pending:
+    for cid in pending_cids:
+        step_num = channel_order.index(cid) + 1
         btn = await _build_fsub_channel_button(client, cid, step_num)
         if btn:
             caption = _fsub_step_caption(step_num, total)
@@ -269,20 +289,29 @@ async def _finish_fsub_stepwise(client: Client, uid: int):
         logger.error(f"_finish_fsub_stepwise deliver error for {uid}: {e}")
 
 
-async def _refresh_fsub_step(client: Client, uid: int, force_send_if_missing: bool = True) -> str:
-    """FSub step-message ko latest pending step ke hisaab se refresh karta hai.
+async def _refresh_fsub_step(client: Client, uid: int) -> str:
+    """FSub step ko latest pending status ke hisaab se refresh karta hai.
+    Naya step aane par PURANA step-message DELETE karke NAYA message bheja
+    jaata hai (sirf silent edit nahi) — taaki user ko turant, saaf-saaf pata
+    chale ki agla step aa gaya hai.
     Return: "finished" | "advanced" | "same" | "no_context" | "error" """
     ctx = _fsub_context.get(uid)
     if not ctx:
         return "no_context"
 
-    pending, total = await _get_fsub_step_state(client, uid)
+    channel_order = ctx.get("channel_order") or []
+    total = ctx.get("total_steps", len(channel_order))
 
-    if not pending:
+    if not channel_order:
+        return "error"
+
+    pending_cids = await _current_pending_within_order(client, uid, channel_order)
+
+    if not pending_cids:
         await _finish_fsub_stepwise(client, uid)
         return "finished"
 
-    built = await _build_next_step(client, pending, total)
+    built = await _build_next_step(client, channel_order, pending_cids, total)
     if built is None:
         return "error"
 
@@ -291,17 +320,14 @@ async def _refresh_fsub_step(client: Client, uid: int, force_send_if_missing: bo
     if ctx.get("shown_step") == step_num:
         return "same"
 
-    step_msg = ctx.get("step_msg")
-    if step_msg is not None:
+    # Purana step-message hata do — naya step hamesha ek NAYE message ke roop
+    # mein bhejte hain, taaki user ko chat mein fresh notification jaisa dikhe.
+    old_step_msg = ctx.get("step_msg")
+    if old_step_msg is not None:
         try:
-            await step_msg.edit_caption(caption, reply_markup=buttons)
-            ctx["shown_step"] = step_num
-            return "advanced"
+            await old_step_msg.delete()
         except Exception as e:
-            logger.error(f"_refresh_fsub_step edit failed for {uid}: {e}")
-
-    if not force_send_if_missing:
-        return "error"
+            logger.error(f"_refresh_fsub_step old msg delete failed for {uid}: {e}")
 
     orig_message = ctx.get("message")
     if orig_message is None:
@@ -318,11 +344,26 @@ async def _refresh_fsub_step(client: Client, uid: int, force_send_if_missing: bo
 
 async def not_joined_stepwise(client: Client, message: Message, uid: int):
     """/auto_check ON hone par not_joined() ki jagah ye chalta hai — sirf ek
-    (agla pending) channel ka step dikhata hai, sab ek saath nahi."""
+    (agla pending) channel ka step dikhata hai, sab ek saath nahi.
+    Har fresh /start pe pending channels ABHI ke real status se (fresh) compute
+    hote hain — taaki agar user pehle link le chuka ho aur baad mein koi channel
+    leave kar de, to sirf utne hi (jo abhi sach mein pending hain) steps dikhein,
+    purana total nahi."""
     temp = await message.reply("<b><i>ᴡᴀɪᴛ ᴀ sᴇᴄ..</i></b>")
     if not temp:
         return
     try:
+        channel_order = await _compute_fresh_pending_order(client, uid)
+        ctx = _fsub_context.get(uid)
+        if ctx is None:
+            try:
+                await temp.delete()
+            except Exception:
+                pass
+            return
+        ctx["channel_order"] = channel_order
+        ctx["total_steps"]   = len(channel_order)
+
         status = await _refresh_fsub_step(client, uid)
         try:
             await temp.delete()
@@ -360,7 +401,7 @@ async def _auto_check_poll_loop(client: Client, uid: int):
                 # Beech mein kisi ne /auto_check off kar diya toh poll rok do
                 if not await Seishiro.get_auto_check():
                     return
-                status = await _refresh_fsub_step(client, uid, force_send_if_missing=False)
+                status = await _refresh_fsub_step(client, uid)
                 if status in ("finished", "no_context"):
                     return
             except Exception as e:
@@ -379,7 +420,7 @@ async def notify_fsub_event(client: Client, uid: int):
     if uid not in _fsub_context:
         return
     try:
-        await _refresh_fsub_step(client, uid, force_send_if_missing=False)
+        await _refresh_fsub_step(client, uid)
     except Exception as e:
         logger.error(f"notify_fsub_event error for {uid}: {e}")
 
