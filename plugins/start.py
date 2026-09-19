@@ -123,8 +123,10 @@ admin = filters.create(check_admin)
 # asli link (func) deliver ho jaata hai.
 # ═══════════════════════════════════════════
 
-AUTO_CHECK_POLL_INTERVAL = 5      # har itne second mein dobara check karo
-AUTO_CHECK_MAX_DURATION  = 900    # 15 minute tak hi poll karo, uske baad chhod do
+AUTO_CHECK_FAST_INTERVAL = 2       # pehle 30 second bahut fast check (request turant detect ho)
+AUTO_CHECK_FAST_WINDOW   = 30       # itne second tak fast mode chalega
+AUTO_CHECK_POLL_INTERVAL = 5        # uske baad normal interval
+AUTO_CHECK_MAX_DURATION  = 900      # 15 minute tak hi poll karo, uske baad chhod do
 
 # Per-user ek hi poll task chale — dobara /start karne pe duplicate na bane
 _auto_check_tasks: dict[int, asyncio.Task] = {}
@@ -205,10 +207,10 @@ async def _build_fsub_channel_button(client, cid: int, position: int):
 
         custom_name = await Seishiro.get_fsub_channel_name(cid)
         if custom_name:
-            btn_text = custom_name
+            btn_text = f"🔴 {custom_name}"
         else:
             label = "Request" if mode == "on" else "Join"
-            btn_text = f"⚡ {label} channel {position:02d} ⚡"
+            btn_text = f"🔴 {label} channel {position:02d}"
         return InlineKeyboardButton(text=btn_text, url=link)
     except Exception as e:
         logger.error(f"_build_fsub_channel_button error {cid}: {e}")
@@ -222,9 +224,9 @@ def _fsub_step_caption(step_num: int, total: int) -> str:
         "step-by-step join ya request karna hai.\n"
         f"Tᴏᴛᴀʟ Sᴛᴇᴘs: {total:02d}</blockquote>\n\n"
         f"📍 <b>Sᴛᴇᴘ {step_num:02d}/{total:02d}</b>\n"
-        "<blockquote>Niche diya gaya channel join ya request karein — karte hi "
+        "<blockquote>🔴 Niche diya gaya channel join ya request karein — karte hi "
         "agla step khud-ba-khud yahin dikh jayega.\n"
-        "Turant check karwana ho toh '✅ Mᴀɪɴᴇ Jᴏɪɴ Kᴀʀ Lɪʏᴀ' button dabayein.</blockquote>"
+        "Turant check karwana ho toh niche wala 🔵 button dabayein.</blockquote>"
     )
 
 
@@ -238,7 +240,7 @@ async def _build_next_step(client, pending: list, total: int):
             caption = _fsub_step_caption(step_num, total)
             buttons = InlineKeyboardMarkup([
                 [btn],
-                [InlineKeyboardButton("✅ Mᴀɪɴᴇ Jᴏɪɴ Kᴀʀ Lɪʏᴀ", callback_data="fsub_stepcheck")]
+                [InlineKeyboardButton("🔵 Mᴀɪɴᴇ Jᴏɪɴ Kᴀʀ Lɪʏᴀ", callback_data="fsub_stepcheck")]
             ])
             return step_num, cid, caption, buttons
     return None
@@ -349,8 +351,11 @@ async def _auto_check_poll_loop(client: Client, uid: int):
     elapsed = 0
     try:
         while elapsed < AUTO_CHECK_MAX_DURATION:
-            await asyncio.sleep(AUTO_CHECK_POLL_INTERVAL)
-            elapsed += AUTO_CHECK_POLL_INTERVAL
+            # Pehle 30 second fast (2s) polling — request/join turant detect ho,
+            # uske baad normal (5s) interval taaki rate-limit na lage.
+            interval = AUTO_CHECK_FAST_INTERVAL if elapsed < AUTO_CHECK_FAST_WINDOW else AUTO_CHECK_POLL_INTERVAL
+            await asyncio.sleep(interval)
+            elapsed += interval
             try:
                 # Beech mein kisi ne /auto_check off kar diya toh poll rok do
                 if not await Seishiro.get_auto_check():
@@ -365,6 +370,20 @@ async def _auto_check_poll_loop(client: Client, uid: int):
         _auto_check_tasks.pop(uid, None)
 
 
+async def notify_fsub_event(client: Client, uid: int):
+    """Real-time trigger — jab user kisi channel mein join ya join-request karta hai
+    (plugins/approve.py ke on_chat_join_request / on_chat_member_updated se call
+    hota hai), tab turant is user ka stepwise step check/advance ho jaata hai.
+    Background poll ka wait nahi karna padta. Agar is user ka koi stepwise session
+    hi active nahi hai (auto_check OFF ya already complete), to chup-chaap kuch nahi hota."""
+    if uid not in _fsub_context:
+        return
+    try:
+        await _refresh_fsub_step(client, uid, force_send_if_missing=False)
+    except Exception as e:
+        logger.error(f"notify_fsub_event error for {uid}: {e}")
+
+
 # /auto_check ON hone par step-message ke "✅ Maine Join Kar Liya" button ka handler.
 @Bot.on_callback_query(filters.regex(r"^fsub_stepcheck$"))
 async def fsub_stepcheck_cb(client: Bot, cq: CallbackQuery):
@@ -373,12 +392,12 @@ async def fsub_stepcheck_cb(client: Bot, cq: CallbackQuery):
         status = await _refresh_fsub_step(client, uid)
 
         if status == "finished":
-            await cq.answer("✅ Sabhi steps complete! Link bheji ja rahi hai...")
+            await cq.answer("🟢 Sabhi steps complete! Link bheji ja rahi hai...")
         elif status == "advanced":
-            await cq.answer("✅ Step complete! Agla step dikh raha hai.")
+            await cq.answer("🟢 Step complete! Agla step dikh raha hai.")
         elif status == "same":
             await cq.answer(
-                "❌ Abhi tak aapne upar wale channel ko join/request nahi kiya! Pehle join/request karein.",
+                "🔴 Abhi tak aapne upar wale channel ko join/request nahi kiya! Pehle join/request karein.",
                 show_alert=True
             )
         elif status == "no_context":

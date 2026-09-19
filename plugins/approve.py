@@ -100,6 +100,13 @@ async def on_join_request(client: Bot, message: ChatJoinRequest):
             await Seishiro.req_user(chat.id, user.id)
             await Seishiro.increment_fsub_request_count(chat.id)
             print(f"✅ FSUB: Added {user.id} to request database (NO auto-approve)")
+            # Real-time: agar is user ka koi /auto_check stepwise session chal raha
+            # hai, to turant agla step dikha do — poll ka wait nahi karna.
+            try:
+                from plugins.start import notify_fsub_event
+                asyncio.create_task(notify_fsub_event(client, user.id))
+            except Exception as e:
+                print(f"⚠️ notify_fsub_event trigger error: {e}")
             return
 
         # ── Registered channel check ───────────────────────────────────
@@ -166,6 +173,14 @@ async def on_member_approved(client: Bot, update):
         new_status = update.new_chat_member.status
 
         if new_status in ["member", "administrator", "creator"] and old_status not in ["member", "administrator", "creator"]:
+            # Real-time: agar is user ka koi /auto_check stepwise session chal raha
+            # hai, to turant agla step dikha do — poll ka wait nahi karna.
+            try:
+                from plugins.start import notify_fsub_event
+                asyncio.create_task(notify_fsub_event(client, user.id))
+            except Exception as e:
+                print(f"⚠️ notify_fsub_event trigger error: {e}")
+
             try:
                 # ── Fsub stats: is channel ke fsub se hi yeh join hua? Tabhi count karo ──
                 fsub_channels = await Seishiro.get_fsub_channels()
