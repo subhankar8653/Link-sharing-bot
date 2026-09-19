@@ -111,9 +111,16 @@ admin = filters.create(check_admin)
 
 
 # ═══════════════════════════════════════════
-# FSUB SMART AUTO-CHECK (background poll)
-# /auto_check ON hone par hi active hota hai. OFF hone par is poora block
-# ka koi effect nahi — behaviour bilkul pehle jaisa hi rehta hai.
+# FSUB SMART AUTO-CHECK (step-by-step, background poll)
+# /auto_check ON hone par hi active hota hai. OFF hone par is poore block
+# ka koi effect nahi — behaviour bilkul pehle jaisa hi rehta hai
+# (not_joined() function jo neeche hai, wahi use hoti hai, unchanged).
+#
+# ON hone par: ek waqt mein sirf EK channel ka step dikhaya jaata hai.
+# User join/request karte hi (background poll se auto-detect ya "Maine
+# Join Kar Liya" button se manually) agla step khud-ba-khud dikh jaata
+# hai. Sabhi steps complete hote hi purana step-message delete karke
+# asli link (func) deliver ho jaata hai.
 # ═══════════════════════════════════════════
 
 AUTO_CHECK_POLL_INTERVAL = 5      # har itne second mein dobara check karo
@@ -122,18 +129,223 @@ AUTO_CHECK_MAX_DURATION  = 900    # 15 minute tak hi poll karo, uske baad chhod 
 # Per-user ek hi poll task chale — dobara /start karne pe duplicate na bane
 _auto_check_tasks: dict[int, asyncio.Task] = {}
 
+# Per-user stepwise FSub state: message/func/args/kwargs (link deliver karne
+# ke liye) + step_msg (jo message edit/delete hoga) + shown_step (abhi konsa
+# step display ho raha hai).
+_fsub_context: dict[int, dict] = {}
 
-def _start_auto_check_poll(client, message, func, args, kwargs, uid, is_subscribed_fn):
+
+async def _channel_join_status(client, uid: int, cid: int) -> bool:
+    """Ek channel ke liye user join/request kiya hai ya nahi — check_fsub aur
+    stepwise dono jagah yahi single source of truth use karte hain."""
+    try:
+        m = await _safe_get_member(client, cid, uid)
+        ok = m.status in {
+            ChatMemberStatus.OWNER,
+            ChatMemberStatus.ADMINISTRATOR,
+            ChatMemberStatus.MEMBER
+        }
+        if ok:
+            try:
+                if await Seishiro.req_user_exist(cid, uid):
+                    await Seishiro.del_req_user(cid, uid)
+            except Exception:
+                pass
+        return ok
+    except UserNotParticipant:
+        if await Seishiro.get_channel_mode(cid) == "on":
+            return await Seishiro.req_user_exist(cid, uid)
+        return False
+    except Exception as e:
+        logger.error(f"_channel_join_status error: {e}")
+        return False
+
+
+async def _get_fsub_step_state(client, uid: int):
+    """Return (pending, total) — pending = [(step_num, channel_id), ...] jo
+    abhi join/request nahi hue (channel-add order mein), total = total active
+    FSub channels ki ginti (yehi 'Total Steps' ke roop mein dikhta hai)."""
+    channels = await Seishiro.get_fsub_channels()
+    total = len(channels)
+    pending = []
+    for idx, cid in enumerate(channels, start=1):
+        try:
+            joined = await _channel_join_status(client, uid, cid)
+        except Exception as e:
+            logger.error(f"_get_fsub_step_state check error {cid}: {e}")
+            joined = False
+        if not joined:
+            pending.append((idx, cid))
+    return pending, total
+
+
+async def _build_fsub_channel_button(client, cid: int, position: int):
+    """Ek channel ka join/request button banao — not_joined() ki hi link-building
+    logic yahan reuse hoti hai (username link / persistent invite link / custom name)."""
+    try:
+        if cid in chat_data_cache:
+            data = chat_data_cache[cid]
+        else:
+            try:
+                data = await _safe_get_chat(client, cid)
+                chat_data_cache[cid] = data
+            except PeerIdInvalid:
+                if not await _force_resolve_peer(client, cid):
+                    return None
+                data = await _safe_get_chat(client, cid)
+                chat_data_cache[cid] = data
+
+        mode = await Seishiro.get_channel_mode(cid)
+        if data.username:
+            link = f"https://t.me/{data.username}"
+        else:
+            link = await _get_persistent_fsub_link(client, cid, is_request=(mode == "on"))
+            if not link:
+                return None
+
+        custom_name = await Seishiro.get_fsub_channel_name(cid)
+        if custom_name:
+            btn_text = custom_name
+        else:
+            label = "Request" if mode == "on" else "Join"
+            btn_text = f"⚡ {label} channel {position:02d} ⚡"
+        return InlineKeyboardButton(text=btn_text, url=link)
+    except Exception as e:
+        logger.error(f"_build_fsub_channel_button error {cid}: {e}")
+        return None
+
+
+def _fsub_step_caption(step_num: int, total: int) -> str:
+    return (
+        "<b>Welcome! 😁</b>\n\n"
+        "<blockquote>Apni link paane ke liye niche diye gaye channels ko "
+        "step-by-step join ya request karna hai.\n"
+        f"Tᴏᴛᴀʟ Sᴛᴇᴘs: {total:02d}</blockquote>\n\n"
+        f"📍 <b>Sᴛᴇᴘ {step_num:02d}/{total:02d}</b>\n"
+        "<blockquote>Niche diya gaya channel join ya request karein — karte hi "
+        "agla step khud-ba-khud yahin dikh jayega.\n"
+        "Turant check karwana ho toh '✅ Mᴀɪɴᴇ Jᴏɪɴ Kᴀʀ Lɪʏᴀ' button dabayein.</blockquote>"
+    )
+
+
+async def _build_next_step(client, pending: list, total: int):
+    """pending list mein se pehla wala channel try karo jiska button ban jaaye
+    (agar koi channel resolve nahi ho paaya toh agle wale pe skip ho jaata hai).
+    Return: (step_num, cid, caption, buttons) ya None."""
+    for step_num, cid in pending:
+        btn = await _build_fsub_channel_button(client, cid, step_num)
+        if btn:
+            caption = _fsub_step_caption(step_num, total)
+            buttons = InlineKeyboardMarkup([
+                [btn],
+                [InlineKeyboardButton("✅ Mᴀɪɴᴇ Jᴏɪɴ Kᴀʀ Lɪʏᴀ", callback_data="fsub_stepcheck")]
+            ])
+            return step_num, cid, caption, buttons
+    return None
+
+
+async def _finish_fsub_stepwise(client: Client, uid: int):
+    """Sabhi steps complete — purana step-message delete karo aur asli link deliver karo."""
+    ctx = _fsub_context.pop(uid, None)
+    if not ctx:
+        return
+    step_msg = ctx.get("step_msg")
+    if step_msg:
+        try:
+            await step_msg.delete()
+        except Exception:
+            pass
+    message = ctx.get("message")
+    func    = ctx.get("func")
+    args    = ctx.get("args", ())
+    kwargs  = ctx.get("kwargs", {})
+    if message is None or func is None:
+        return
+    try:
+        await func(client, message, *args, **kwargs)
+    except Exception as e:
+        logger.error(f"_finish_fsub_stepwise deliver error for {uid}: {e}")
+
+
+async def _refresh_fsub_step(client: Client, uid: int, force_send_if_missing: bool = True) -> str:
+    """FSub step-message ko latest pending step ke hisaab se refresh karta hai.
+    Return: "finished" | "advanced" | "same" | "no_context" | "error" """
+    ctx = _fsub_context.get(uid)
+    if not ctx:
+        return "no_context"
+
+    pending, total = await _get_fsub_step_state(client, uid)
+
+    if not pending:
+        await _finish_fsub_stepwise(client, uid)
+        return "finished"
+
+    built = await _build_next_step(client, pending, total)
+    if built is None:
+        return "error"
+
+    step_num, cid, caption, buttons = built
+
+    if ctx.get("shown_step") == step_num:
+        return "same"
+
+    step_msg = ctx.get("step_msg")
+    if step_msg is not None:
+        try:
+            await step_msg.edit_caption(caption, reply_markup=buttons)
+            ctx["shown_step"] = step_num
+            return "advanced"
+        except Exception as e:
+            logger.error(f"_refresh_fsub_step edit failed for {uid}: {e}")
+
+    if not force_send_if_missing:
+        return "error"
+
+    orig_message = ctx.get("message")
+    if orig_message is None:
+        return "error"
+    try:
+        new_msg = await orig_message.reply_photo(photo=FSUB_PIC, caption=caption, reply_markup=buttons)
+        ctx["step_msg"] = new_msg
+        ctx["shown_step"] = step_num
+        return "advanced"
+    except Exception as e:
+        logger.error(f"_refresh_fsub_step send failed for {uid}: {e}")
+        return "error"
+
+
+async def not_joined_stepwise(client: Client, message: Message, uid: int):
+    """/auto_check ON hone par not_joined() ki jagah ye chalta hai — sirf ek
+    (agla pending) channel ka step dikhata hai, sab ek saath nahi."""
+    temp = await message.reply("<b><i>ᴡᴀɪᴛ ᴀ sᴇᴄ..</i></b>")
+    if not temp:
+        return
+    try:
+        status = await _refresh_fsub_step(client, uid)
+        try:
+            await temp.delete()
+        except Exception:
+            pass
+        if status == "error":
+            community = await Seishiro.get_community()
+            await message.reply_text(f"<b><i>No valid channels found. Contact @{community['username']}</i></b>")
+    except Exception as e:
+        logger.error(f"not_joined_stepwise error: {e}")
+        try:
+            await temp.delete()
+        except Exception:
+            pass
+
+
+def _start_auto_check_poll(uid: int, client: Client):
     existing = _auto_check_tasks.get(uid)
     if existing and not existing.done():
         return  # is user ke liye pehle se ek poll chal raha hai
-    task = asyncio.create_task(
-        _auto_check_poll_loop(client, message, func, args, kwargs, uid, is_subscribed_fn)
-    )
+    task = asyncio.create_task(_auto_check_poll_loop(client, uid))
     _auto_check_tasks[uid] = task
 
 
-async def _auto_check_poll_loop(client, message, func, args, kwargs, uid, is_subscribed_fn):
+async def _auto_check_poll_loop(client: Client, uid: int):
     elapsed = 0
     try:
         while elapsed < AUTO_CHECK_MAX_DURATION:
@@ -143,14 +355,42 @@ async def _auto_check_poll_loop(client, message, func, args, kwargs, uid, is_sub
                 # Beech mein kisi ne /auto_check off kar diya toh poll rok do
                 if not await Seishiro.get_auto_check():
                     return
-                if await is_subscribed_fn(uid):
-                    await func(client, message, *args, **kwargs)
+                status = await _refresh_fsub_step(client, uid, force_send_if_missing=False)
+                if status in ("finished", "no_context"):
                     return
             except Exception as e:
                 logger.error(f"auto_check poll error for {uid}: {e}")
                 return
     finally:
         _auto_check_tasks.pop(uid, None)
+
+
+# /auto_check ON hone par step-message ke "✅ Maine Join Kar Liya" button ka handler.
+@Bot.on_callback_query(filters.regex(r"^fsub_stepcheck$"))
+async def fsub_stepcheck_cb(client: Bot, cq: CallbackQuery):
+    uid = cq.from_user.id
+    try:
+        status = await _refresh_fsub_step(client, uid)
+
+        if status == "finished":
+            await cq.answer("✅ Sabhi steps complete! Link bheji ja rahi hai...")
+        elif status == "advanced":
+            await cq.answer("✅ Step complete! Agla step dikh raha hai.")
+        elif status == "same":
+            await cq.answer(
+                "❌ Abhi tak aapne upar wale channel ko join/request nahi kiya! Pehle join/request karein.",
+                show_alert=True
+            )
+        elif status == "no_context":
+            await cq.answer("⚠️ Session expire ho gaya, /start dobara bhejo.", show_alert=True)
+        else:
+            await cq.answer("⚠️ Error aaya, thodi der baad try karein.", show_alert=True)
+    except Exception as e:
+        logger.error(f"fsub_stepcheck_cb error: {e}")
+        try:
+            await cq.answer("⚠️ Error, dobara try karo.", show_alert=True)
+        except Exception:
+            pass
 
 
 # ═══════════════════════════════════════════
@@ -162,29 +402,6 @@ def check_fsub(func):
     async def wrapper(client, message, *args, **kwargs):
         uid = message.from_user.id
 
-        async def is_sub(uid, cid):
-            try:
-                m = await _safe_get_member(client, cid, uid)
-                ok = m.status in {
-                    ChatMemberStatus.OWNER,
-                    ChatMemberStatus.ADMINISTRATOR,
-                    ChatMemberStatus.MEMBER
-                }
-                if ok:
-                    try:
-                        if await Seishiro.req_user_exist(cid, uid):
-                            await Seishiro.del_req_user(cid, uid)
-                    except Exception:
-                        pass
-                return ok
-            except UserNotParticipant:
-                if await Seishiro.get_channel_mode(cid) == "on":
-                    return await Seishiro.req_user_exist(cid, uid)
-                return False
-            except Exception as e:
-                logger.error(f"is_sub error: {e}")
-                return False
-
         async def is_subscribed(uid):
             channels = await Seishiro.get_fsub_channels()
             if not channels or uid == OWNER_ID:
@@ -195,14 +412,14 @@ def check_fsub(func):
                 return True
             # ── PARALLEL CHECK (fast) ─────────────────────────────────
             # Sab channels simultaneously check karo — ek ke baad ek nahi
-            results = await asyncio.gather(*[is_sub(uid, cid) for cid in channels], return_exceptions=True)
+            results = await asyncio.gather(*[_channel_join_status(client, uid, cid) for cid in channels], return_exceptions=True)
             for cid, res in zip(channels, results):
                 # Exception aa gayi toh False maano
                 sub_ok = res if isinstance(res, bool) else False
                 if not sub_ok:
                     if await Seishiro.get_channel_mode(cid) == "on":
                         # Request mode: ek baar aur check karo (no sleep)
-                        sub_ok = await is_sub(uid, cid)
+                        sub_ok = await _channel_join_status(client, uid, cid)
                         if sub_ok:
                             continue
                     return False
@@ -210,16 +427,24 @@ def check_fsub(func):
 
         try:
             if not await is_subscribed(uid):
-                result = await not_joined(client, message)
-                # Smart auto-check: sirf ON hone par hi background poll lagta
-                # hai. OFF (default) hone par yahan kuch nahi hota — user ko
-                # khud "• Joined •" button click karna padta hai, bilkul pehle jaisa.
+                # Smart auto-check: sirf ON hone par hi step-by-step flow +
+                # background poll lagta hai. OFF (default) hone par bilkul
+                # pehle jaisa not_joined() (sab channels ek saath) chalta hai.
                 try:
-                    if await Seishiro.get_auto_check():
-                        _start_auto_check_poll(client, message, func, args, kwargs, uid, is_subscribed)
+                    auto_on = await Seishiro.get_auto_check()
                 except Exception as e:
-                    logger.error(f"auto_check trigger error: {e}")
-                return result
+                    logger.error(f"auto_check fetch error: {e}")
+                    auto_on = False
+
+                if auto_on:
+                    _fsub_context[uid] = {
+                        "message": message, "func": func, "args": args, "kwargs": kwargs,
+                        "step_msg": None, "shown_step": None,
+                    }
+                    await not_joined_stepwise(client, message, uid)
+                    _start_auto_check_poll(uid, client)
+                    return
+                return await not_joined(client, message)
             return await func(client, message, *args, **kwargs)
         except Exception as e:
             logger.error(f"check_fsub error: {e}")
