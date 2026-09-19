@@ -1237,6 +1237,36 @@ class Master:
             return False
 
     # ============================================
+    # SMART FSUB AUTO-CHECK
+    # OFF (default) -> bilkul purana behaviour: user ko khud "• Joined •"
+    #                   button click karna padta hai.
+    # ON            -> user ke baaki channels join karte hi (background
+    #                   poll ke zariye detect hoke) link automatically
+    #                   bhej diya jaata hai, click ki zaroorat nahi.
+    # ============================================
+    async def get_auto_check(self) -> bool:
+        """FSub smart auto-check ON hai ya OFF (default: OFF, purana behaviour)."""
+        try:
+            doc = await self.database['bot_settings'].find_one({"_id": "fsub_auto_check"})
+            return bool(doc.get("enabled", False)) if doc else False
+        except Exception as e:
+            logging.error(f"get_auto_check error: {e}")
+            return False
+
+    async def set_auto_check(self, enabled: bool) -> bool:
+        """FSub smart auto-check ON/OFF set karo."""
+        try:
+            await self.database['bot_settings'].update_one(
+                {"_id": "fsub_auto_check"},
+                {"$set": {"enabled": enabled, "updated_at": datetime.utcnow()}},
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logging.error(f"set_auto_check error: {e}")
+            return False
+
+    # ============================================
     # ADMIN CHANNELS (Fban/Funban/Gbroadcast/Gdescription ke liye)
     # "channel_data" (link-share channels) + "fsub_data" (FSub channels)
     # dono jagah bot admin hota hai — dono ko union+dedupe karke
