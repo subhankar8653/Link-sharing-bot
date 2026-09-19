@@ -86,7 +86,40 @@ async def community_cmd(client: Client, message: Message):
     except Exception as e:
         await message.reply_text(f"<b>Eʀʀᴏʀ: {e}</b>")
 
-# /help command
+# /auto_check command — FSub "smart detection" toggle.
+# OFF (default) -> purana behaviour bilkul waisa hi: user ko "• Joined •"
+#                   button khud click karna padta hai.
+# ON            -> user jaise hi baaki bache channels join kar leta hai,
+#                   bot background mein detect karke link automatically
+#                   bhej deta hai, kisi button click ki zaroorat nahi.
+@Bot.on_message(filters.command('auto_check') & filters.private & is_owner_or_admin)
+async def auto_check_cmd(client: Client, message: Message):
+    try:
+        args = message.text.split(None, 1)
+
+        if len(args) < 2 or args[1].strip().lower() not in ("on", "off"):
+            current = await Seishiro.get_auto_check()
+            await message.reply_text(
+                f"<b>FSᴜʙ Sᴍᴀʀᴛ Aᴜᴛᴏ-Cʜᴇᴄᴋ:</b> {'✅ ON' if current else '❌ OFF'}\n\n"
+                "<b>Usᴀɢᴇ:</b>\n"
+                "<code>/auto_check on</code> — channels join karte hi link auto-send\n"
+                "<code>/auto_check off</code> — purana behaviour (Joined button click karna hoga)"
+            )
+            return
+
+        enabled = args[1].strip().lower() == "on"
+        ok = await Seishiro.set_auto_check(enabled)
+        if ok:
+            await message.reply_text(
+                f"<b>✅ FSᴜʙ Sᴍᴀʀᴛ Aᴜᴛᴏ-Cʜᴇᴄᴋ {'ON' if enabled else 'OFF'} ᴋᴀʀ ᴅɪʏᴀ ɢᴀʏᴀ!</b>\n\n"
+                + ("Ab user jaise hi baaki channels join karega, link automatically mil jayegi."
+                   if enabled else
+                   "Ab sab pehle jaisa hi chalega — user ko khud 'Joined' button click karna hoga.")
+            )
+        else:
+            await message.reply_text("<b>❌ Dᴀᴛᴀʙᴀsᴇ ᴇʀʀᴏʀ, ᴅᴏʙᴀʀᴀ ᴛʀʏ ᴋᴀʀᴏ.</b>")
+    except Exception as e:
+        await message.reply_text(f"<b>Eʀʀᴏʀ: {e}</b>")
 @Bot.on_message(filters.command('help') & filters.private)
 async def help_command(client: Client, message: Message):
     """Help command handler"""

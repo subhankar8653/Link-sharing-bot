@@ -111,6 +111,49 @@ admin = filters.create(check_admin)
 
 
 # ═══════════════════════════════════════════
+# FSUB SMART AUTO-CHECK (background poll)
+# /auto_check ON hone par hi active hota hai. OFF hone par is poora block
+# ka koi effect nahi — behaviour bilkul pehle jaisa hi rehta hai.
+# ═══════════════════════════════════════════
+
+AUTO_CHECK_POLL_INTERVAL = 5      # har itne second mein dobara check karo
+AUTO_CHECK_MAX_DURATION  = 900    # 15 minute tak hi poll karo, uske baad chhod do
+
+# Per-user ek hi poll task chale — dobara /start karne pe duplicate na bane
+_auto_check_tasks: dict[int, asyncio.Task] = {}
+
+
+def _start_auto_check_poll(client, message, func, args, kwargs, uid, is_subscribed_fn):
+    existing = _auto_check_tasks.get(uid)
+    if existing and not existing.done():
+        return  # is user ke liye pehle se ek poll chal raha hai
+    task = asyncio.create_task(
+        _auto_check_poll_loop(client, message, func, args, kwargs, uid, is_subscribed_fn)
+    )
+    _auto_check_tasks[uid] = task
+
+
+async def _auto_check_poll_loop(client, message, func, args, kwargs, uid, is_subscribed_fn):
+    elapsed = 0
+    try:
+        while elapsed < AUTO_CHECK_MAX_DURATION:
+            await asyncio.sleep(AUTO_CHECK_POLL_INTERVAL)
+            elapsed += AUTO_CHECK_POLL_INTERVAL
+            try:
+                # Beech mein kisi ne /auto_check off kar diya toh poll rok do
+                if not await Seishiro.get_auto_check():
+                    return
+                if await is_subscribed_fn(uid):
+                    await func(client, message, *args, **kwargs)
+                    return
+            except Exception as e:
+                logger.error(f"auto_check poll error for {uid}: {e}")
+                return
+    finally:
+        _auto_check_tasks.pop(uid, None)
+
+
+# ═══════════════════════════════════════════
 # FORCE SUBSCRIBE DECORATOR
 # ═══════════════════════════════════════════
 
@@ -167,7 +210,16 @@ def check_fsub(func):
 
         try:
             if not await is_subscribed(uid):
-                return await not_joined(client, message)
+                result = await not_joined(client, message)
+                # Smart auto-check: sirf ON hone par hi background poll lagta
+                # hai. OFF (default) hone par yahan kuch nahi hota — user ko
+                # khud "• Joined •" button click karna padta hai, bilkul pehle jaisa.
+                try:
+                    if await Seishiro.get_auto_check():
+                        _start_auto_check_poll(client, message, func, args, kwargs, uid, is_subscribed)
+                except Exception as e:
+                    logger.error(f"auto_check trigger error: {e}")
+                return result
             return await func(client, message, *args, **kwargs)
         except Exception as e:
             logger.error(f"check_fsub error: {e}")
