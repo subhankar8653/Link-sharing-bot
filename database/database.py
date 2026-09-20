@@ -1314,6 +1314,62 @@ class Master:
             logging.error(f"Error clearing last broadcast: {e}")
             return False
 
+    # ============================================
+    # FSUB CHECK DURATION (cooldown)
+    # OFF (default)      -> har baar poora FSub check hota hai, bilkul pehle jaisa.
+    # ON + duration set  -> ek baar user ka FSub check pass (verified) hone ke
+    #                       baad, us duration (12h/24h/48h/7d) ke andar agar
+    #                       koi NAYA FSub channel bhi add ho jaaye, us user ko
+    #                       dubara check/join karne ki zarurat nahi — turant
+    #                       access mil jaata hai. Duration khatam hone ke baad
+    #                       normal check phir se lagne lagta hai.
+    # ============================================
+    async def get_fsub_check_duration(self) -> dict:
+        """{"enabled": bool, "hours": int} return karta hai. Default: OFF."""
+        try:
+            doc = await self.database['bot_settings'].find_one({"_id": "fsub_check_duration"})
+            if not doc:
+                return {"enabled": False, "hours": 0}
+            return {"enabled": bool(doc.get("enabled", False)), "hours": int(doc.get("hours", 0) or 0)}
+        except Exception as e:
+            logging.error(f"get_fsub_check_duration error: {e}")
+            return {"enabled": False, "hours": 0}
+
+    async def set_fsub_check_duration(self, enabled: bool, hours: int = 0) -> bool:
+        """FSub check-duration (cooldown) ON/OFF + duration (hours mein) set karo."""
+        try:
+            await self.database['bot_settings'].update_one(
+                {"_id": "fsub_check_duration"},
+                {"$set": {"enabled": enabled, "hours": hours, "updated_at": datetime.utcnow()}},
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logging.error(f"set_fsub_check_duration error: {e}")
+            return False
+
+    async def set_fsub_verified(self, user_id: int) -> bool:
+        """User ka FSub check abhi-abhi pass hua — timestamp save karo (cooldown ke liye)."""
+        try:
+            await self.user_data.update_one(
+                {"_id": int(user_id)},
+                {"$set": {"fsub_verified_at": datetime.utcnow()}},
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logging.error(f"set_fsub_verified error: {e}")
+            return False
+
+    async def get_fsub_verified_at(self, user_id: int):
+        """User ka last FSub-pass timestamp laao (ya None agar kabhi verify nahi hua)."""
+        try:
+            user = await self.user_data.find_one({"_id": int(user_id)})
+            return user.get("fsub_verified_at") if user else None
+        except Exception as e:
+            logging.error(f"get_fsub_verified_at error: {e}")
+            return None
+
     async def get_community(self) -> dict:
         """
         Community info (name/username/link) fetch karo — /community
