@@ -68,6 +68,54 @@ async def build_fsub_mode_menu(client):
     )
     return text, buttons
 
+
+# FSub "Check Duration" (cooldown) menu — ON/OFF + 12h/24h/48h/7day options.
+# OFF (default): har baar poora FSub check hota hai, bilkul pehle jaisa.
+# ON: user ek baar FSub pass kar le, uske baad is duration ke andar naya FSub
+# channel add hone par bhi dubara check/join karne ki zarurat nahi hoti.
+FSUB_DURATION_OPTIONS = [
+    ("12 Hᴏᴜʀs", 12),
+    ("24 Hᴏᴜʀs", 24),
+    ("48 Hᴏᴜʀs", 48),
+    ("7 Dᴀʏs", 168),
+]
+
+
+async def build_fsub_duration_menu():
+    cfg = await Seishiro.get_fsub_check_duration()
+    enabled = cfg.get("enabled", False)
+    hours = cfg.get("hours", 0)
+
+    status_label = "✅ ON" if enabled else "❌ OFF"
+    buttons = [[InlineKeyboardButton(f"Sᴛᴀᴛᴜs: {status_label}  (ᴛᴀᴘ ᴛᴏ sᴡɪᴛᴄʜ)", callback_data="fsub_duration_toggle")]]
+
+    row = []
+    for label, hrs in FSUB_DURATION_OPTIONS:
+        mark = " ✅" if (enabled and hours == hrs) else ""
+        row.append(InlineKeyboardButton(f"{label}{mark}", callback_data=f"fsub_duration_set_{hrs}"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    buttons.append([InlineKeyboardButton("back", callback_data="fsub_settings_menu")])
+
+    if enabled and hours:
+        duration_text = "7 Dᴀʏs" if hours == 168 else f"{hours} Hᴏᴜʀs"
+        status_line = f"Aʙʜɪ: <b>ON</b> — {duration_text}"
+    else:
+        status_line = "Aʙʜɪ: <b>OFF</b> (ʜᴀʀ ʙᴀᴀʀ ᴘᴏᴏʀᴀ FSᴜʙ ᴄʜᴇᴄᴋ ʜᴏɢᴀ, ʙɪʟᴋᴜʟ ᴘᴇʜʟᴇ ᴊᴀɪsᴀ)"
+
+    text = (
+        "<b>⏱ FSᴜʙ Cʜᴇᴄᴋ Dᴜʀᴀᴛɪᴏɴ</b>\n\n"
+        "<blockquote>Ek baar user FSub check pass kar le, uske baad is duration "
+        "ke andar (chahe koi NAYA FSub channel bhi add ho jaaye) usko dubara "
+        "check/join karne ki zarurat nahi hogi.\n\n"
+        f"{status_line}</blockquote>"
+    )
+    return text, buttons
+
 # Settings command to show the main menu
 @Bot.on_message(filters.command('settings') & filters.private & is_owner_or_admin)
 async def settings_command(client: Client, message: Message):
@@ -426,12 +474,48 @@ async def settings_callback(client: Bot, callback_query):
                 [InlineKeyboardButton("Lɪsᴛ Cʜᴀɴɴᴇʟs", callback_data="list_fsub_channels")],
                 [InlineKeyboardButton("✏️ Rᴇɴᴀᴍᴇ Bᴜᴛᴛᴏɴ", callback_data="rename_fsub_channel")],
                 [InlineKeyboardButton("Mᴏᴅᴇ", callback_data="fsub_mode_menu")],
+                [InlineKeyboardButton("⏱ Cʜᴇᴄᴋ Dᴜʀᴀᴛɪᴏɴ", callback_data="fsub_check_duration_menu")],
                 [InlineKeyboardButton("back", callback_data="settings_main")]
             ]
             await callback_query.message.edit_text(
                 "<blockquote><b><i>Iᴛ's ʏᴏᴜʀs ғᴏʀᴄᴇ sᴜʙsᴄʀɪᴘᴛɪᴏɴ ᴍᴇɴᴜ ɪɴ ᴛʜɪs ʏᴏᴜ ᴄᴀɴ ᴀᴅᴅ, ᴅᴇʟᴇᴛᴇ, ᴠɪᴇᴡ, ʀᴇǫᴜᴇsᴛ ʏᴏᴜʀ ғᴏʀᴄᴇ sᴜʙ ᴄʜᴀɴɴᴇʟs.</i></b></blockquote>",
                 reply_markup=InlineKeyboardMarkup(btn)
             )
+
+        # FSub Check Duration (cooldown) menu
+        elif cb_data == "fsub_check_duration_menu":
+            if not is_admin_user:
+                await callback_query.answer("Only admins can access this!", show_alert=True)
+                return
+            text, buttons = await build_fsub_duration_menu()
+            await callback_query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+        elif cb_data == "fsub_duration_toggle":
+            if not is_admin_user:
+                await callback_query.answer("Only admins can perform this action!", show_alert=True)
+                return
+            cfg = await Seishiro.get_fsub_check_duration()
+            new_enabled = not cfg.get("enabled", False)
+            hours = cfg.get("hours") or 12  # pehli baar ON karte waqt agar kabhi duration set nahi hui to default 12h
+            await Seishiro.set_fsub_check_duration(new_enabled, hours)
+            await callback_query.answer(f"Switched {'ON' if new_enabled else 'OFF'}")
+            text, buttons = await build_fsub_duration_menu()
+            await callback_query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+        elif cb_data.startswith("fsub_duration_set_"):
+            if not is_admin_user:
+                await callback_query.answer("Only admins can perform this action!", show_alert=True)
+                return
+            try:
+                hours = int(cb_data.replace("fsub_duration_set_", ""))
+            except ValueError:
+                await callback_query.answer("Invalid duration", show_alert=True)
+                return
+            await Seishiro.set_fsub_check_duration(True, hours)
+            label = "7 Days" if hours == 168 else f"{hours} Hours"
+            await callback_query.answer(f"✅ Set to {label} & turned ON")
+            text, buttons = await build_fsub_duration_menu()
+            await callback_query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
         # Unified Mode Menu — every channel gets its own name row + its own
         # Request/Normal toggle row directly below it. No shared "all channels"

@@ -426,7 +426,7 @@ async def notify_fsub_event(client: Client, uid: int):
 
 
 # /auto_check ON hone par step-message ke "✅ Maine Join Kar Liya" button ka handler.
-@Bot.on_callback_query(filters.regex(r"^fsub_stepcheck$"))
+@Bot.on_callback_query(filters.regex(r"^fsub_stepcheck$"), group=-1)
 async def fsub_stepcheck_cb(client: Bot, cq: CallbackQuery):
     uid = cq.from_user.id
     try:
@@ -470,6 +470,27 @@ def check_fsub(func):
             if await Seishiro.has_premium_access(uid):
                 logger.info(f"User {uid} premium — FSub bypassed")
                 return True
+
+            # ── FSUB CHECK DURATION (cooldown) ─────────────────────────
+            # ON hone par: agar user ne is duration window (12h/24h/48h/7d)
+            # ke andar hi last FSub pass kiya tha, to naya channel add hone
+            # par bhi dubara check nahi lagega — turant access mil jaata hai.
+            try:
+                duration_cfg = await Seishiro.get_fsub_check_duration()
+            except Exception as e:
+                logger.error(f"fsub_check_duration fetch error: {e}")
+                duration_cfg = {"enabled": False, "hours": 0}
+            duration_on = bool(duration_cfg.get("enabled")) and duration_cfg.get("hours", 0) > 0
+
+            if duration_on:
+                try:
+                    verified_at = await Seishiro.get_fsub_verified_at(uid)
+                except Exception as e:
+                    logger.error(f"fsub_verified_at fetch error: {e}")
+                    verified_at = None
+                if verified_at and (datetime.utcnow() - verified_at) < timedelta(hours=duration_cfg["hours"]):
+                    return True
+
             # ── PARALLEL CHECK (fast) ─────────────────────────────────
             # Sab channels simultaneously check karo — ek ke baad ek nahi
             results = await asyncio.gather(*[_channel_join_status(client, uid, cid) for cid in channels], return_exceptions=True)
@@ -483,6 +504,15 @@ def check_fsub(func):
                         if sub_ok:
                             continue
                     return False
+
+            # Yahan tak pahunche matlab poora FSub sach mein pass hua — agar
+            # cooldown feature ON hai, is waqt ka timestamp save kar do.
+            if duration_on:
+                try:
+                    await Seishiro.set_fsub_verified(uid)
+                except Exception as e:
+                    logger.error(f"set_fsub_verified error: {e}")
+
             return True
 
         try:
