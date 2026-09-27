@@ -120,13 +120,24 @@ async def on_join_request(client: Bot, message: ChatJoinRequest):
 
         print(f"✅ This is a registered NORMAL channel")
 
-        # ── Auto Request Accept setting check ─────────────────────────
-        # Agar OFF hai, to registered normal channels mein bhi request
-        # auto-accept nahi hogi — sirf detect/skip karo.
-        auto_accept_on = await Seishiro.get_auto_accept()
-        if not auto_accept_on:
-            print(f"⏸️ Auto Request Accept OFF hai — skipping auto-approve for {user.id} in {chat.title}")
-            return
+        # ── Bot ke apne link se aayi request? ──────────────────────────
+        # Agar is user+channel ke liye pehle se ek invite-link doc saved
+        # hai (save_user_request_link se, jab bot ne file/link diya tha),
+        # to ye request definitely bot ke flow se aayi hai — isko
+        # "Auto Request Accept" toggle se independent hamesha approve
+        # karna hai. Toggle sirf organic/random requests ko control kare.
+        own_link_doc = await Seishiro.get_user_request_doc(user.id, chat.id)
+        came_from_bot_link = bool(own_link_doc)
+
+        if came_from_bot_link:
+            print(f"🔗 {user.id} bot ke apne link se aaya hai — toggle ignore, force approve")
+        else:
+            # ── Auto Request Accept setting check ─────────────────────
+            # Ye sirf organic requests (bina bot link ke) pe apply hoga.
+            auto_accept_on = await Seishiro.get_auto_accept()
+            if not auto_accept_on:
+                print(f"⏸️ Auto Request Accept OFF hai — skipping auto-approve for {user.id} in {chat.title}")
+                return
 
         await asyncio.sleep(1)
 
