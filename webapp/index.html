@@ -2,108 +2,234 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Watch Ads</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Unlock Link</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
-    --bg: #0f1115; --card: #181b22; --text: #f2f4f8; --muted: #8b93a3;
-    --accent: #3b82f6; --ok: #22c55e; --bad: #ef4444;
+    --bg: #070812;
+    --glass: rgba(255,255,255,.055);
+    --glass-b: rgba(255,255,255,.12);
+    --text: #f4f6ff;
+    --muted: #9aa3c0;
+    --violet: #8b5cf6; --blue: #3b82f6; --cyan: #22d3ee; --pink: #ec4899;
+    --ok: #34d399; --bad: #fb7185; --warn: #fbbf24;
   }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  .wrap { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 20px; }
-  .card { width: 100%; max-width: 420px; background: var(--card); border-radius: 20px;
-    padding: 28px 22px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
-  .icon { font-size: 52px; margin-bottom: 8px; }
-  h1 { font-size: 20px; margin: 0 0 6px; }
-  p { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
-  .steps { display: flex; gap: 8px; justify-content: center; margin: 4px 0 20px; flex-wrap: wrap; }
-  .dot { width: 34px; height: 8px; border-radius: 6px; background: #2a2f3a; transition: background .3s; }
-  .dot.done { background: var(--ok); }
-  .dot.cur { background: var(--accent); }
-  button { width: 100%; border: 0; border-radius: 14px; padding: 15px; font-size: 16px; font-weight: 600;
-    color: #fff; background: var(--accent); cursor: pointer; }
-  button:disabled { opacity: .55; cursor: default; }
-  .msg { font-size: 13px; margin-top: 14px; min-height: 18px; color: var(--muted); }
-  .msg.bad { color: var(--bad); }
-  .spin { width: 28px; height: 28px; border: 3px solid #2a2f3a; border-top-color: var(--accent);
-    border-radius: 50%; animation: s 0.8s linear infinite; margin: 0 auto 14px; }
-  @keyframes s { to { transform: rotate(360deg); } }
-  .hidden { display: none; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif; }
+
+  /* ───── animated background ───── */
+  .bg { position: fixed; inset: 0; overflow: hidden; z-index: 0; }
+  .blob { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .55; will-change: transform; }
+  .b1 { width: 340px; height: 340px; background: var(--violet); top: -90px; left: -90px; animation: f1 14s ease-in-out infinite; }
+  .b2 { width: 300px; height: 300px; background: var(--blue); bottom: -80px; right: -90px; animation: f2 17s ease-in-out infinite; }
+  .b3 { width: 240px; height: 240px; background: var(--pink); top: 45%; left: 55%; opacity: .28; animation: f3 20s ease-in-out infinite; }
+  .grid { position: absolute; inset: 0; opacity: .5;
+    background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+    background-size: 36px 36px; mask-image: radial-gradient(circle at 50% 40%, #000 0%, transparent 75%); }
+  @keyframes f1 { 50% { transform: translate(70px, 90px) scale(1.15); } }
+  @keyframes f2 { 50% { transform: translate(-80px, -70px) scale(1.2); } }
+  @keyframes f3 { 50% { transform: translate(-90px, 60px) scale(.85); } }
+
+  .wrap { position: relative; z-index: 1; min-height: 100%; display: flex; align-items: center; justify-content: center;
+    padding: calc(18px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom)); }
+
+  /* ───── glass card ───── */
+  .card { width: 100%; max-width: 410px; position: relative; padding: 26px 20px 20px; text-align: center;
+    background: var(--glass); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
+    border: 1px solid var(--glass-b); border-radius: 28px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12);
+    animation: rise .7s cubic-bezier(.2,.9,.3,1) both; }
+  .card::before { content: ""; position: absolute; inset: -1px; border-radius: 28px; padding: 1px; pointer-events: none;
+    background: linear-gradient(135deg, rgba(139,92,246,.7), transparent 40%, transparent 60%, rgba(34,211,238,.6));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+  @keyframes rise { from { opacity: 0; transform: translateY(26px) scale(.96); } to { opacity: 1; transform: none; } }
+
+  .chip { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; letter-spacing: .4px;
+    padding: 6px 12px; border-radius: 99px; background: rgba(139,92,246,.16); color: #c9b8ff; border: 1px solid rgba(139,92,246,.35); }
+  .live { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 rgba(52,211,153,.7); animation: ping 1.8s infinite; }
+  @keyframes ping { 70% { box-shadow: 0 0 0 8px rgba(52,211,153,0); } 100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); } }
+
+  /* ───── progress ring ───── */
+  .ringbox { position: relative; width: 150px; height: 150px; margin: 20px auto 14px; }
+  .ringbox svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+  .ring-bg { fill: none; stroke: rgba(255,255,255,.08); stroke-width: 9; }
+  .ring-fg { fill: none; stroke: url(#grad); stroke-width: 9; stroke-linecap: round; stroke-dasharray: 339.3; stroke-dashoffset: 339.3;
+    transition: stroke-dashoffset .9s cubic-bezier(.3,.8,.2,1); filter: drop-shadow(0 0 7px rgba(139,92,246,.8)); }
+  .ring-in { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .ring-icon { font-size: 38px; line-height: 1; animation: bob 2.6s ease-in-out infinite; }
+  .ring-num { margin-top: 6px; font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .6px; }
+  @keyframes bob { 50% { transform: translateY(-5px) scale(1.06); } }
+  .ringbox::after { content: ""; position: absolute; inset: 14px; border-radius: 50%; z-index: -1;
+    background: radial-gradient(circle, rgba(139,92,246,.28), transparent 70%); animation: breathe 3s ease-in-out infinite; }
+  @keyframes breathe { 50% { transform: scale(1.18); opacity: .6; } }
+
+  h1 { margin: 0 0 6px; font-size: 21px; font-weight: 800; letter-spacing: -.2px;
+    background: linear-gradient(90deg, #fff, #c9b8ff 55%, #8be9fd); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { margin: 0 auto 16px; max-width: 320px; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+
+  /* ───── steps ───── */
+  .steps { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 0 0 16px; }
+  .step { width: 34px; height: 34px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; color: var(--muted); background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.09);
+    transition: all .4s cubic-bezier(.3,.8,.2,1); }
+  .step.cur { color: #fff; background: linear-gradient(135deg, var(--violet), var(--blue)); border-color: transparent;
+    box-shadow: 0 6px 18px rgba(99,102,241,.55); transform: translateY(-3px) scale(1.08); animation: glow 1.8s ease-in-out infinite; }
+  .step.done { color: #04120c; background: linear-gradient(135deg, #34d399, #22d3ee); border-color: transparent; animation: pop .45s ease; }
+  .step.skip { color: var(--warn); border-color: rgba(251,191,36,.35); }
+  @keyframes glow { 50% { box-shadow: 0 8px 26px rgba(99,102,241,.85); } }
+  @keyframes pop { 40% { transform: scale(1.3); } }
+
+  /* ───── daily goal ───── */
+  .goal { margin: 0 0 16px; padding: 11px 13px; text-align: left; border-radius: 16px;
+    background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.08); }
+  .goal-top { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
+  .goal-top b { color: #fff; }
+  .bar { height: 7px; border-radius: 9px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; border-radius: 9px; transition: width .9s cubic-bezier(.3,.8,.2,1);
+    background: linear-gradient(90deg, var(--violet), var(--cyan), var(--ok)); background-size: 200% 100%; animation: slide 3s linear infinite; }
+  @keyframes slide { to { background-position: -200% 0; } }
+
+  /* ───── button ───── */
+  .btn { position: relative; overflow: hidden; width: 100%; border: 0; border-radius: 17px; padding: 16px; font-size: 16px; font-weight: 700;
+    color: #fff; cursor: pointer; letter-spacing: .2px;
+    background: linear-gradient(120deg, var(--violet), var(--blue) 55%, var(--cyan));
+    box-shadow: 0 10px 28px rgba(99,102,241,.5); transition: transform .15s, opacity .25s, box-shadow .25s; animation: pulse 2.4s ease-in-out infinite; }
+  .btn::after { content: ""; position: absolute; top: 0; left: -80%; width: 55%; height: 100%;
+    background: linear-gradient(100deg, transparent, rgba(255,255,255,.4), transparent); transform: skewX(-20deg); animation: shine 2.8s infinite; }
+  .btn:active { transform: scale(.97); }
+  .btn:disabled { opacity: .6; animation: none; box-shadow: none; cursor: default; }
+  .btn:disabled::after { display: none; }
+  .btn.alt { background: rgba(255,255,255,.1); box-shadow: none; animation: none; }
+  @keyframes shine { 55%, 100% { left: 140%; } }
+  @keyframes pulse { 50% { box-shadow: 0 12px 38px rgba(99,102,241,.8); } }
+  .spin { display: inline-block; width: 16px; height: 16px; margin-right: 9px; vertical-align: -2px; border-radius: 50%;
+    border: 2.5px solid rgba(255,255,255,.35); border-top-color: #fff; animation: rot .75s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  .msg { min-height: 20px; margin-top: 12px; font-size: 12.5px; color: var(--muted); transition: color .3s; }
+  .msg.bad { color: var(--bad); } .msg.good { color: var(--ok); }
+  .foot { margin-top: 10px; font-size: 11px; color: rgba(154,163,192,.6); }
+
+  /* ───── generic screens ───── */
+  .screen { display: none; } .screen.on { display: block; animation: fade .5s ease both; }
+  @keyframes fade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .loader { width: 46px; height: 46px; margin: 34px auto 16px; border-radius: 50%; border: 3.5px solid rgba(255,255,255,.1); border-top-color: var(--violet); border-right-color: var(--cyan); animation: rot .9s linear infinite; }
+
+  .big-icon { width: 92px; height: 92px; margin: 14px auto 14px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 42px; }
+  .big-icon.ok { background: radial-gradient(circle, rgba(52,211,153,.28), rgba(52,211,153,.06)); border: 1px solid rgba(52,211,153,.45); animation: popin .6s cubic-bezier(.3,1.6,.4,1) both; }
+  .big-icon.bad { background: radial-gradient(circle, rgba(251,113,133,.25), rgba(251,113,133,.05)); border: 1px solid rgba(251,113,133,.45); animation: shake .6s ease both; }
+  @keyframes popin { from { transform: scale(0); } to { transform: scale(1); } }
+  @keyframes shake { 20%,60% { transform: translateX(-7px); } 40%,80% { transform: translateX(7px); } }
+  .check path { stroke-dasharray: 60; stroke-dashoffset: 60; animation: draw .6s .25s ease forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  .goalmsg { margin: 0 0 14px; padding: 10px 12px; border-radius: 14px; font-size: 13px; font-weight: 600; color: #fde68a;
+    background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.3); }
+  #confetti { position: fixed; inset: 0; z-index: 5; pointer-events: none; }
+  .hidden { display: none !important; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
+<div class="bg"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="grid"></div></div>
+<canvas id="confetti"></canvas>
+
 <div class="wrap">
   <div class="card">
-    <div id="screen-load">
-      <div class="spin"></div>
-      <p>Loading...</p>
+
+    <div class="screen on" id="s-load">
+      <span class="chip"><span class="live"></span>SECURE CONNECTION</span>
+      <div class="loader"></div>
+      <div class="sub">Setting things up...</div>
     </div>
 
-    <div id="screen-main" class="hidden">
-      <div class="icon">🎬</div>
+    <div class="screen" id="s-main">
+      <span class="chip"><span class="live"></span>UNLOCK YOUR LINK</span>
+      <div class="ringbox">
+        <svg viewBox="0 0 120 120">
+          <defs><linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#8b5cf6"/><stop offset=".55" stop-color="#3b82f6"/><stop offset="1" stop-color="#22d3ee"/>
+          </linearGradient></defs>
+          <circle class="ring-bg" cx="60" cy="60" r="54"/>
+          <circle class="ring-fg" id="ring" cx="60" cy="60" r="54"/>
+        </svg>
+        <div class="ring-in"><div class="ring-icon" id="ring-icon">🎬</div><div class="ring-num" id="ring-num">0 / 0</div></div>
+      </div>
       <h1 id="title">Watch Ads to Unlock</h1>
-      <p id="sub">Neeche button dabao aur ad poora dekho. Sab ads complete hote hi link bot chat mein aa jayega.</p>
+      <p class="sub" id="sub">Ad poora dekho — sab complete hote hi link bot chat mein aa jayega.</p>
       <div class="steps" id="steps"></div>
-      <button id="btn">▶ Start</button>
+      <div class="goal hidden" id="goal">
+        <div class="goal-top"><span>🎯 Aaj ka goal</span><span><b id="goal-n">0</b> / <span id="goal-t">0</span> ads</span></div>
+        <div class="bar"><i id="goal-bar"></i></div>
+      </div>
+      <button class="btn" id="btn">▶  Start</button>
       <div class="msg" id="msg"></div>
+      <div class="foot">🔒 Ad poora dekhne par hi verify hoga</div>
     </div>
 
-    <div id="screen-done" class="hidden">
-      <div class="icon">✅</div>
-      <h1>Verified!</h1>
-      <p>Aapka link bot chat mein bhej diya gaya hai. Ye window band ho rahi hai...</p>
+    <div class="screen" id="s-done">
+      <div class="big-icon ok">
+        <svg class="check" width="46" height="46" viewBox="0 0 52 52" fill="none" stroke="#34d399" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 27 l10 10 l19 -21"/></svg>
+      </div>
+      <h1>Link Unlocked!</h1>
+      <p class="sub">Aapka link bot chat mein bhej diya gaya hai.</p>
+      <div class="goalmsg hidden" id="goalmsg">🎉 Daily goal complete! Aaj ke baaki din free.</div>
+      <div class="foot" id="closing">Window band ho rahi hai...</div>
     </div>
 
-    <div id="screen-err" class="hidden">
-      <div class="icon">⚠️</div>
+    <div class="screen" id="s-err">
+      <div class="big-icon bad">⚠️</div>
       <h1 id="err-title">Error</h1>
-      <p id="err-text"></p>
-      <button id="err-close">Close</button>
+      <p class="sub" id="err-text"></p>
+      <button class="btn alt" id="err-close">Close</button>
     </div>
+
   </div>
 </div>
 
 <script>
 (function () {
   const tg = window.Telegram && window.Telegram.WebApp;
-  if (tg) { tg.ready(); tg.expand(); try { tg.setHeaderColor('#0f1115'); tg.setBackgroundColor('#0f1115'); } catch (e) {} }
-
+  if (tg) {
+    tg.ready(); tg.expand();
+    try { tg.setHeaderColor('#070812'); tg.setBackgroundColor('#070812'); } catch (e) {}
+    try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {}
+  }
   const $ = (id) => document.getElementById(id);
-  const show = (name) => {
-    ['load', 'main', 'done', 'err'].forEach((n) => $('screen-' + n).classList.toggle('hidden', n !== name));
-  };
+  const haptic = (t) => { try { tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(t); } catch (e) {} };
+  const tap = () => { try { tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred('light'); } catch (e) {} };
+  const show = (n) => ['load', 'main', 'done', 'err'].forEach((x) => $('s-' + x).classList.toggle('on', x === n));
+  const closeApp = () => { tg ? tg.close() : window.close(); };
+
   const token = new URLSearchParams(location.search).get('t') || '';
   const initData = tg ? tg.initData : '';
 
   const ERRORS = {
-    auth:      ['Telegram se open karo', 'Ye page sirf bot ke andar Telegram Mini App se khulta hai.'],
-    invalid:   ['Link invalid hai', 'Bot mein wapas jao aur channel link dobara kholo.'],
-    used:      ['Link use ho chuka hai', 'Ye verification pehle hi use ho gaya. Bot mein original link dobara kholo.'],
-    not_yours: ['Ye link aapke liye nahi hai', 'Apne account se bot mein link kholo.'],
-    no_ads:    ['Abhi ads available nahi hain', 'Thodi der baad try karo.'],
-    no_ad_shown: ['Ads load nahi hue', 'AdBlock/VPN band karke dobara try karo.'],
-    too_fast:  ['Thoda wait karo', 'Ads poore dekhne ke baad hi verify hota hai. Dobara try karo.'],
-    invite_error: ['Link banane mein error', 'Bot mein wapas jao aur dobara try karo.'],
-    server:    ['Server error', 'Thodi der baad dobara try karo.'],
-    default:   ['Kuch galat ho gaya', 'Dobara try karo.']
+    auth:        ['Telegram se open karo', 'Ye page sirf bot ke andar Telegram Mini App se khulta hai.'],
+    invalid:     ['Link invalid hai', 'Bot mein wapas jao aur channel link dobara kholo.'],
+    used:        ['Link use ho chuka hai', 'Ye verification pehle hi use ho gaya. Bot mein original link dobara kholo.'],
+    not_yours:   ['Ye link aapke liye nahi hai', 'Apne account se bot mein link kholo.'],
+    no_ads:      ['Abhi ads available nahi hain', 'Thodi der baad try karo.'],
+    no_ad_shown: ['Ads load nahi hue', 'AdBlock/VPN band karke bot se link dobara kholo.'],
+    incomplete:  ['Ads poore nahi hue', 'Dobara try karo.'],
+    too_fast:    ['Thoda wait karo', 'Ads poore dekhne ke baad hi verify hota hai. Dobara try karo.'],
+    invite_error:['Link banane mein error', 'Bot mein wapas jao aur dobara try karo.'],
+    server:      ['Server error', 'Thodi der baad dobara try karo.'],
+    default:     ['Kuch galat ho gaya', 'Dobara try karo.']
   };
   function fail(code) {
     const e = ERRORS[code] || ERRORS.default;
-    $('err-title').textContent = e[0];
-    $('err-text').textContent = e[1];
-    show('err');
+    $('err-title').textContent = e[0]; $('err-text').textContent = e[1];
+    try { tg && tg.disableClosingConfirmation(); } catch (x) {}
+    haptic('error'); show('err');
   }
-  $('err-close').onclick = () => { tg ? tg.close() : window.close(); };
+  $('err-close').onclick = closeApp;
 
   async function api(path, extra) {
-    const r = await fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ initData: initData, token: token }, extra || {}))
-    });
+    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ initData: initData, token: token }, extra || {})) });
     return r.json();
   }
 
@@ -122,110 +248,129 @@
     });
     return loaded[key];
   }
+  const loadMonetag = (id) => loadScript('https://libtl.com/sdk.js', { 'data-zone': id, 'data-sdk': 'show_' + id }, 'monetag-' + id);
 
-  // Har provider ka show() ye 3 results me se ek deta hai:
-  //   'ok'      → ad poora dekha
-  //   'skipped' → user ne beech me band kar diya (dobara dikhana hai)
-  //   'failed'  → ad load/no-fill/error (is ad ko skip karke aage badho)
+  // Result: 'ok' (poora dekha) | 'skipped' (beech me band) | 'failed' (load/no-fill → agle pe)
   const PROVIDERS = {
     monetag: async (id) => {
-      try {
-        await loadScript('https://libtl.com/sdk.js', { 'data-zone': id, 'data-sdk': 'show_' + id }, 'monetag-' + id);
-        const fn = window['show_' + id];
-        if (typeof fn !== 'function') return 'failed';
-        await fn();
-        return 'ok';
-      } catch (e) { return 'failed'; }
+      try { await loadMonetag(id); const fn = window['show_' + id]; if (typeof fn !== 'function') return 'failed'; await fn(); return 'ok'; }
+      catch (e) { return 'failed'; }
+    },
+    monetag_pop: async (id) => {
+      try { await loadMonetag(id); const fn = window['show_' + id]; if (typeof fn !== 'function') return 'failed'; await fn('pop'); return 'ok'; }
+      catch (e) { return 'failed'; }
     },
     adsgram: async (id) => {
       try {
         await loadScript('https://sad.adsgram.ai/js/sad.min.js', {}, 'adsgram');
         if (!window.Adsgram) return 'failed';
-        const ctrl = window.Adsgram.init({ blockId: String(id) });
-        const res = await ctrl.show();
+        const res = await window.Adsgram.init({ blockId: String(id) }).show();
         return res && res.done ? 'ok' : 'skipped';
-      } catch (res) {
-        // Adsgram reject: error=true → provider problem, warna user ne skip kiya
-        if (res && res.error === false) return 'skipped';
-        return 'failed';
-      }
+      } catch (res) { return (res && res.error === false) ? 'skipped' : 'failed'; }
     },
     gigapub: async (id) => {
       try {
         await loadScript('https://ad.gigapub.tech/script?id=' + encodeURIComponent(id), {}, 'gigapub-' + id);
         if (typeof window.showGiga !== 'function') return 'failed';
-        await window.showGiga();
-        return 'ok';
+        await window.showGiga(); return 'ok';
       } catch (e) { return 'failed'; }
     }
   };
 
-  // ───────────── Main flow ─────────────
-  let ads = [];
-  let idx = 0;        // current ad index
-  let shown = 0;      // successfully watched ads
-  let busy = false;
+  // ───────────── UI state ─────────────
+  let steps = [], status = [], idx = 0, shown = 0, failed = 0, busy = false, daily = { goal: 0, count: 0 };
+  const CIRC = 339.3;
 
-  function renderSteps() {
-    const el = $('steps');
-    el.innerHTML = '';
-    ads.forEach((_, i) => {
+  function setRing(frac) { $('ring').style.strokeDashoffset = String(CIRC * (1 - Math.max(0, Math.min(1, frac)))); }
+  function setMsg(t, cls) { const m = $('msg'); m.textContent = t || ''; m.className = 'msg' + (cls ? ' ' + cls : ''); }
+  function setGoal() {
+    if (!daily.goal) { $('goal').classList.add('hidden'); return; }
+    $('goal').classList.remove('hidden');
+    const n = Math.min(daily.goal, daily.count + shown);
+    $('goal-n').textContent = n; $('goal-t').textContent = daily.goal;
+    $('goal-bar').style.width = Math.round(100 * n / daily.goal) + '%';
+  }
+  function render() {
+    const el = $('steps'); el.innerHTML = '';
+    steps.forEach((_, i) => {
       const d = document.createElement('div');
-      d.className = 'dot' + (i < idx ? ' done' : i === idx ? ' cur' : '');
+      const st = status[i];
+      d.className = 'step' + (st === 'ok' ? ' done' : st === 'skip' ? ' skip' : i === idx ? ' cur' : '');
+      d.textContent = st === 'ok' ? '✓' : st === 'skip' ? '–' : String(i + 1);
       el.appendChild(d);
     });
-    $('title').textContent = idx < ads.length ? 'Ad ' + (idx + 1) + ' of ' + ads.length : 'Verifying...';
+    const done = shown + failed;
+    setRing(steps.length ? done / steps.length : 0);
+    $('ring-num').textContent = Math.min(done, steps.length) + ' / ' + steps.length;
+    if (idx < steps.length) {
+      $('title').textContent = 'Ad ' + (idx + 1) + ' of ' + steps.length;
+      $('ring-icon').textContent = ['🎬', '🍿', '📺', '🎞️', '⭐'][idx % 5];
+    }
+    setGoal();
   }
-  function setMsg(t, bad) { const m = $('msg'); m.textContent = t || ''; m.className = 'msg' + (bad ? ' bad' : ''); }
 
+  // ───────────── Confetti ─────────────
+  function confetti() {
+    const c = $('confetti'), ctx = c.getContext('2d');
+    const W = c.width = innerWidth, H = c.height = innerHeight;
+    const cols = ['#8b5cf6', '#3b82f6', '#22d3ee', '#34d399', '#fbbf24', '#ec4899'];
+    const ps = Array.from({ length: 110 }, () => ({ x: W / 2, y: H * .38, vx: (Math.random() - .5) * 14, vy: -Math.random() * 13 - 3,
+      s: 4 + Math.random() * 6, r: Math.random() * 6.28, vr: (Math.random() - .5) * .4, c: cols[(Math.random() * cols.length) | 0] }));
+    let f = 0;
+    (function tick() {
+      ctx.clearRect(0, 0, W, H);
+      ps.forEach((p) => { p.vy += .32; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); ctx.restore(); });
+      if (++f < 150) requestAnimationFrame(tick); else ctx.clearRect(0, 0, W, H);
+    })();
+  }
+
+  // ───────────── Flow ─────────────
   async function finish() {
     $('btn').disabled = true;
-    setMsg('Verifying...');
+    $('btn').innerHTML = '<span class="spin"></span>Verifying...';
+    setMsg('');
     let res;
-    try { res = await api('/api/mini/complete', { shown: shown }); }
-    catch (e) { return fail('server'); }
-    if (!res.ok) {
-      if (res.error === 'too_fast') {
-        // timing check fail → thoda ruk ke ek baar auto retry
-        await new Promise((r) => setTimeout(r, 4000));
-        try { res = await api('/api/mini/complete', { shown: shown }); } catch (e) { return fail('server'); }
-      }
-      if (!res.ok) return fail(res.error);
+    try { res = await api('/api/mini/complete', { shown: shown, failed: failed }); } catch (e) { return fail('server'); }
+    if (!res.ok && res.error === 'too_fast') {
+      await new Promise((r) => setTimeout(r, 4000));
+      try { res = await api('/api/mini/complete', { shown: shown, failed: failed }); } catch (e) { return fail('server'); }
     }
-    show('done');
-    if (tg && tg.HapticFeedback) { try { tg.HapticFeedback.notificationOccurred('success'); } catch (e) {} }
-    setTimeout(() => { tg ? tg.close() : window.close(); }, 1800);
+    if (!res.ok) return fail(res.error);
+    try { tg && tg.disableClosingConfirmation(); } catch (e) {}
+    if (res.info && res.info.goal_reached) $('goalmsg').classList.remove('hidden');
+    show('done'); haptic('success');
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) confetti();
+    setTimeout(closeApp, 2400);
   }
 
   async function playCurrent() {
     if (busy) return;
-    busy = true;
-    $('btn').disabled = true;
+    busy = true; tap();
+    const btn = $('btn');
+    btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Loading ad...';
     setMsg('');
-    const ad = ads[idx];
+    const ad = steps[idx];
     const fn = PROVIDERS[ad.provider];
-    let result = 'failed';
-    if (fn) result = await fn(ad.id);
+    const result = fn ? await fn(ad.id) : 'failed';
 
     if (result === 'ok') {
-      shown++; idx++;
+      status[idx] = 'ok'; shown++; idx++; haptic('success'); setMsg('✓ Ad complete!', 'good');
     } else if (result === 'failed') {
-      idx++;   // ye ad load nahi hua → agle pe jao
-      setMsg('Ye ad available nahi tha, next try karte hain.');
+      status[idx] = 'skip'; failed++; idx++; setMsg('Ye ad available nahi tha — next try karte hain.');
     } else {
-      setMsg('Ad poora dekhna zaroori hai. Dobara try karo.', true);
+      setMsg('Ad poora dekhna zaroori hai. Dobara try karo.', 'bad'); haptic('warning');
     }
     busy = false;
-    renderSteps();
+    render();
 
-    if (idx >= ads.length) {
+    if (idx >= steps.length) {
       if (shown < 1) return fail('no_ad_shown');
       return finish();
     }
-    $('btn').disabled = false;
-    $('btn').textContent = result === 'skipped' ? '↻ Retry Ad' : '▶ Next Ad';
+    btn.disabled = false;
+    btn.textContent = result === 'skipped' ? '↻  Retry Ad' : '▶  Next Ad';
   }
-
   $('btn').onclick = playCurrent;
 
   (async function init() {
@@ -233,10 +378,21 @@
     let res;
     try { res = await api('/api/mini/init'); } catch (e) { return fail('server'); }
     if (!res.ok) return fail(res.error);
-    ads = res.ads || [];
-    if (!ads.length) return fail('no_ads');
-    renderSteps();
-    show('main');
+    steps = res.steps || [];
+    if (!steps.length) return fail('no_ads');
+    status = steps.map(() => null);
+    daily = res.daily || daily;
+    try { tg && tg.enableClosingConfirmation(); } catch (e) {}
+    render(); show('main');
+
+    // Optional passive In-App interstitial (admin panel se ON/OFF)
+    if (res.inapp_zone) {
+      try {
+        await loadMonetag(res.inapp_zone);
+        const fn = window['show_' + res.inapp_zone];
+        if (typeof fn === 'function') fn({ type: 'inApp', inAppSettings: { frequency: 2, capping: 0.1, interval: 30, timeout: 5, everyPage: false } });
+      } catch (e) {}
+    }
   })();
 })();
 </script>
