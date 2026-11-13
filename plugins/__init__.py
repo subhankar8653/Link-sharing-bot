@@ -2,7 +2,8 @@ from aiohttp import web
 from .route import routes
 
 
-async def web_server():
+async def web_server(bot=None):
     web_app = web.Application(client_max_size=30000000)
+    web_app["bot"] = bot          # Mini App backend ko bot client chahiye (link bhejne ke liye)
     web_app.add_routes(routes)
     return web_app

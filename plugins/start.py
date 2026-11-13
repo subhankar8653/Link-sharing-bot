@@ -9,7 +9,7 @@ from functools import wraps
 from pyrogram import Client, filters
 from pyrogram.enums import ChatMemberStatus, ChatAction
 from pyrogram.types import (
-    Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+    Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, WebAppInfo
 )
 from pyrogram.errors import (
     FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid, RPCError
@@ -22,6 +22,7 @@ from config import *
 from database.database import Seishiro
 from plugins.settings import revoke_invite_after_5_minutes
 from plugins.premium import shorten_link, _get_bot_config
+from plugins.miniapp import miniapp_ready, get_miniapp_settings
 from helper_func import *
 from plugins.tutorial import send_fsub_tutorial_if_not_joined, send_linkshortner_tutorial_if_not_verified
 
@@ -929,6 +930,56 @@ async def _handle_verify_token(client: Bot, message: Message, uid: int, token: s
 
 
 # ═══════════════════════════════════════════
+# MINI APP COMPLETE HANDLER
+# Mini App mein saare ads dekh liye → backend (plugins/route.py)
+# yeh function call karta hai → user ko bot chat mein link milta hai
+# ═══════════════════════════════════════════
+
+async def complete_miniapp_verification(client: Bot, uid: int, token: str) -> tuple[bool, str]:
+    """
+    Returns (ok, reason). reason: "ok" | "invalid_or_used" | "invite_error"
+    Token atomically claim hota hai, isliye double submit se 2 links nahi jaate.
+    """
+    doc = await Seishiro.claim_verify_token(token, uid)
+    if not doc:
+        return False, "invalid_or_used"
+
+    channel_id = doc["channel_id"]
+    is_request = doc.get("is_request", False)
+
+    await _resolve_peer_safe(client, channel_id)
+    invite_link = await _get_fresh_invite_link(client, channel_id, is_request)
+    if not invite_link:
+        await Seishiro.unclaim_verify_token(token)   # user dobara try kar sake
+        return False, "invite_error"
+
+    cfg     = await _get_bot_config()
+    seconds = cfg.get("verify_premium_seconds", 86400)
+    await Seishiro.add_premium(uid, seconds)
+    logger.info(f"MiniApp verified: user={uid}, channel={channel_id}, temp_premium={seconds}s")
+
+    hours = seconds // 3600
+    mins  = (seconds % 3600) // 60
+    dur   = f"{hours}h" if mins == 0 else f"{hours}h {mins}m"
+
+    link_msg = await client.send_message(
+        uid,
+        f"✅ <b>Verified! Yeh raha aapka link:</b>\n\n"
+        f"<blockquote>"
+        f"⚡ Agle <b>{dur}</b> tak direct links milenge — koi ads nahi, koi FSub nahi!\n"
+        f"Time khatam hone ke baad dobara ads dekhne padenge.\n\n"
+        f"💎 Hamesha ads-free rehne ke liye <b>Premium</b> lo!"
+        f"</blockquote>",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=invite_link)],
+            [InlineKeyboardButton("💎 Buy Premium", callback_data="prem_plans")],
+        ])
+    )
+    asyncio.create_task(delete_after_delay(link_msg, 300))
+    return True, "ok"
+
+
+# ═══════════════════════════════════════════
 # /start COMMAND
 # ═══════════════════════════════════════════
 
@@ -1052,6 +1103,28 @@ async def start_command(client: Bot, message: Message):
                             link_chat_id=sent.chat.id,
                             invite_link=inv
                         )
+                    return
+
+                # ── Free user → Mini App (Watch Video Ad) flow ─────────
+                # Mini App ON ho toh shortener ki jagah yahi chalega.
+                if await miniapp_ready():
+                    ms    = await get_miniapp_settings()
+                    token = secrets.token_urlsafe(12)
+                    await Seishiro.create_verify_token(uid, channel_id, token, is_request)
+                    web_url = f"{ms['url']}/miniapp?t={token}"
+                    await message.reply_text(
+                        "<b>🎬 Aapka Link Ready Hai!</b>\n\n"
+                        "<blockquote>"
+                        "Niche <b>Watch Video Ad</b> button dabao — Mini App khulega, "
+                        "wahan ads dekho.\n"
+                        "Sab ads complete hote hi channel link <b>apne aap bot mein aa jayega!</b>\n\n"
+                        "⚡ <b>Premium users</b> ko yeh step kabhi nahi karna padta!"
+                        "</blockquote>",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🎬 Watch Video Ad", web_app=WebAppInfo(url=web_url))],
+                            [InlineKeyboardButton("💎 Buy Premium — No Ads Ever", callback_data="prem_plans")],
+                        ])
+                    )
                     return
 
                 # ── Free user → shortener flow ─────────────────────────
