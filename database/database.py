@@ -956,7 +956,7 @@ class Master:
     # temp premium dete hain + fresh channel link
     # ══════════════════════════════════════════
 
-    async def create_verify_token(self, user_id: int, channel_id: int, token: str) -> bool:
+    async def create_verify_token(self, user_id: int, channel_id: int, token: str, is_request: bool = False) -> bool:
         """
         Shortener se pehle ek token DB mein save karo.
         Token = random string jo bot deep link mein encode hoga.
@@ -969,6 +969,7 @@ class Master:
                     "token":      token,
                     "user_id":    int(user_id),
                     "channel_id": int(channel_id),
+                    "is_request": bool(is_request),
                     "created_at": datetime.datetime.now(),
                     "used":       False,
                 }},
@@ -998,6 +999,47 @@ class Master:
             return True
         except Exception as e:
             logging.error(f"mark_token_used error: {e}")
+            return False
+
+    # ── Mini App (ads) verification helpers ──────────────────────────
+
+    async def claim_verify_token(self, token: str, user_id: int) -> dict:
+        """
+        Token ko ATOMICALLY claim karo (used=False -> True) taaki ek token
+        do baar use na ho sake (double-click / replay safe).
+        Sirf wahi user claim kar sakta hai jiske liye token bana tha.
+        Claim hua toh doc return, warna {}.
+        """
+        try:
+            doc = await self.database['verify_tokens'].find_one_and_update(
+                {"token": token, "used": False, "user_id": int(user_id)},
+                {"$set": {"used": True}},
+            )
+            return dict(doc) if doc else {}
+        except Exception as e:
+            logging.error(f"claim_verify_token error: {e}")
+            return {}
+
+    async def unclaim_verify_token(self, token: str) -> None:
+        """Link banane mein error aaya toh token wapas free kar do."""
+        try:
+            await self.database['verify_tokens'].update_one(
+                {"token": token}, {"$set": {"used": False}}
+            )
+        except Exception as e:
+            logging.error(f"unclaim_verify_token error: {e}")
+
+    async def start_miniapp_session(self, token: str, user_id: int) -> bool:
+        """Mini app khulte hi start time save karo (anti-bypass timing check)."""
+        import datetime
+        try:
+            await self.database['verify_tokens'].update_one(
+                {"token": token, "user_id": int(user_id)},
+                {"$set": {"mini_started_at": datetime.datetime.now()}},
+            )
+            return True
+        except Exception as e:
+            logging.error(f"start_miniapp_session error: {e}")
             return False
 
     async def delete_old_tokens(self) -> None:
