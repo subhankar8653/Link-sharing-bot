@@ -1,1 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Watch Ads</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: #0f1115; --card: #181b22; --text: #f2f4f8; --muted: #8b93a3;
+    --accent: #3b82f6; --ok: #22c55e; --bad: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .wrap { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .card { width: 100%; max-width: 420px; background: var(--card); border-radius: 20px;
+    padding: 28px 22px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+  .icon { font-size: 52px; margin-bottom: 8px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  p { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
+  .steps { display: flex; gap: 8px; justify-content: center; margin: 4px 0 20px; flex-wrap: wrap; }
+  .dot { width: 34px; height: 8px; border-radius: 6px; background: #2a2f3a; transition: background .3s; }
+  .dot.done { background: var(--ok); }
+  .dot.cur { background: var(--accent); }
+  button { width: 100%; border: 0; border-radius: 14px; padding: 15px; font-size: 16px; font-weight: 600;
+    color: #fff; background: var(--accent); cursor: pointer; }
+  button:disabled { opacity: .55; cursor: default; }
+  .msg { font-size: 13px; margin-top: 14px; min-height: 18px; color: var(--muted); }
+  .msg.bad { color: var(--bad); }
+  .spin { width: 28px; height: 28px; border: 3px solid #2a2f3a; border-top-color: var(--accent);
+    border-radius: 50%; animation: s 0.8s linear infinite; margin: 0 auto 14px; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div id="screen-load">
+      <div class="spin"></div>
+      <p>Loading...</p>
+    </div>
 
+    <div id="screen-main" class="hidden">
+      <div class="icon">🎬</div>
+      <h1 id="title">Watch Ads to Unlock</h1>
+      <p id="sub">Neeche button dabao aur ad poora dekho. Sab ads complete hote hi link bot chat mein aa jayega.</p>
+      <div class="steps" id="steps"></div>
+      <button id="btn">▶ Start</button>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div id="screen-done" class="hidden">
+      <div class="icon">✅</div>
+      <h1>Verified!</h1>
+      <p>Aapka link bot chat mein bhej diya gaya hai. Ye window band ho rahi hai...</p>
+    </div>
+
+    <div id="screen-err" class="hidden">
+      <div class="icon">⚠️</div>
+      <h1 id="err-title">Error</h1>
+      <p id="err-text"></p>
+      <button id="err-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const tg = window.Telegram && window.Telegram.WebApp;
+  if (tg) { tg.ready(); tg.expand(); try { tg.setHeaderColor('#0f1115'); tg.setBackgroundColor('#0f1115'); } catch (e) {} }
+
+  const $ = (id) => document.getElementById(id);
+  const show = (name) => {
+    ['load', 'main', 'done', 'err'].forEach((n) => $('screen-' + n).classList.toggle('hidden', n !== name));
+  };
+  const token = new URLSearchParams(location.search).get('t') || '';
+  const initData = tg ? tg.initData : '';
+
+  const ERRORS = {
+    auth:      ['Telegram se open karo', 'Ye page sirf bot ke andar Telegram Mini App se khulta hai.'],
+    invalid:   ['Link invalid hai', 'Bot mein wapas jao aur channel link dobara kholo.'],
+    used:      ['Link use ho chuka hai', 'Ye verification pehle hi use ho gaya. Bot mein original link dobara kholo.'],
+    not_yours: ['Ye link aapke liye nahi hai', 'Apne account se bot mein link kholo.'],
+    no_ads:    ['Abhi ads available nahi hain', 'Thodi der baad try karo.'],
+    no_ad_shown: ['Ads load nahi hue', 'AdBlock/VPN band karke dobara try karo.'],
+    too_fast:  ['Thoda wait karo', 'Ads poore dekhne ke baad hi verify hota hai. Dobara try karo.'],
+    invite_error: ['Link banane mein error', 'Bot mein wapas jao aur dobara try karo.'],
+    server:    ['Server error', 'Thodi der baad dobara try karo.'],
+    default:   ['Kuch galat ho gaya', 'Dobara try karo.']
+  };
+  function fail(code) {
+    const e = ERRORS[code] || ERRORS.default;
+    $('err-title').textContent = e[0];
+    $('err-text').textContent = e[1];
+    show('err');
+  }
+  $('err-close').onclick = () => { tg ? tg.close() : window.close(); };
+
+  async function api(path, extra) {
+    const r = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ initData: initData, token: token }, extra || {}))
+    });
+    return r.json();
+  }
+
+  // ───────────── Ad providers ─────────────
+  const loaded = {};
+  function loadScript(src, attrs, key) {
+    if (loaded[key]) return loaded[key];
+    loaded[key] = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      Object.keys(attrs || {}).forEach((k) => s.setAttribute(k, attrs[k]));
+      const t = setTimeout(() => reject(new Error('load timeout')), 12000);
+      s.onload = () => { clearTimeout(t); resolve(); };
+      s.onerror = () => { clearTimeout(t); reject(new Error('load error')); };
+      document.head.appendChild(s);
+    });
+    return loaded[key];
+  }
+
+  // Har provider ka show() ye 3 results me se ek deta hai:
+  //   'ok'      → ad poora dekha
+  //   'skipped' → user ne beech me band kar diya (dobara dikhana hai)
+  //   'failed'  → ad load/no-fill/error (is ad ko skip karke aage badho)
+  const PROVIDERS = {
+    monetag: async (id) => {
+      try {
+        await loadScript('https://libtl.com/sdk.js', { 'data-zone': id, 'data-sdk': 'show_' + id }, 'monetag-' + id);
+        const fn = window['show_' + id];
+        if (typeof fn !== 'function') return 'failed';
+        await fn();
+        return 'ok';
+      } catch (e) { return 'failed'; }
+    },
+    adsgram: async (id) => {
+      try {
+        await loadScript('https://sad.adsgram.ai/js/sad.min.js', {}, 'adsgram');
+        if (!window.Adsgram) return 'failed';
+        const ctrl = window.Adsgram.init({ blockId: String(id) });
+        const res = await ctrl.show();
+        return res && res.done ? 'ok' : 'skipped';
+      } catch (res) {
+        // Adsgram reject: error=true → provider problem, warna user ne skip kiya
+        if (res && res.error === false) return 'skipped';
+        return 'failed';
+      }
+    },
+    gigapub: async (id) => {
+      try {
+        await loadScript('https://ad.gigapub.tech/script?id=' + encodeURIComponent(id), {}, 'gigapub-' + id);
+        if (typeof window.showGiga !== 'function') return 'failed';
+        await window.showGiga();
+        return 'ok';
+      } catch (e) { return 'failed'; }
+    }
+  };
+
+  // ───────────── Main flow ─────────────
+  let ads = [];
+  let idx = 0;        // current ad index
+  let shown = 0;      // successfully watched ads
+  let busy = false;
+
+  function renderSteps() {
+    const el = $('steps');
+    el.innerHTML = '';
+    ads.forEach((_, i) => {
+      const d = document.createElement('div');
+      d.className = 'dot' + (i < idx ? ' done' : i === idx ? ' cur' : '');
+      el.appendChild(d);
+    });
+    $('title').textContent = idx < ads.length ? 'Ad ' + (idx + 1) + ' of ' + ads.length : 'Verifying...';
+  }
+  function setMsg(t, bad) { const m = $('msg'); m.textContent = t || ''; m.className = 'msg' + (bad ? ' bad' : ''); }
+
+  async function finish() {
+    $('btn').disabled = true;
+    setMsg('Verifying...');
+    let res;
+    try { res = await api('/api/mini/complete', { shown: shown }); }
+    catch (e) { return fail('server'); }
+    if (!res.ok) {
+      if (res.error === 'too_fast') {
+        // timing check fail → thoda ruk ke ek baar auto retry
+        await new Promise((r) => setTimeout(r, 4000));
+        try { res = await api('/api/mini/complete', { shown: shown }); } catch (e) { return fail('server'); }
+      }
+      if (!res.ok) return fail(res.error);
+    }
+    show('done');
+    if (tg && tg.HapticFeedback) { try { tg.HapticFeedback.notificationOccurred('success'); } catch (e) {} }
+    setTimeout(() => { tg ? tg.close() : window.close(); }, 1800);
+  }
+
+  async function playCurrent() {
+    if (busy) return;
+    busy = true;
+    $('btn').disabled = true;
+    setMsg('');
+    const ad = ads[idx];
+    const fn = PROVIDERS[ad.provider];
+    let result = 'failed';
+    if (fn) result = await fn(ad.id);
+
+    if (result === 'ok') {
+      shown++; idx++;
+    } else if (result === 'failed') {
+      idx++;   // ye ad load nahi hua → agle pe jao
+      setMsg('Ye ad available nahi tha, next try karte hain.');
+    } else {
+      setMsg('Ad poora dekhna zaroori hai. Dobara try karo.', true);
+    }
+    busy = false;
+    renderSteps();
+
+    if (idx >= ads.length) {
+      if (shown < 1) return fail('no_ad_shown');
+      return finish();
+    }
+    $('btn').disabled = false;
+    $('btn').textContent = result === 'skipped' ? '↻ Retry Ad' : '▶ Next Ad';
+  }
+
+  $('btn').onclick = playCurrent;
+
+  (async function init() {
+    if (!token || !initData) return fail('auth');
+    let res;
+    try { res = await api('/api/mini/init'); } catch (e) { return fail('server'); }
+    if (!res.ok) return fail(res.error);
+    ads = res.ads || [];
+    if (!ads.length) return fail('no_ads');
+    renderSteps();
+    show('main');
+  })();
+})();
+</script>
+</body>
+</html>
