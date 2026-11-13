@@ -22,7 +22,7 @@ from config import *
 from database.database import Seishiro
 from plugins.settings import revoke_invite_after_5_minutes
 from plugins.premium import shorten_link, _get_bot_config
-from plugins.miniapp import miniapp_ready, get_miniapp_settings
+from plugins.miniapp import miniapp_ready, get_miniapp_settings, seconds_until_ist_midnight
 from helper_func import *
 from plugins.tutorial import send_fsub_tutorial_if_not_joined, send_linkshortner_tutorial_if_not_verified
 
@@ -935,14 +935,26 @@ async def _handle_verify_token(client: Bot, message: Message, uid: int, token: s
 # yeh function call karta hai → user ko bot chat mein link milta hai
 # ═══════════════════════════════════════════
 
-async def complete_miniapp_verification(client: Bot, uid: int, token: str) -> tuple[bool, str]:
+async def _extend_free(uid: int, seconds: int) -> None:
+    """Free access sirf badhao — kabhi kam mat karo (lambi premium ko overwrite nahi karta)."""
+    if seconds <= 0:
+        return
+    cur = await Seishiro.get_premium_expiry(uid)
+    target = datetime.now() + timedelta(seconds=seconds)
+    if isinstance(cur, datetime) and cur >= target:
+        return
+    await Seishiro.add_premium(uid, seconds)
+
+
+async def complete_miniapp_verification(client: Bot, uid: int, token: str, shown: int = 1) -> tuple[bool, str, dict]:
     """
-    Returns (ok, reason). reason: "ok" | "invalid_or_used" | "invite_error"
+    Returns (ok, reason, info).  reason: "ok" | "invalid_or_used" | "invite_error"
+    info: {"daily_count", "goal", "goal_reached"}
     Token atomically claim hota hai, isliye double submit se 2 links nahi jaate.
     """
     doc = await Seishiro.claim_verify_token(token, uid)
     if not doc:
-        return False, "invalid_or_used"
+        return False, "invalid_or_used", {}
 
     channel_id = doc["channel_id"]
     is_request = doc.get("is_request", False)
@@ -951,32 +963,48 @@ async def complete_miniapp_verification(client: Bot, uid: int, token: str) -> tu
     invite_link = await _get_fresh_invite_link(client, channel_id, is_request)
     if not invite_link:
         await Seishiro.unclaim_verify_token(token)   # user dobara try kar sake
-        return False, "invite_error"
+        return False, "invite_error", {}
 
-    cfg     = await _get_bot_config()
-    seconds = cfg.get("verify_premium_seconds", 86400)
-    await Seishiro.add_premium(uid, seconds)
-    logger.info(f"MiniApp verified: user={uid}, channel={channel_id}, temp_premium={seconds}s")
-
-    hours = seconds // 3600
-    mins  = (seconds % 3600) // 60
-    dur   = f"{hours}h" if mins == 0 else f"{hours}h {mins}m"
-
+    # ── Normal-style link message (sirf CLICK HERE button) ──
     link_msg = await client.send_message(
         uid,
-        f"✅ <b>Verified! Yeh raha aapka link:</b>\n\n"
-        f"<blockquote>"
-        f"⚡ Agle <b>{dur}</b> tak direct links milenge — koi ads nahi, koi FSub nahi!\n"
-        f"Time khatam hone ke baad dobara ads dekhne padenge.\n\n"
-        f"💎 Hamesha ads-free rehne ke liye <b>Premium</b> lo!"
-        f"</blockquote>",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=invite_link)],
-            [InlineKeyboardButton("💎 Buy Premium", callback_data="prem_plans")],
-        ])
+        "<b><blockquote expandable>ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ! ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ</blockquote></b>",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=invite_link)
+        ]])
     )
     asyncio.create_task(delete_after_delay(link_msg, 300))
-    return True, "ok"
+
+    # ── Purana "Watch Video Ad" wala message delete ──
+    try:
+        if doc.get("prompt_msg_id"):
+            await client.delete_messages(doc.get("prompt_chat_id", uid), doc["prompt_msg_id"])
+    except Exception as e:
+        logger.warning(f"prompt msg delete failed: {e}")
+
+    # ── Request-mode: approve notification ke liye link save (normal flow jaisa) ──
+    if is_request and doc.get("b64"):
+        try:
+            await Seishiro.save_user_request_link(
+                uid, channel_id, doc["b64"],
+                link_msg_id=link_msg.id, link_chat_id=link_msg.chat.id, invite_link=invite_link
+            )
+        except Exception as e:
+            logger.warning(f"save_user_request_link failed: {e}")
+
+    # ── Free time + Daily goal ──
+    ms          = await get_miniapp_settings()
+    daily_count = await Seishiro.add_miniapp_progress(uid, max(1, shown))
+    goal        = ms["daily_goal"]
+    goal_hit    = goal > 0 and daily_count >= goal
+    grant       = ms["free_seconds"]
+    if goal_hit:
+        grant = max(grant, seconds_until_ist_midnight())
+    await _extend_free(uid, grant)
+    logger.info(f"MiniApp verified: user={uid}, channel={channel_id}, shown={shown}, "
+                f"daily={daily_count}/{goal}, free={grant}s")
+
+    return True, "ok", {"daily_count": daily_count, "goal": goal, "goal_reached": goal_hit}
 
 
 # ═══════════════════════════════════════════
@@ -1110,9 +1138,9 @@ async def start_command(client: Bot, message: Message):
                 if await miniapp_ready():
                     ms    = await get_miniapp_settings()
                     token = secrets.token_urlsafe(12)
-                    await Seishiro.create_verify_token(uid, channel_id, token, is_request)
+                    await Seishiro.create_verify_token(uid, channel_id, token, is_request, b64)
                     web_url = f"{ms['url']}/miniapp?t={token}"
-                    await message.reply_text(
+                    prompt_msg = await message.reply_text(
                         "<b>🎬 Aapka Link Ready Hai!</b>\n\n"
                         "<blockquote>"
                         "Niche <b>Watch Video Ad</b> button dabao — Mini App khulega, "
@@ -1125,6 +1153,7 @@ async def start_command(client: Bot, message: Message):
                             [InlineKeyboardButton("💎 Buy Premium — No Ads Ever", callback_data="prem_plans")],
                         ])
                     )
+                    await Seishiro.set_token_prompt(token, prompt_msg.chat.id, prompt_msg.id)
                     return
 
                 # ── Free user → shortener flow ─────────────────────────

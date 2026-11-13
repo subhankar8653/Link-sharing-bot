@@ -51,7 +51,7 @@ async def _auth(body: dict):
 
 @routes.post("/api/mini/init")
 async def api_mini_init(request):
-    from plugins.miniapp import get_miniapp_settings
+    from plugins.miniapp import get_miniapp_settings, build_steps, first_monetag_zone
     from database.database import Seishiro
 
     try:
@@ -64,20 +64,24 @@ async def api_mini_init(request):
         return web.json_response({"ok": False, "error": err})
 
     s = await get_miniapp_settings()
-    if not s["ads"]:
+    steps = build_steps(s["ads"])
+    if not steps:
         return web.json_response({"ok": False, "error": "no_ads"})
 
     await Seishiro.start_miniapp_session(token, uid)
+    daily_count = await Seishiro.get_miniapp_daily_count(uid)
     return web.json_response({
         "ok": True,
-        "ads": s["ads"],
+        "steps": steps,
         "min_seconds": s["min_seconds"],
+        "daily": {"goal": s["daily_goal"], "count": daily_count},
+        "inapp_zone": first_monetag_zone(s["ads"]) if s["inapp"] else "",
     })
 
 
 @routes.post("/api/mini/complete")
 async def api_mini_complete(request):
-    from plugins.miniapp import get_miniapp_settings
+    from plugins.miniapp import get_miniapp_settings, build_steps
     from plugins.start import complete_miniapp_verification
 
     try:
@@ -90,15 +94,21 @@ async def api_mini_complete(request):
         return web.json_response({"ok": False, "error": err})
 
     s = await get_miniapp_settings()
+    total = len(build_steps(s["ads"]))
     try:
         shown = int(body.get("shown", 0))
+        failed = int(body.get("failed", 0))
     except Exception:
-        shown = 0
-    shown = max(0, min(shown, len(s["ads"])))
+        shown, failed = 0, 0
+    shown = max(0, min(shown, total))
+    failed = max(0, min(failed, total))
 
     # Kam se kam 1 ad actually dikhna chahiye (adblock/no-fill se bypass na ho)
     if shown < 1:
         return web.json_response({"ok": False, "error": "no_ad_shown"})
+    # Saare steps ya toh dekhe gaye ya fail hue hone chahiye
+    if shown + failed < total:
+        return web.json_response({"ok": False, "error": "incomplete"})
 
     # Timing check: jitne ads dikhe, utna minimum time guzra hona chahiye
     started = doc.get("mini_started_at")
@@ -113,9 +123,9 @@ async def api_mini_complete(request):
         return web.json_response({"ok": False, "error": "server"})
 
     try:
-        ok, reason = await complete_miniapp_verification(bot, uid, token)
+        ok, reason, info = await complete_miniapp_verification(bot, uid, token, shown)
     except Exception as e:
         logger.error(f"miniapp complete error: {e}", exc_info=True)
         return web.json_response({"ok": False, "error": "server"})
 
-    return web.json_response({"ok": ok, "error": None if ok else reason})
+    return web.json_response({"ok": ok, "error": None if ok else reason, "info": info})

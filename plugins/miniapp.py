@@ -5,22 +5,19 @@ Telegram Mini App (Ad Watch) System — Shortener ka replacement
 
 FLOW:
   User channel link kholta hai → bot "🎬 Watch Video Ad" button deta hai
-  → button Telegram Mini App kholta hai → ads ek ek karke (admin ke
-  set kiye order mein) dikhte hain → sab complete hone par bot khud
-  user ko channel link bhej deta hai.
+  → Mini App khulta hai → ads ek ek karke (admin ke set kiye order aur
+  times ke hisaab se) dikhte hain → complete hote hi purana message delete
+  hota hai aur normal "HERE IS YOUR LINK" message aa jata hai.
 
-ADMIN COMMANDS:
-  /miniapp                         → status + ON/OFF button
-  /addminiad <provider> <id>       → ad add karo  (provider: monetag | adsgram | gigapub)
-  /delminiad <number>              → ad hatao
-  /miniadorder 2 1 3               → ads ka order badlo
-  /setminiurl https://xxx.up.railway.app   → Mini App ka public URL
-  /setminiwait <seconds>           → har ad ke liye minimum dekhne ka time
+ADMIN PANEL:  /settings → "Mini App Menu"  (ya /miniapp)
+  • Ads: add / delete / order / har ad kitni baar / ON-OFF / format
+  • Daily Goal: din mein itne ads dekho → baaki din free
+  • Free Time: ek session ke baad kitni der free
+  • Min watch time, In-App ads, Stats, URL
 
-Provider ID kya daalna hai:
-  monetag → Zone ID (number, e.g. 1234567)
-  adsgram → Block ID (e.g. 12345  ya  int-12345)
-  gigapub → Project ID (number)
+COMMANDS (shortcut):
+  /addminiad <provider> <id> [times]   provider: monetag | monetag_pop | adsgram | gigapub
+  /delminiad <n> | /miniadorder 2 1 3 | /setminiurl <https-url> | /setminiwait <sec>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
@@ -28,10 +25,12 @@ import hashlib
 import hmac
 import json
 import logging
+import datetime
 import time
 from urllib.parse import parse_qsl
 
-from pyrogram import filters
+from pyrogram import filters, StopPropagation
+from pyrogram.errors import MessageNotModified
 from pyrogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -40,18 +39,35 @@ from pyrogram.types import (
 )
 
 from bot import Bot
-from config import MINIAPP_URL, TG_BOT_TOKEN
+from config import MINIAPP_URL, TG_BOT_TOKEN, OWNER_ID
+from database.database import Seishiro
 from plugins.premium import _get_bot_config, _set_bot_config, is_owner_or_admin
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_PROVIDERS = ("monetag", "adsgram", "gigapub")
+SUPPORTED_PROVIDERS = ("monetag", "monetag_pop", "adsgram", "gigapub")
+PROVIDER_LABEL = {
+    "monetag": "Monetag (Rewarded Interstitial)",
+    "monetag_pop": "Monetag (Rewarded Popup)",
+    "adsgram": "Adsgram",
+    "gigapub": "Gigapub",
+}
 DEFAULT_MIN_SECONDS = 5
+MAX_TIMES = 10
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # CONFIG HELPERS
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def _norm_ad(a: dict) -> dict:
+    return {
+        "provider": a.get("provider", "monetag"),
+        "id": str(a.get("id", "")),
+        "times": max(1, min(MAX_TIMES, int(a.get("times", 1)))),
+        "on": bool(a.get("on", True)),
+    }
+
 
 async def get_miniapp_settings() -> dict:
     cfg = await _get_bot_config()
@@ -59,15 +75,44 @@ async def get_miniapp_settings() -> dict:
     return {
         "enabled": bool(cfg.get("miniapp_enabled", False)),
         "url": url,
-        "ads": list(cfg.get("miniapp_ads", [])),
+        "ads": [_norm_ad(a) for a in cfg.get("miniapp_ads", [])],
         "min_seconds": int(cfg.get("miniapp_min_seconds", DEFAULT_MIN_SECONDS)),
+        "daily_goal": int(cfg.get("miniapp_daily_goal", 0)),          # 0 = off
+        "free_seconds": int(cfg.get("verify_premium_seconds", 86400)),  # /setverifytime wali hi value
+        "inapp": bool(cfg.get("miniapp_inapp", False)),
     }
 
 
+async def _save_ads(ads: list) -> None:
+    await _set_bot_config("miniapp_ads", ads)
+
+
+def build_steps(ads: list) -> list:
+    """ON wale ads ko unke 'times' ke hisaab se expand karo, order same rahega."""
+    steps = []
+    for a in ads:
+        if a["on"]:
+            steps.extend({"provider": a["provider"], "id": a["id"]} for _ in range(a["times"]))
+    return steps
+
+
+def first_monetag_zone(ads: list) -> str:
+    for a in ads:
+        if a["on"] and a["provider"] in ("monetag", "monetag_pop"):
+            return a["id"]
+    return ""
+
+
 async def miniapp_ready() -> bool:
-    """Mini app tabhi use hoga jab ON ho, URL ho (https) aur kam se kam 1 ad ho."""
+    """Mini app tabhi use hoga jab ON ho, URL ho (https) aur kam se kam 1 ON ad ho."""
     s = await get_miniapp_settings()
-    return bool(s["enabled"] and s["url"].startswith("https://") and s["ads"])
+    return bool(s["enabled"] and s["url"].startswith("https://") and build_steps(s["ads"]))
+
+
+def seconds_until_ist_midnight() -> int:
+    now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+    nxt = (now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return max(60, int((nxt - now).total_seconds()))
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -109,106 +154,421 @@ def validate_init_data(init_data: str, max_age: int = 86400) -> dict | None:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ADMIN PANEL
+# ADMIN PANEL  (settings menu ke andar: callback "mini_*")
+# NOTE: photo-message ka caption 1024 chars tak hi hota hai, isliye
+#       panel text chhota rakha gaya hai.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-def _panel_text(s: dict) -> str:
+async def _admin_ok(uid: int) -> bool:
+    return uid == OWNER_ID or await Seishiro.is_admin(uid)
+
+
+def _dur(seconds: int) -> str:
+    if seconds <= 0:
+        return "None"
+    h, m = divmod(seconds // 60, 60)
+    if h and m:
+        return f"{h}h {m}m"
+    return f"{h}h" if h else f"{m}m"
+
+
+def _ad_line(i: int, a: dict) -> str:
+    st = "✅" if a["on"] else "⏸"
+    return f"{st} {i}. <b>{a['provider']}</b> ×{a['times']} — <code>{a['id']}</code>"
+
+
+def _menu_text(s: dict) -> str:
     status = "✅ ON" if s["enabled"] else "❌ OFF"
     url = s["url"] or "Not set"
     if s["ads"]:
-        ads = "\n".join(
-            f"  {i}. <b>{a['provider']}</b> → <code>{a['id']}</code>"
-            for i, a in enumerate(s["ads"], 1)
-        )
+        shown_ads = s["ads"][:6]
+        ads = "\n".join(_ad_line(i, a) for i, a in enumerate(shown_ads, 1))
+        if len(s["ads"]) > 6:
+            ads += f"\n… +{len(s['ads']) - 6} more"
     else:
-        ads = "  (koi ad add nahi hai)"
+        ads = "(koi ad nahi — Ads Manage se add karo)"
+    steps = len(build_steps(s["ads"]))
+    goal = f"{s['daily_goal']} ads/day" if s["daily_goal"] else "OFF"
     return (
-        "<b>🎬 Mini App Ads Settings</b>\n\n"
-        f"• Status: <b>{status}</b>\n"
-        f"• URL: <code>{url}</code>\n"
-        f"• Min watch time / ad: <b>{s['min_seconds']}s</b>\n\n"
-        f"<b>Ads (is order mein dikhenge):</b>\n{ads}\n\n"
-        "<code>/addminiad monetag 1234567</code>\n"
-        "<code>/addminiad adsgram 12345</code>\n"
-        "<code>/addminiad gigapub 1234</code>\n"
-        "<code>/delminiad 2</code>  |  <code>/miniadorder 2 1 3</code>\n"
-        "<code>/setminiurl https://your-app.up.railway.app</code>\n"
-        "<code>/setminiwait 5</code>\n\n"
-        "ℹ️ Mini App ON hone par free users ko shortener ki jagah "
-        "<b>Watch Video Ad</b> button milega."
+        "<b>🎬 Mini App Menu</b>\n\n"
+        f"• Status: <b>{status}</b>   • Ads/session: <b>{steps}</b>\n"
+        f"• Daily Goal: <b>{goal}</b>   • Free time: <b>{_dur(s['free_seconds'])}</b>\n"
+        f"• Min watch: <b>{s['min_seconds']}s</b>   • In-App: <b>{'ON' if s['inapp'] else 'OFF'}</b>\n"
+        f"• URL: <code>{url}</code>\n\n"
+        f"<b>Ads (order mein):</b>\n{ads}"
     )
+
+
+def _menu_kb(s: dict) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔴 Turn OFF" if s["enabled"] else "🟢 Turn ON", callback_data="mini_toggle")],
+        [InlineKeyboardButton("📺 Ads Manage", callback_data="mini_ads"),
+         InlineKeyboardButton("🎯 Daily Goal", callback_data="mini_goal")],
+        [InlineKeyboardButton("⏱ Free Time", callback_data="mini_free"),
+         InlineKeyboardButton("⏳ Min Watch", callback_data="mini_wait")],
+        [InlineKeyboardButton(f"🧩 In-App Ads: {'ON' if s['inapp'] else 'OFF'}", callback_data="mini_inapp"),
+         InlineKeyboardButton("📊 Stats", callback_data="mini_stats")],
+        [InlineKeyboardButton("🌐 Set URL", callback_data="mini_url")],
+        [InlineKeyboardButton("back", callback_data="settings_main")],
+    ])
+
+
+async def _show_menu(msg):
+    s = await get_miniapp_settings()
+    await msg.edit_text(_menu_text(s), reply_markup=_menu_kb(s))
+
+
+def _back(to="mini_menu"):
+    return [InlineKeyboardButton("back", callback_data=to)]
+
+
+def _num_buttons(prefix: str, values: list, labels: dict | None = None, per_row: int = 4):
+    rows, row = [], []
+    for v in values:
+        label = (labels or {}).get(v, str(v))
+        row.append(InlineKeyboardButton(label, callback_data=f"{prefix}:{v}"))
+        if len(row) == per_row:
+            rows.append(row); row = []
+    if row:
+        rows.append(row)
+    return rows
+
+
+async def _ask(client, cq: CallbackQuery, prompt: str, back_to: str):
+    """Admin se text maango (pyromod listen). Returns text ya None (cancel/timeout)."""
+    await cq.message.edit_text(
+        prompt + "\n\n<i>/cancel — cancel karne ke liye</i>",
+        reply_markup=InlineKeyboardMarkup([_back(back_to)]),
+    )
+    try:
+        resp = await client.listen(chat_id=cq.message.chat.id, timeout=300)
+    except Exception:
+        return None
+    try:
+        await resp.delete()
+    except Exception:
+        pass
+    text = (resp.text or "").strip()
+    if not text or text.lower() == "/cancel":
+        return None
+    return text
 
 
 @Bot.on_message(filters.command("miniapp") & filters.private)
 async def cmd_miniapp(client: Bot, msg: Message):
-    if not await is_owner_or_admin(msg.from_user.id):
+    if not await _admin_ok(msg.from_user.id):
         return await msg.reply("⛔ Sirf admins ke liye!")
     s = await get_miniapp_settings()
-    await msg.reply(
-        _panel_text(s),
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton(
-                "🔴 Turn OFF" if s["enabled"] else "🟢 Turn ON",
-                callback_data="toggle_miniapp",
+    await msg.reply(_menu_text(s), reply_markup=_menu_kb(s))
+
+
+@Bot.on_callback_query(filters.regex(r"^mini_"), group=-1)
+async def mini_callbacks(client: Bot, cq: CallbackQuery):
+    if not await _admin_ok(cq.from_user.id):
+        await cq.answer("⛔ Admins only", show_alert=True)
+        raise StopPropagation
+
+    data = cq.data
+    parts = data.split(":")
+    cmd = parts[0]
+
+    try:
+        if cmd == "mini_menu":
+            await _show_menu(cq.message)
+
+        elif cmd == "mini_toggle":
+            s = await get_miniapp_settings()
+            new = not s["enabled"]
+            if new:
+                if not build_steps(s["ads"]):
+                    await cq.answer("⚠️ Pehle Ads Manage se koi ad add/ON karo!", show_alert=True)
+                    raise StopPropagation
+                if not s["url"].startswith("https://"):
+                    await cq.answer("⚠️ Pehle Set URL se https URL set karo!", show_alert=True)
+                    raise StopPropagation
+            await _set_bot_config("miniapp_enabled", new)
+            await cq.answer("✅ Mini App ON" if new else "❌ Mini App OFF")
+            await _show_menu(cq.message)
+
+        # ── Ads ────────────────────────────────────────
+        elif cmd == "mini_ads":
+            s = await get_miniapp_settings()
+            rows = []
+            for i, a in enumerate(s["ads"]):
+                st = "✅" if a["on"] else "⏸"
+                rows.append([InlineKeyboardButton(
+                    f"{st} {i + 1}. {a['provider']} ×{a['times']}", callback_data=f"mini_ad:{i}")])
+            rows.append([InlineKeyboardButton("➕ Add Ad", callback_data="mini_adadd")])
+            rows.append(_back())
+            text = ("<b>📺 Ads Manage</b>\n\n"
+                    "Ad pe tap karo → times / ON-OFF / order / delete.\n"
+                    "<i>Order = jis order mein user ko dikhenge.</i>")
+            await cq.message.edit_text(text, reply_markup=InlineKeyboardMarkup(rows))
+
+        elif cmd == "mini_ad":
+            await _show_ad(cq, int(parts[1]))
+
+        elif cmd == "mini_adt":
+            i, d = int(parts[1]), int(parts[2])
+            s = await get_miniapp_settings(); ads = s["ads"]
+            if 0 <= i < len(ads):
+                ads[i]["times"] = max(1, min(MAX_TIMES, ads[i]["times"] + d))
+                await _save_ads(ads)
+            await _show_ad(cq, i)
+
+        elif cmd == "mini_adon":
+            i = int(parts[1])
+            s = await get_miniapp_settings(); ads = s["ads"]
+            if 0 <= i < len(ads):
+                ads[i]["on"] = not ads[i]["on"]
+                await _save_ads(ads)
+                if s["enabled"] and not build_steps(ads):
+                    await _set_bot_config("miniapp_enabled", False)
+                    await cq.answer("⚠️ Koi ad ON nahi bacha — Mini App OFF kar diya", show_alert=True)
+            await _show_ad(cq, i)
+
+        elif cmd == "mini_admv":
+            i, direction = int(parts[1]), parts[2]
+            s = await get_miniapp_settings(); ads = s["ads"]
+            j = i - 1 if direction == "up" else i + 1
+            if 0 <= i < len(ads) and 0 <= j < len(ads):
+                ads[i], ads[j] = ads[j], ads[i]
+                await _save_ads(ads)
+                i = j
+            await _show_ad(cq, i)
+
+        elif cmd == "mini_adfmt":
+            i = int(parts[1])
+            s = await get_miniapp_settings(); ads = s["ads"]
+            if 0 <= i < len(ads) and ads[i]["provider"] in ("monetag", "monetag_pop"):
+                ads[i]["provider"] = "monetag_pop" if ads[i]["provider"] == "monetag" else "monetag"
+                await _save_ads(ads)
+            await _show_ad(cq, i)
+
+        elif cmd == "mini_addel":
+            i = int(parts[1])
+            s = await get_miniapp_settings(); ads = s["ads"]
+            if 0 <= i < len(ads):
+                ads.pop(i)
+                await _save_ads(ads)
+                if s["enabled"] and not build_steps(ads):
+                    await _set_bot_config("miniapp_enabled", False)
+            await cq.answer("🗑 Deleted")
+            cq.data = "mini_ads"
+            await mini_callbacks(client, cq)
+
+        elif cmd == "mini_adadd":
+            text = await _ask(
+                client, cq,
+                "<b>➕ Add Ad</b>\n\nFormat: <code>provider id [times]</code>\n"
+                "Providers: <code>monetag</code> (rewarded interstitial), <code>monetag_pop</code> "
+                "(rewarded popup), <code>adsgram</code>, <code>gigapub</code>\n\n"
+                "Example: <code>monetag 1234567 2</code>",
+                "mini_ads",
             )
-        ]]),
+            if text:
+                p = text.split()
+                err = None
+                if len(p) < 2:
+                    err = "❌ Format galat. Example: monetag 1234567 2"
+                elif p[0].lower() not in SUPPORTED_PROVIDERS:
+                    err = f"❌ Provider galat. Use: {', '.join(SUPPORTED_PROVIDERS)}"
+                elif not p[1].replace("-", "").replace("_", "").isalnum():
+                    err = "❌ ID mein sirf letters/numbers/-/_ allowed hain."
+                if err:
+                    await cq.message.reply(err)
+                else:
+                    times = int(p[2]) if len(p) > 2 and p[2].isdigit() else 1
+                    s = await get_miniapp_settings(); ads = s["ads"]
+                    ads.append({"provider": p[0].lower(), "id": p[1], "times": max(1, min(MAX_TIMES, times)), "on": True})
+                    await _save_ads(ads)
+            cq.data = "mini_ads"
+            await mini_callbacks(client, cq)
+
+        # ── Daily goal ────────────────────────────────
+        elif cmd == "mini_goal":
+            s = await get_miniapp_settings()
+            cur = f"{s['daily_goal']} ads" if s["daily_goal"] else "OFF"
+            rows = _num_buttons("mini_goalset", [0, 5, 10, 15, 20, 30, 50, 100], {0: "OFF"})
+            rows.append(_back())
+            await cq.message.edit_text(
+                "<b>🎯 Daily Goal</b>\n\n"
+                f"Abhi: <b>{cur}</b>\n\n"
+                "User ek din (IST) mein itne ads dekh le toh <b>us din ke baaki time free</b> "
+                "(direct links, koi ads nahi).\n"
+                "<i>Tip: Free Time ko chhota rakho (ya None) taaki goal ka matlab bane.</i>",
+                reply_markup=InlineKeyboardMarkup(rows),
+            )
+
+        elif cmd == "mini_goalset":
+            await _set_bot_config("miniapp_daily_goal", max(0, int(parts[1])))
+            await cq.answer("✅ Saved")
+            cq.data = "mini_goal"
+            await mini_callbacks(client, cq)
+
+        # ── Free time after session ───────────────────
+        elif cmd == "mini_free":
+            s = await get_miniapp_settings()
+            vals = [0, 1800, 3600, 10800, 21600, 43200, 86400]
+            labels = {0: "None", 1800: "30m", 3600: "1h", 10800: "3h", 21600: "6h", 43200: "12h", 86400: "24h"}
+            rows = _num_buttons("mini_freeset", vals, labels)
+            rows.append(_back())
+            await cq.message.edit_text(
+                "<b>⏱ Free Time</b>\n\n"
+                f"Abhi: <b>{_dur(s['free_seconds'])}</b>\n\n"
+                "Ek session (saare ads) complete karne ke baad user kitni der tak "
+                "direct links paayega.\n<b>None</b> = har link ke liye ads dekhne padenge "
+                "(sabse zyada ad views).",
+                reply_markup=InlineKeyboardMarkup(rows),
+            )
+
+        elif cmd == "mini_freeset":
+            await _set_bot_config("verify_premium_seconds", max(0, int(parts[1])))
+            await cq.answer("✅ Saved")
+            cq.data = "mini_free"
+            await mini_callbacks(client, cq)
+
+        # ── Min watch ─────────────────────────────────
+        elif cmd == "mini_wait":
+            s = await get_miniapp_settings()
+            rows = _num_buttons("mini_waitset", [0, 3, 5, 8, 10, 15, 20, 30], {0: "Off"})
+            rows.append(_back())
+            await cq.message.edit_text(
+                "<b>⏳ Min Watch Time</b>\n\n"
+                f"Abhi: <b>{s['min_seconds']}s per ad</b>\n\n"
+                "Server itna time guzre bina verify nahi karega (fast-skip/bypass se bachav).",
+                reply_markup=InlineKeyboardMarkup(rows),
+            )
+
+        elif cmd == "mini_waitset":
+            await _set_bot_config("miniapp_min_seconds", max(0, min(60, int(parts[1]))))
+            await cq.answer("✅ Saved")
+            cq.data = "mini_wait"
+            await mini_callbacks(client, cq)
+
+        # ── In-app interstitial ───────────────────────
+        elif cmd == "mini_inapp":
+            s = await get_miniapp_settings()
+            new = not s["inapp"]
+            if new and not first_monetag_zone(s["ads"]):
+                await cq.answer("⚠️ In-App ke liye ek Monetag ad (zone) add hona chahiye.", show_alert=True)
+                raise StopPropagation
+            await _set_bot_config("miniapp_inapp", new)
+            await cq.answer("✅ In-App ads ON" if new else "❌ In-App ads OFF")
+            await _show_menu(cq.message)
+
+        # ── Stats ─────────────────────────────────────
+        elif cmd == "mini_stats":
+            st = await Seishiro.get_miniapp_stats()
+            await cq.message.edit_text(
+                "<b>📊 Mini App Stats</b>\n\n"
+                f"<b>Aaj (IST)</b>\n• Users: <b>{st['users_today']}</b>\n"
+                f"• Sessions (links unlock): <b>{st['today_sessions']}</b>\n"
+                f"• Ads dekhe gaye: <b>{st['today_ads']}</b>\n\n"
+                f"<b>Total</b>\n• Sessions: <b>{st['total_sessions']}</b>\n"
+                f"• Ads: <b>{st['total_ads']}</b>\n\n"
+                "<i>Asli earning Monetag dashboard mein dekho — ye bot ke apne counts hain.</i>",
+                reply_markup=InlineKeyboardMarkup([_back()]),
+            )
+
+        # ── URL ───────────────────────────────────────
+        elif cmd == "mini_url":
+            s = await get_miniapp_settings()
+            text = await _ask(
+                client, cq,
+                "<b>🌐 Mini App URL</b>\n\n"
+                f"Abhi: <code>{s['url'] or 'Not set'}</code>\n\n"
+                "Naya <b>https://</b> URL bhejo (e.g. <code>https://aapka-app.up.railway.app</code>)",
+                "mini_menu",
+            )
+            if text:
+                url = text.split()[0].rstrip("/")
+                if url.startswith("https://"):
+                    await _set_bot_config("miniapp_url", url)
+                else:
+                    await cq.message.reply("❌ URL <b>https://</b> se shuru hona chahiye.")
+            await _show_menu(cq.message)
+
+        else:
+            await cq.answer()
+
+    except StopPropagation:
+        raise
+    except MessageNotModified:
+        pass
+    except Exception as e:
+        logger.error(f"mini callback error ({data}): {e}", exc_info=True)
+        try:
+            await cq.answer("⚠️ Error, dobara try karo", show_alert=True)
+        except Exception:
+            pass
+    try:
+        await cq.answer()
+    except Exception:
+        pass
+    raise StopPropagation
+
+
+async def _show_ad(cq: CallbackQuery, i: int):
+    s = await get_miniapp_settings()
+    ads = s["ads"]
+    if not (0 <= i < len(ads)):
+        cq.data = "mini_ads"
+        return await mini_callbacks(cq._client, cq)
+    a = ads[i]
+    rows = [
+        [InlineKeyboardButton("➖", callback_data=f"mini_adt:{i}:-1"),
+         InlineKeyboardButton(f"Times: {a['times']}", callback_data="mini_noop"),
+         InlineKeyboardButton("➕", callback_data=f"mini_adt:{i}:1")],
+        [InlineKeyboardButton("⏸ Turn OFF" if a["on"] else "▶️ Turn ON", callback_data=f"mini_adon:{i}")],
+        [InlineKeyboardButton("⬆️ Up", callback_data=f"mini_admv:{i}:up"),
+         InlineKeyboardButton("⬇️ Down", callback_data=f"mini_admv:{i}:down")],
+    ]
+    if a["provider"] in ("monetag", "monetag_pop"):
+        rows.append([InlineKeyboardButton("🔁 Format badlo (Interstitial ⇄ Popup)", callback_data=f"mini_adfmt:{i}")])
+    rows.append([InlineKeyboardButton("🗑 Delete", callback_data=f"mini_addel:{i}")])
+    rows.append(_back("mini_ads"))
+    await cq.message.edit_text(
+        f"<b>📺 Ad #{i + 1}</b>\n\n"
+        f"• Network: <b>{PROVIDER_LABEL.get(a['provider'], a['provider'])}</b>\n"
+        f"• ID: <code>{a['id']}</code>\n"
+        f"• Status: <b>{'ON' if a['on'] else 'OFF'}</b>\n"
+        f"• Har session mein: <b>{a['times']} baar</b>",
+        reply_markup=InlineKeyboardMarkup(rows),
     )
 
 
-@Bot.on_callback_query(filters.regex("^toggle_miniapp$"), group=-1)
-async def cb_toggle_miniapp(client: Bot, cq: CallbackQuery):
-    if not await is_owner_or_admin(cq.from_user.id):
-        return await cq.answer("⛔ Admins only", show_alert=True)
-    s = await get_miniapp_settings()
-    new = not s["enabled"]
-    if new:
-        if not s["ads"]:
-            return await cq.answer("⚠️ Pehle /addminiad se ad add karo!", show_alert=True)
-        if not s["url"].startswith("https://"):
-            return await cq.answer("⚠️ Pehle /setminiurl se https URL set karo!", show_alert=True)
-    await _set_bot_config("miniapp_enabled", new)
-    s["enabled"] = new
-    await cq.answer("✅ Mini App ON" if new else "❌ Mini App OFF", show_alert=True)
-    try:
-        await cq.message.edit_text(
-            _panel_text(s),
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton(
-                    "🔴 Turn OFF" if new else "🟢 Turn ON",
-                    callback_data="toggle_miniapp",
-                )
-            ]]),
-        )
-    except Exception:
-        pass
-
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# SHORTCUT COMMANDS (panel ke alawa)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @Bot.on_message(filters.command("addminiad") & filters.private)
 async def cmd_add_miniad(client: Bot, msg: Message):
-    if not await is_owner_or_admin(msg.from_user.id):
+    if not await _admin_ok(msg.from_user.id):
         return await msg.reply("⛔ Sirf admins ke liye!")
     if len(msg.command) < 3:
         return await msg.reply(
-            "<b>Usage:</b> <code>/addminiad provider id</code>\n"
+            "<b>Usage:</b> <code>/addminiad provider id [times]</code>\n"
             f"<b>Providers:</b> {', '.join(SUPPORTED_PROVIDERS)}\n"
-            "<b>Example:</b> <code>/addminiad monetag 1234567</code>"
+            "<b>Example:</b> <code>/addminiad monetag 1234567 2</code>"
         )
     provider = msg.command[1].lower().strip()
     ad_id = msg.command[2].strip()
+    times = int(msg.command[3]) if len(msg.command) > 3 and msg.command[3].isdigit() else 1
     if provider not in SUPPORTED_PROVIDERS:
         return await msg.reply(f"❌ Provider galat hai. Use: {', '.join(SUPPORTED_PROVIDERS)}")
     if not ad_id.replace("-", "").replace("_", "").isalnum():
         return await msg.reply("❌ ID mein sirf letters/numbers/-/_ allowed hain.")
     s = await get_miniapp_settings()
     ads = s["ads"]
-    ads.append({"provider": provider, "id": ad_id})
-    await _set_bot_config("miniapp_ads", ads)
-    await msg.reply(f"✅ Ad add hua: <b>{provider}</b> → <code>{ad_id}</code>\nTotal ads: {len(ads)}\n\n/miniapp se dekho.")
+    ads.append({"provider": provider, "id": ad_id, "times": max(1, min(MAX_TIMES, times)), "on": True})
+    await _save_ads(ads)
+    await msg.reply(f"✅ Ad add hua: <b>{provider}</b> → <code>{ad_id}</code> ×{max(1, min(MAX_TIMES, times))}\nTotal ads: {len(ads)}\n\n/miniapp se manage karo.")
 
 
 @Bot.on_message(filters.command("delminiad") & filters.private)
 async def cmd_del_miniad(client: Bot, msg: Message):
-    if not await is_owner_or_admin(msg.from_user.id):
+    if not await _admin_ok(msg.from_user.id):
         return await msg.reply("⛔ Sirf admins ke liye!")
     if len(msg.command) < 2 or not msg.command[1].isdigit():
         return await msg.reply("<b>Usage:</b> <code>/delminiad 2</code> (number /miniapp mein dekho)")
@@ -218,17 +578,17 @@ async def cmd_del_miniad(client: Bot, msg: Message):
     if idx < 1 or idx > len(ads):
         return await msg.reply("❌ Galat number.")
     removed = ads.pop(idx - 1)
-    await _set_bot_config("miniapp_ads", ads)
+    await _save_ads(ads)
     extra = ""
-    if not ads and s["enabled"]:
+    if s["enabled"] and not build_steps(ads):
         await _set_bot_config("miniapp_enabled", False)
-        extra = "\n⚠️ Koi ad bacha nahi, isliye Mini App OFF kar diya."
+        extra = "\n⚠️ Koi ON ad bacha nahi, isliye Mini App OFF kar diya."
     await msg.reply(f"🗑 Removed: <b>{removed['provider']}</b> → <code>{removed['id']}</code>{extra}")
 
 
 @Bot.on_message(filters.command("miniadorder") & filters.private)
 async def cmd_miniad_order(client: Bot, msg: Message):
-    if not await is_owner_or_admin(msg.from_user.id):
+    if not await _admin_ok(msg.from_user.id):
         return await msg.reply("⛔ Sirf admins ke liye!")
     s = await get_miniapp_settings()
     ads = s["ads"]
@@ -241,15 +601,13 @@ async def cmd_miniad_order(client: Bot, msg: Message):
             "<b>Usage:</b> <code>/miniadorder 2 1 3</code>\n"
             f"Saare {len(ads)} numbers ek baar likhne hain (1 se {len(ads)} tak)."
         )
-    new_ads = [ads[i - 1] for i in order]
-    await _set_bot_config("miniapp_ads", new_ads)
-    s["ads"] = new_ads
-    await msg.reply("✅ Order update ho gaya.\n\n" + _panel_text(s))
+    await _save_ads([ads[i - 1] for i in order])
+    await msg.reply("✅ Order update ho gaya. /miniapp mein dekho.")
 
 
 @Bot.on_message(filters.command("setminiurl") & filters.private)
 async def cmd_set_miniurl(client: Bot, msg: Message):
-    if not await is_owner_or_admin(msg.from_user.id):
+    if not await _admin_ok(msg.from_user.id):
         return await msg.reply("⛔ Sirf admins ke liye!")
     if len(msg.command) < 2:
         return await msg.reply("<b>Usage:</b> <code>/setminiurl https://your-app.up.railway.app</code>")
@@ -262,7 +620,7 @@ async def cmd_set_miniurl(client: Bot, msg: Message):
 
 @Bot.on_message(filters.command("setminiwait") & filters.private)
 async def cmd_set_miniwait(client: Bot, msg: Message):
-    if not await is_owner_or_admin(msg.from_user.id):
+    if not await _admin_ok(msg.from_user.id):
         return await msg.reply("⛔ Sirf admins ke liye!")
     if len(msg.command) < 2 or not msg.command[1].isdigit():
         return await msg.reply("<b>Usage:</b> <code>/setminiwait 5</code> (seconds, 0-60)")
