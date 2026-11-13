@@ -125,6 +125,18 @@ SHORTENER_WEBSITE = os.environ.get("SHORTENER_WEBSITE", "")    # e.g. omegalinks
 # Premium users shortener bypass karte hain
 PREMIUM_BYPASS_SHORTENER = os.environ.get("PREMIUM_BYPASS_SHORTENER", "true").lower() == "true"
 
+# ============================================
+# TELEGRAM MINI APP (AD WATCH) CONFIG
+# Shortener ki jagah user ko "Watch Video Ad" button milta hai,
+# jo Telegram Mini App kholta hai aur ads ek ek karke dikhata hai.
+# MINIAPP_URL = bot ka public https URL (Railway domain), bina '/' ke.
+# Admin baaki settings bot ke andar /miniapp se karta hai.
+# ============================================
+MINIAPP_URL = (
+    os.environ.get("MINIAPP_URL")
+    or (("https://" + os.environ["RAILWAY_PUBLIC_DOMAIN"]) if os.environ.get("RAILWAY_PUBLIC_DOMAIN") else "")
+).rstrip("/")
+
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s - %(levelname)s] - %(name)s - %(message)s",

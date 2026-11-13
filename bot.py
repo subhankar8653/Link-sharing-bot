@@ -255,7 +255,7 @@ class Bot(Client):
 
         # ── 5. Web Server ─────────────────────────────────────────────
         try:
-            app = web.AppRunner(await web_server())
+            app = web.AppRunner(await web_server(self))
             await app.setup()
             await web.TCPSite(app, "0.0.0.0", PORT).start()
             logger.info(f"Web server: 0.0.0.0:{PORT}")
