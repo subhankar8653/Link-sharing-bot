@@ -956,7 +956,7 @@ class Master:
     # temp premium dete hain + fresh channel link
     # ══════════════════════════════════════════
 
-    async def create_verify_token(self, user_id: int, channel_id: int, token: str, is_request: bool = False) -> bool:
+    async def create_verify_token(self, user_id: int, channel_id: int, token: str, is_request: bool = False, b64: str = "") -> bool:
         """
         Shortener se pehle ek token DB mein save karo.
         Token = random string jo bot deep link mein encode hoga.
@@ -970,6 +970,7 @@ class Master:
                     "user_id":    int(user_id),
                     "channel_id": int(channel_id),
                     "is_request": bool(is_request),
+                    "b64":        b64 or "",
                     "created_at": datetime.datetime.now(),
                     "used":       False,
                 }},
@@ -1041,6 +1042,76 @@ class Master:
         except Exception as e:
             logging.error(f"start_miniapp_session error: {e}")
             return False
+
+    async def set_token_prompt(self, token: str, chat_id: int, msg_id: int) -> None:
+        """'Watch Video Ad' wale message ka ID save karo — link milte hi delete hoga."""
+        try:
+            await self.database['verify_tokens'].update_one(
+                {"token": token},
+                {"$set": {"prompt_chat_id": int(chat_id), "prompt_msg_id": int(msg_id)}},
+            )
+        except Exception as e:
+            logging.error(f"set_token_prompt error: {e}")
+
+    # ── Mini App daily progress + stats (IST din ke hisaab se) ───────
+
+    @staticmethod
+    def _ist_date() -> str:
+        import datetime
+        return (datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+
+    async def add_miniapp_progress(self, user_id: int, shown: int) -> int:
+        """Aaj ke liye user ka ads-count badhao. Naya total return karta hai."""
+        try:
+            from pymongo import ReturnDocument
+            date = self._ist_date()
+            doc = await self.database['miniapp_daily'].find_one_and_update(
+                {"_id": f"{int(user_id)}:{date}"},
+                {"$inc": {"count": int(shown), "sessions": 1},
+                 "$set": {"uid": int(user_id), "date": date}},
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
+            await self.database['miniapp_stats'].update_one(
+                {"_id": date},
+                {"$inc": {"sessions": 1, "ads": int(shown)}},
+                upsert=True,
+            )
+            return int(doc.get("count", shown))
+        except Exception as e:
+            logging.error(f"add_miniapp_progress error: {e}")
+            return int(shown)
+
+    async def get_miniapp_daily_count(self, user_id: int) -> int:
+        try:
+            doc = await self.database['miniapp_daily'].find_one(
+                {"_id": f"{int(user_id)}:{self._ist_date()}"}
+            )
+            return int(doc.get("count", 0)) if doc else 0
+        except Exception as e:
+            logging.error(f"get_miniapp_daily_count error: {e}")
+            return 0
+
+    async def get_miniapp_stats(self) -> dict:
+        """Admin panel ke liye: aaj + total sessions/ads + aaj ke unique users."""
+        try:
+            date = self._ist_date()
+            today = await self.database['miniapp_stats'].find_one({"_id": date}) or {}
+            users_today = await self.database['miniapp_daily'].count_documents({"date": date})
+            tot_sessions = tot_ads = 0
+            async for d in self.database['miniapp_stats'].find({}):
+                tot_sessions += int(d.get("sessions", 0))
+                tot_ads += int(d.get("ads", 0))
+            return {
+                "today_sessions": int(today.get("sessions", 0)),
+                "today_ads": int(today.get("ads", 0)),
+                "users_today": int(users_today),
+                "total_sessions": tot_sessions,
+                "total_ads": tot_ads,
+            }
+        except Exception as e:
+            logging.error(f"get_miniapp_stats error: {e}")
+            return {"today_sessions": 0, "today_ads": 0, "users_today": 0, "total_sessions": 0, "total_ads": 0}
 
     async def delete_old_tokens(self) -> None:
         """1 ghante se purane tokens delete karo (cleanup)."""
