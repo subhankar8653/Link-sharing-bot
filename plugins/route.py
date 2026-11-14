@@ -1,6 +1,7 @@
 import datetime
 import logging
 import os
+import time
 
 from aiohttp import web
 
@@ -49,9 +50,50 @@ async def _auth(body: dict):
     return int(user["id"]), token, doc, None
 
 
+
+# ── Channel info (naam + profile photo) — Mini App header ke liye ──────────
+_CH_CACHE: dict = {}          # channel_id -> {"title", "photo": bytes|None, "ts"}
+_CH_TTL = 3600
+
+
+async def _channel_info(bot, cid: int) -> dict:
+    c = _CH_CACHE.get(cid)
+    if c and time.time() - c["ts"] < _CH_TTL:
+        return c
+    title, photo = "", None
+    try:
+        from plugins.start import _resolve_peer_safe
+        await _resolve_peer_safe(bot, cid)
+        chat = await bot.get_chat(cid)
+        title = chat.title or ""
+        if chat.photo:
+            bio = await bot.download_media(chat.photo.big_file_id, in_memory=True)
+            if bio is not None:
+                photo = bytes(bio.getbuffer())
+    except Exception as e:
+        logger.warning(f"channel info fetch failed ({cid}): {e}")
+    info = {"title": title, "photo": photo, "ts": time.time()}
+    _CH_CACHE[cid] = info
+    return info
+
+
+@routes.get("/miniapp/photo")
+async def miniapp_photo(request):
+    from database.database import Seishiro
+    token = str(request.query.get("t", ""))[:64]
+    doc = await Seishiro.get_verify_token(token) if token else {}
+    bot = request.app.get("bot")
+    if not doc or bot is None:
+        return web.Response(status=404)
+    info = await _channel_info(bot, doc["channel_id"])
+    if not info.get("photo"):
+        return web.Response(status=404)
+    return web.Response(body=info["photo"], content_type="image/jpeg",
+                        headers={"Cache-Control": "private, max-age=3600"})
+
 @routes.post("/api/mini/init")
 async def api_mini_init(request):
-    from plugins.miniapp import get_miniapp_settings, build_steps, first_monetag_zone
+    from plugins.miniapp import get_miniapp_settings, build_steps
     from database.database import Seishiro
 
     try:
@@ -69,13 +111,14 @@ async def api_mini_init(request):
         return web.json_response({"ok": False, "error": "no_ads"})
 
     await Seishiro.start_miniapp_session(token, uid)
-    daily_count = await Seishiro.get_miniapp_daily_count(uid)
+    bot = request.app.get("bot")
+    info = await _channel_info(bot, doc["channel_id"]) if bot else {"title": "", "photo": None}
     return web.json_response({
         "ok": True,
         "steps": steps,
         "min_seconds": s["min_seconds"],
-        "daily": {"goal": s["daily_goal"], "count": daily_count},
-        "inapp_zone": first_monetag_zone(s["ads"]) if s["inapp"] else "",
+        "uid": uid,
+        "channel": {"title": info["title"], "has_photo": bool(info["photo"])},
     })
 
 

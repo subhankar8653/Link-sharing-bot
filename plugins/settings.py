@@ -471,12 +471,17 @@ async def settings_callback(client: Bot, callback_query):
                 await callback_query.answer("Only admins can access this!", show_alert=True)
                 return
             
+            layout = await Seishiro.get_fsub_layout()
             btn = [
                 [InlineKeyboardButton("Aᴅᴅ Cʜᴀɴɴᴇʟ", callback_data="add_fsub_channel"), InlineKeyboardButton("Rᴇᴍᴏᴠᴇ Cʜᴀɴɴᴇʟ", callback_data="delete_fsub_channel")],
                 [InlineKeyboardButton("Lɪsᴛ Cʜᴀɴɴᴇʟs", callback_data="list_fsub_channels")],
                 [InlineKeyboardButton("✏️ Rᴇɴᴀᴍᴇ Bᴜᴛᴛᴏɴ", callback_data="rename_fsub_channel")],
                 [InlineKeyboardButton("Mᴏᴅᴇ", callback_data="fsub_mode_menu")],
+                [InlineKeyboardButton("⏳ Aᴜᴛᴏ Rᴇᴍᴏᴠᴇ / Lɪɴᴋ Rᴏᴛᴀᴛᴇ", callback_data="fsx_sch")],
+                [InlineKeyboardButton("📝 Eᴅɪᴛ Fsᴜʙ Tᴇxᴛ", callback_data="fsx_txt")],
                 [InlineKeyboardButton("⏱ Cʜᴇᴄᴋ Dᴜʀᴀᴛɪᴏɴ", callback_data="fsub_check_duration_menu")],
+                [InlineKeyboardButton(("✅ " if layout == 1 else "") + "1 Rᴏᴡ = 1 Bᴜᴛᴛᴏɴ", callback_data="fsx_lay:1"),
+                 InlineKeyboardButton(("✅ " if layout == 2 else "") + "1 Rᴏᴡ = 2 Bᴜᴛᴛᴏɴs", callback_data="fsx_lay:2")],
                 [InlineKeyboardButton("back", callback_data="settings_main")]
             ]
             await callback_query.message.edit_text(

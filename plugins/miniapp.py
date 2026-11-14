@@ -79,7 +79,7 @@ async def get_miniapp_settings() -> dict:
         "min_seconds": int(cfg.get("miniapp_min_seconds", DEFAULT_MIN_SECONDS)),
         "daily_goal": int(cfg.get("miniapp_daily_goal", 0)),          # 0 = off
         "free_seconds": int(cfg.get("verify_premium_seconds", 86400)),  # /setverifytime wali hi value
-        "inapp": bool(cfg.get("miniapp_inapp", False)),
+        "inapp": False,   # passive in-app ads hata diye (auto-ads uncounted the)
     }
 
 
@@ -193,7 +193,7 @@ def _menu_text(s: dict) -> str:
         "<b>🎬 Mini App Menu</b>\n\n"
         f"• Status: <b>{status}</b>   • Ads/session: <b>{steps}</b>\n"
         f"• Daily Goal: <b>{goal}</b>   • Free time: <b>{_dur(s['free_seconds'])}</b>\n"
-        f"• Min watch: <b>{s['min_seconds']}s</b>   • In-App: <b>{'ON' if s['inapp'] else 'OFF'}</b>\n"
+        f"• Min watch: <b>{s['min_seconds']}s</b>\n"
         f"• URL: <code>{url}</code>\n\n"
         f"<b>Ads (order mein):</b>\n{ads}"
     )
@@ -206,9 +206,8 @@ def _menu_kb(s: dict) -> InlineKeyboardMarkup:
          InlineKeyboardButton("🎯 Daily Goal", callback_data="mini_goal")],
         [InlineKeyboardButton("⏱ Free Time", callback_data="mini_free"),
          InlineKeyboardButton("⏳ Min Watch", callback_data="mini_wait")],
-        [InlineKeyboardButton(f"🧩 In-App Ads: {'ON' if s['inapp'] else 'OFF'}", callback_data="mini_inapp"),
-         InlineKeyboardButton("📊 Stats", callback_data="mini_stats")],
-        [InlineKeyboardButton("🌐 Set URL", callback_data="mini_url")],
+        [InlineKeyboardButton("📊 Stats", callback_data="mini_stats"),
+         InlineKeyboardButton("🌐 Set URL", callback_data="mini_url")],
         [InlineKeyboardButton("back", callback_data="settings_main")],
     ])
 
@@ -445,17 +444,6 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
             await cq.answer("✅ Saved")
             cq.data = "mini_wait"
             await mini_callbacks(client, cq)
-
-        # ── In-app interstitial ───────────────────────
-        elif cmd == "mini_inapp":
-            s = await get_miniapp_settings()
-            new = not s["inapp"]
-            if new and not first_monetag_zone(s["ads"]):
-                await cq.answer("⚠️ In-App ke liye ek Monetag ad (zone) add hona chahiye.", show_alert=True)
-                raise StopPropagation
-            await _set_bot_config("miniapp_inapp", new)
-            await cq.answer("✅ In-App ads ON" if new else "❌ In-App ads OFF")
-            await _show_menu(cq.message)
 
         # ── Stats ─────────────────────────────────────
         elif cmd == "mini_stats":

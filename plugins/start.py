@@ -23,6 +23,7 @@ from database.database import Seishiro
 from plugins.settings import revoke_invite_after_5_minutes
 from plugins.premium import shorten_link, _get_bot_config
 from plugins.miniapp import miniapp_ready, get_miniapp_settings, seconds_until_ist_midnight
+from plugins.fsub_extra import render_fsub_text
 from helper_func import *
 from plugins.tutorial import send_fsub_tutorial_if_not_joined, send_linkshortner_tutorial_if_not_verified
 
@@ -248,7 +249,27 @@ def _fsub_step_caption(step_num: int, total: int) -> str:
     )
 
 
-async def _build_next_step(client, channel_order: list, pending_cids: list, total: int):
+async def _fsub_step_caption_async(step_num: int, total: int, user=None) -> str:
+    """Admin ne custom fsub text set kiya ho toh wahi (+ step number), warna default caption."""
+    custom = ((await Seishiro.get_fsub_ui()).get("text") or "").strip()
+    if custom:
+        return f"{render_fsub_text(custom, user)}\n\n<b>Step {step_num:02d}/{total:02d}</b>"
+    return _fsub_step_caption(step_num, total)
+
+
+async def _send_fsub_ui(message, caption: str, markup):
+    """Fsub screen bhejo: custom/default photo ke saath; photo 'none' ho ya fail ho toh sirf text."""
+    ui  = await Seishiro.get_fsub_ui()
+    pic = ui.get("pic") or FSUB_PIC
+    if pic != "none":
+        try:
+            return await message.reply_photo(photo=pic, caption=caption, reply_markup=markup)
+        except Exception as e:
+            logger.warning(f"fsub photo send failed, falling back to text: {e}")
+    return await message.reply_text(caption, reply_markup=markup)
+
+
+async def _build_next_step(client, channel_order: list, pending_cids: list, total: int, user=None):
     """pending_cids (channel_order ke fixed order mein) se pehla wala channel try
     karo jiska button ban jaaye (koi resolve na ho paaye toh agle pe skip).
     step_num = us channel ki position channel_order mein (1-based) — yehi number
@@ -258,7 +279,7 @@ async def _build_next_step(client, channel_order: list, pending_cids: list, tota
         step_num = channel_order.index(cid) + 1
         btn = await _build_fsub_channel_button(client, cid, step_num)
         if btn:
-            caption = _fsub_step_caption(step_num, total)
+            caption = await _fsub_step_caption_async(step_num, total, user)
             buttons = InlineKeyboardMarkup([
                 [btn],
                 [InlineKeyboardButton("🔵 Mᴀɪɴᴇ Jᴏɪɴ Kᴀʀ Lɪʏᴀ", callback_data="fsub_stepcheck")]
@@ -312,7 +333,9 @@ async def _refresh_fsub_step(client: Client, uid: int) -> str:
         await _finish_fsub_stepwise(client, uid)
         return "finished"
 
-    built = await _build_next_step(client, channel_order, pending_cids, total)
+    _ctx_msg = ctx.get("message")
+    built = await _build_next_step(client, channel_order, pending_cids, total,
+                                   user=getattr(_ctx_msg, "from_user", None))
     if built is None:
         return "error"
 
@@ -334,7 +357,7 @@ async def _refresh_fsub_step(client: Client, uid: int) -> str:
     if orig_message is None:
         return "error"
     try:
-        new_msg = await orig_message.reply_photo(photo=FSUB_PIC, caption=caption, reply_markup=buttons)
+        new_msg = await _send_fsub_ui(orig_message, caption, buttons)
         ctx["step_msg"] = new_msg
         ctx["shown_step"] = step_num
         return "advanced"
@@ -553,8 +576,10 @@ async def not_joined(client: Client, message: Message):
     if not temp:
         return
 
-    buttons = []
-    count   = 0
+    buttons    = []
+    ch_buttons = []     # channel buttons alag collect hote hain taaki layout (1/2 per row) lag sake
+    count      = 0
+    layout     = await Seishiro.get_fsub_layout()
 
     try:
         channels = await Seishiro.get_fsub_channels()
@@ -629,9 +654,13 @@ async def not_joined(client: Client, message: Message):
                     btn_text = custom_name
                 else:
                     pos = position_map.get(cid, count + 1)
-                    label = "Request" if mode == "on" else "Join"
-                    btn_text = f"⚡ {label} channel {pos:02d} ⚡"
-                buttons.append([InlineKeyboardButton(text=btn_text, url=link)])
+                    if layout == 2:
+                        # 2-per-row: chhota label taaki half-width button mein fit ho
+                        btn_text = f"⚡ {'Req' if mode == 'on' else 'Join'} Channel {pos} ⚡"
+                    else:
+                        label = "Request" if mode == "on" else "Join"
+                        btn_text = f"⚡ {label} channel {pos:02d} ⚡"
+                ch_buttons.append(InlineKeyboardButton(text=btn_text, url=link))
                 count += 1
                 try:
                     await temp.edit(f"<b>{'! ' * count}</b>")
@@ -641,6 +670,13 @@ async def not_joined(client: Client, message: Message):
             except Exception as e:
                 logger.error(f"FSub button error {cid}: {e}")
                 continue
+
+        if layout == 2:
+            for i in range(0, len(ch_buttons), 2):
+                buttons.append(ch_buttons[i:i + 2])    # aakhri odd button akela (full width)
+        else:
+            for b in ch_buttons:
+                buttons.append([b])
 
         try:
             buttons.append([InlineKeyboardButton(
@@ -659,15 +695,13 @@ async def not_joined(client: Client, message: Message):
         except Exception:
             pass
 
-        await message.reply_photo(
-            photo=FSUB_PIC,
-            caption=(
-                "<b>Welcome! 😁\n\n"
-                "<blockquote>Links pane ke liye niche diye gaye "
-                "channels join karein ya request karein.</blockquote></b>"
-            ),
-            reply_markup=InlineKeyboardMarkup(buttons),
+        _custom = ((await Seishiro.get_fsub_ui()).get("text") or "").strip()
+        _caption = render_fsub_text(_custom, message.from_user) if _custom else (
+            "<b>Welcome! 😁\n\n"
+            "<blockquote>Links pane ke liye niche diye gaye "
+            "channels join karein ya request karein.</blockquote></b>"
         )
+        await _send_fsub_ui(message, _caption, InlineKeyboardMarkup(buttons))
 
         # ── FSub Tutorial: 30s baad check, join nahi kiya toh video ──
         async def _check_joined_all(check_uid: int) -> bool:
@@ -1141,16 +1175,13 @@ async def start_command(client: Bot, message: Message):
                     await Seishiro.create_verify_token(uid, channel_id, token, is_request, b64)
                     web_url = f"{ms['url']}/miniapp?t={token}"
                     prompt_msg = await message.reply_text(
-                        "<b>🎬 Aapka Link Ready Hai!</b>\n\n"
-                        "<blockquote>"
-                        "Niche <b>Watch Video Ad</b> button dabao — Mini App khulega, "
-                        "wahan ads dekho.\n"
-                        "Sab ads complete hote hi channel link <b>apne aap bot mein aa jayega!</b>\n\n"
-                        "⚡ <b>Premium users</b> ko yeh step kabhi nahi karna padta!"
-                        "</blockquote>",
+                        "<b>Your link is ready</b>\n\n"
+                        "<blockquote>Tap <b>Watch Video Ad</b>, finish the short ads in the Mini App "
+                        "and your channel link will arrive in this chat automatically.\n\n"
+                        "Premium users skip this step.</blockquote>",
                         reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("🎬 Watch Video Ad", web_app=WebAppInfo(url=web_url))],
-                            [InlineKeyboardButton("💎 Buy Premium — No Ads Ever", callback_data="prem_plans")],
+                            [InlineKeyboardButton("Watch Video Ad", web_app=WebAppInfo(url=web_url))],
+                            [InlineKeyboardButton("Buy Premium", callback_data="prem_plans")],
                         ])
                     )
                     await Seishiro.set_token_prompt(token, prompt_msg.chat.id, prompt_msg.id)
