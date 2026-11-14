@@ -1113,6 +1113,98 @@ class Master:
             logging.error(f"get_miniapp_stats error: {e}")
             return {"today_sessions": 0, "today_ads": 0, "users_today": 0, "total_sessions": 0, "total_ads": 0}
 
+    # ── FSub extras (Sufistobot se port): layout, text/photo, auto-remove, limits, rotation ──
+
+    async def get_fsub_layout(self) -> int:
+        """1 = ek row mein 1 button (default), 2 = ek row mein 2 buttons."""
+        try:
+            doc = await self.database['bot_settings'].find_one({"_id": "fsub_layout"})
+            return 2 if doc and int(doc.get("per_row", 1)) == 2 else 1
+        except Exception as e:
+            logging.error(f"get_fsub_layout error: {e}")
+            return 1
+
+    async def set_fsub_layout(self, per_row: int) -> bool:
+        try:
+            await self.database['bot_settings'].update_one(
+                {"_id": "fsub_layout"},
+                {"$set": {"per_row": 2 if int(per_row) == 2 else 1}},
+                upsert=True,
+            )
+            return True
+        except Exception as e:
+            logging.error(f"set_fsub_layout error: {e}")
+            return False
+
+    async def get_fsub_ui(self) -> dict:
+        """Custom fsub text + photo. text="" -> default text. pic="" -> default FSUB_PIC, "none" -> sirf text."""
+        try:
+            doc = await self.database['bot_settings'].find_one({"_id": "fsub_ui"}) or {}
+            return {"text": doc.get("text", "") or "", "pic": doc.get("pic", "") or ""}
+        except Exception as e:
+            logging.error(f"get_fsub_ui error: {e}")
+            return {"text": "", "pic": ""}
+
+    async def set_fsub_ui(self, **fields) -> bool:
+        try:
+            await self.database['bot_settings'].update_one(
+                {"_id": "fsub_ui"}, {"$set": fields}, upsert=True
+            )
+            return True
+        except Exception as e:
+            logging.error(f"set_fsub_ui error: {e}")
+            return False
+
+    async def get_fsub_doc(self, channel_id: int):
+        return await self.fsub_data.find_one({"channel_id": channel_id})
+
+    async def get_all_fsub_docs(self) -> list:
+        try:
+            return await self.fsub_data.find({"status": "active"}).sort("created_at", 1).to_list(None)
+        except Exception as e:
+            logging.error(f"get_all_fsub_docs error: {e}")
+            return []
+
+    async def set_fsub_remove_at(self, channel_id: int, when) -> bool:
+        """Channel ko fsub se auto remove karne ka time (naive UTC datetime). None = clear."""
+        if when:
+            res = await self.fsub_data.update_one({"channel_id": channel_id}, {"$set": {"remove_at": when}})
+        else:
+            res = await self.fsub_data.update_one({"channel_id": channel_id}, {"$unset": {"remove_at": ""}})
+        return res.matched_count > 0
+
+    async def set_fsub_request_limit(self, channel_id: int, limit: int) -> bool:
+        """Ab se `limit` NAYE requests (request mode) / joins (normal mode) aate hi channel auto remove. 0 = clear."""
+        doc = await self.fsub_data.find_one({"channel_id": channel_id})
+        if not doc:
+            return False
+        if limit and limit > 0:
+            await self.fsub_data.update_one({"channel_id": channel_id}, {"$set": {
+                "request_limit": int(limit),
+                "limit_base_req": doc.get("request_count", 0),
+                "limit_base_join": doc.get("join_count", 0),
+            }})
+        else:
+            await self.fsub_data.update_one({"channel_id": channel_id}, {"$unset": {
+                "request_limit": "", "limit_base_req": "", "limit_base_join": "",
+            }})
+        return True
+
+    async def set_fsub_link_rotation(self, channel_id: int, hours: int) -> bool:
+        """Har `hours` ghante mein purana invite link expire + naya link. 0 = off."""
+        if hours and hours > 0:
+            res = await self.fsub_data.update_one({"channel_id": channel_id}, {"$set": {
+                "rotate_hours": int(hours), "rotate_since": datetime.utcnow(),
+            }})
+        else:
+            res = await self.fsub_data.update_one({"channel_id": channel_id}, {"$unset": {
+                "rotate_hours": "", "rotate_since": "",
+            }})
+        return res.matched_count > 0
+
+    async def mark_fsub_rotated(self, channel_id: int) -> None:
+        await self.fsub_data.update_one({"channel_id": channel_id}, {"$set": {"rotate_since": datetime.utcnow()}})
+
     async def delete_old_tokens(self) -> None:
         """1 ghante se purane tokens delete karo (cleanup)."""
         import datetime
