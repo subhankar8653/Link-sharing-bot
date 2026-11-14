@@ -1026,17 +1026,22 @@ async def complete_miniapp_verification(client: Bot, uid: int, token: str, shown
         except Exception as e:
             logger.warning(f"save_user_request_link failed: {e}")
 
-    # ── Free time + Daily goal ──
+    # ── Daily goal / free time ──
     ms          = await get_miniapp_settings()
     daily_count = await Seishiro.add_miniapp_progress(uid, max(1, shown))
     goal        = ms["daily_goal"]
-    goal_hit    = goal > 0 and daily_count >= goal
-    grant       = ms["free_seconds"]
-    if goal_hit:
-        grant = max(grant, seconds_until_ist_midnight())
-    await _extend_free(uid, grant)
+    goal_hit    = False
+    if goal > 0:
+        # Goal ON: session ke baad koi free time nahi. Goal poora hote hi reward time tak ads-free
+        # (premium nahi — FSub phir bhi lagega) aur counter naye cycle ke liye 0.
+        if daily_count >= goal:
+            goal_hit = True
+            await Seishiro.set_ads_free(uid, ms["goal_reward_seconds"])
+            await Seishiro.reset_miniapp_progress(uid)
+    else:
+        await _extend_free(uid, ms["free_seconds"])
     logger.info(f"MiniApp verified: user={uid}, channel={channel_id}, shown={shown}, "
-                f"daily={daily_count}/{goal}, free={grant}s")
+                f"daily={daily_count}/{goal}, goal_hit={goal_hit}")
 
     return True, "ok", {"daily_count": daily_count, "goal": goal, "goal_reached": goal_hit}
 
@@ -1150,8 +1155,8 @@ async def start_command(client: Bot, message: Message):
                         ]])
                     )
 
-                # ── Premium → direct link ──────────────────────────────
-                if await Seishiro.has_premium_access(uid):
+                # ── Premium / ads-free (daily goal reward) → direct link ──
+                if await Seishiro.has_premium_access(uid) or await Seishiro.has_ads_free(uid):
                     inv = await _get_fresh_invite_link(client, channel_id, is_request)
                     if not inv:
                         return await message.reply_text(

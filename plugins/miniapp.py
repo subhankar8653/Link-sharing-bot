@@ -78,7 +78,8 @@ async def get_miniapp_settings() -> dict:
         "ads": [_norm_ad(a) for a in cfg.get("miniapp_ads", [])],
         "min_seconds": int(cfg.get("miniapp_min_seconds", DEFAULT_MIN_SECONDS)),
         "daily_goal": int(cfg.get("miniapp_daily_goal", 0)),          # 0 = off
-        "free_seconds": int(cfg.get("verify_premium_seconds", 86400)),  # /setverifytime wali hi value
+        "free_seconds": int(cfg.get("verify_premium_seconds", 86400)),  # sirf jab Daily Goal OFF ho
+        "goal_reward_seconds": int(cfg.get("miniapp_goal_reward", 86400)),  # goal poora -> itni der ads-free
         "inapp": False,   # passive in-app ads hata diye (auto-ads uncounted the)
     }
 
@@ -188,12 +189,16 @@ def _menu_text(s: dict) -> str:
     else:
         ads = "(koi ad nahi — Ads Manage se add karo)"
     steps = len(build_steps(s["ads"]))
-    goal = f"{s['daily_goal']} ads/day" if s["daily_goal"] else "OFF"
+    goal = f"{s['daily_goal']} ads" if s["daily_goal"] else "OFF"
+    if s["daily_goal"]:
+        rule = f"Goal ON: {s['daily_goal']} ads dekhne par <b>{_dur(s['goal_reward_seconds'])}</b> ads-free (FSub lagega)"
+    else:
+        rule = f"Goal OFF: har session ke baad <b>{_dur(s['free_seconds'])}</b> free"
     return (
         "<b>🎬 Mini App Menu</b>\n\n"
         f"• Status: <b>{status}</b>   • Ads/session: <b>{steps}</b>\n"
-        f"• Daily Goal: <b>{goal}</b>   • Free time: <b>{_dur(s['free_seconds'])}</b>\n"
-        f"• Min watch: <b>{s['min_seconds']}s</b>\n"
+        f"• Daily Goal: <b>{goal}</b>   • Min watch: <b>{s['min_seconds']}s</b>\n"
+        f"• {rule}\n"
         f"• URL: <code>{url}</code>\n\n"
         f"<b>Ads (order mein):</b>\n{ads}"
     )
@@ -389,15 +394,25 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
             s = await get_miniapp_settings()
             cur = f"{s['daily_goal']} ads" if s["daily_goal"] else "OFF"
             rows = _num_buttons("mini_goalset", [0, 5, 10, 15, 20, 30, 50, 100], {0: "OFF"})
+            rows.append([InlineKeyboardButton("Reward (ads-free time):", callback_data="mini_noop")])
+            rows += _num_buttons("mini_rwset", [21600, 43200, 86400, 172800, 259200],
+                                 {21600: "6h", 43200: "12h", 86400: "24h", 172800: "48h", 259200: "72h"}, per_row=5)
             rows.append(_back())
             await cq.message.edit_text(
                 "<b>🎯 Daily Goal</b>\n\n"
-                f"Abhi: <b>{cur}</b>\n\n"
-                "User ek din (IST) mein itne ads dekh le toh <b>us din ke baaki time free</b> "
-                "(direct links, koi ads nahi).\n"
-                "<i>Tip: Free Time ko chhota rakho (ya None) taaki goal ka matlab bane.</i>",
+                f"Goal: <b>{cur}</b>  |  Reward: <b>{_dur(s['goal_reward_seconds'])}</b>\n\n"
+                "User jab total itne ads dekh le (har session mein jitne ads, utne count hote hain; "
+                "jaise 2 ads/session aur goal 10 = 5 baar link) toh <b>Reward time</b> tak koi ads nahi aayenge. "
+                "<b>FSub phir bhi lagega</b>.\n"
+                "Goal ON hone par session ke baad ka <i>Free Time</i> lagu nahi hota.",
                 reply_markup=InlineKeyboardMarkup(rows),
             )
+
+        elif cmd == "mini_rwset":
+            await _set_bot_config("miniapp_goal_reward", max(3600, int(parts[1])))
+            await cq.answer("✅ Saved")
+            cq.data = "mini_goal"
+            await mini_callbacks(client, cq)
 
         elif cmd == "mini_goalset":
             await _set_bot_config("miniapp_daily_goal", max(0, int(parts[1])))
@@ -416,8 +431,8 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
                 "<b>⏱ Free Time</b>\n\n"
                 f"Abhi: <b>{_dur(s['free_seconds'])}</b>\n\n"
                 "Ek session (saare ads) complete karne ke baad user kitni der tak "
-                "direct links paayega.\n<b>None</b> = har link ke liye ads dekhne padenge "
-                "(sabse zyada ad views).",
+                "direct links paayega (FSub bhi skip).\n<b>None</b> = har link ke liye ads dekhne padenge.\n"
+                "<i>Sirf tab lagu hota hai jab Daily Goal OFF ho.</i>",
                 reply_markup=InlineKeyboardMarkup(rows),
             )
 

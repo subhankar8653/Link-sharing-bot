@@ -18,6 +18,7 @@ import asyncio
 import html
 import logging
 import re
+import time
 from datetime import datetime, timedelta
 
 from pyrogram import filters, StopPropagation
@@ -109,6 +110,49 @@ def limit_progress(doc: dict) -> int:
     return doc.get("join_count", 0) - doc.get("limit_base_join", 0)
 
 
+_REAL_CACHE: dict = {}      # cid -> (time, stats)
+_REAL_TTL = 20
+
+
+async def get_real_stats(client, cid: int, force: bool = False) -> dict:
+    """
+    Telegram invite-link ke ASLI numbers (jo Invite Links screen mein dikhte hain):
+      pending  = abhi pending join requests (is link se)
+      joined   = is link se join hue members
+      requests = pending + joined  (is link se aaye total requests)
+    Link na ho (public username channel) ya API fail ho toh bot ke DB counters (source="db").
+    """
+    c = _REAL_CACHE.get(cid)
+    if c and not force and time.time() - c[0] < _REAL_TTL:
+        return c[1]
+    res = None
+    try:
+        cached = await Seishiro.get_current_invite_link(cid)
+        if cached and cached.get("invite_link"):
+            li = await client.get_chat_invite_link(cid, cached["invite_link"])
+            pending = int(getattr(li, "pending_join_request_count", 0) or 0)
+            joined = int(getattr(li, "member_count", 0) or 0)
+            res = {"joined": joined, "pending": pending, "requests": pending + joined, "source": "telegram"}
+    except Exception as e:
+        logger.warning(f"real stats failed ({cid}): {e}")
+    if res is None:
+        st = await Seishiro.get_fsub_stats(cid)
+        res = {"joined": st["join_count"], "pending": None, "requests": st["request_count"], "source": "db"}
+    _REAL_CACHE[cid] = (time.time(), res)
+    return res
+
+
+async def real_progress(client, doc: dict) -> int:
+    """Target set hone ke baad ke naye requests/joins — Telegram ke real numbers se."""
+    cid = doc.get("channel_id")
+    carry = int(doc.get("limit_carry", 0) or 0)
+    st = await get_real_stats(client, cid)
+    if st["source"] == "telegram" and "limit_base_real" in doc:
+        total = st["requests"] if doc.get("mode", "off") == "on" else st["joined"]
+        return carry + max(0, total - int(doc["limit_base_real"]))
+    return carry + max(0, limit_progress(doc))
+
+
 async def _is_admin(uid: int) -> bool:
     return uid == OWNER_ID or await Seishiro.is_admin(uid)
 
@@ -164,7 +208,12 @@ async def rotate_link(client, cid: int) -> bool:
             return False
     if inv is None:
         return False
+    doc = await Seishiro.get_fsub_doc(cid) or {}
+    prog = await real_progress(client, doc) if doc.get("request_limit") else None
     await Seishiro.save_invite_link(cid, inv.invite_link, is_request)
+    _REAL_CACHE.pop(cid, None)
+    if prog is not None:
+        await Seishiro.set_fsub_limit_carry(cid, prog)   # naya link 0 se shuru, progress yaad
     try:
         await client.revoke_chat_invite_link(cid, old["invite_link"])
     except Exception:
@@ -186,7 +235,7 @@ async def maintenance_tick(client):
                 await remove_channel_now(client, cid, "scheduled removal time reached")
                 continue
             limit = doc.get("request_limit") or 0
-            if limit and limit_progress(doc) >= limit:
+            if limit and await real_progress(client, doc) >= limit:
                 kind = "requests" if doc.get("mode", "off") == "on" else "joins"
                 await remove_channel_now(client, cid, f"target of {limit} {kind} reached")
                 continue
@@ -318,7 +367,7 @@ async def _show_channel_sched(cq: CallbackQuery, cid: int):
     limit = doc.get("request_limit") or 0
     if limit:
         kind = "requests" if mode == "on" else "joins"
-        limit_line = f"{max(0, limit_progress(doc))} / {limit} {kind}"
+        limit_line = f"{await real_progress(cq._client, doc)} / {limit} {kind}"
     else:
         limit_line = "Not set"
     hours = doc.get("rotate_hours") or 0
@@ -502,8 +551,14 @@ async def fsx_callbacks(client: Bot, cq: CallbackQuery):
                     pass
                 if not txt.isdigit() or int(txt) <= 0:
                     await cq.message.reply("<b>Positive number bhejo, e.g. <code>5000</code>.</b>")
-                elif await Seishiro.set_fsub_request_limit(cid, int(txt)):
-                    await cq.message.reply(f"<b>Target set: {int(txt)}</b>\n<i>Counting ab se shuru.</i>")
+                else:
+                    st = await get_real_stats(client, cid, force=True)
+                    base = None
+                    if st["source"] == "telegram":
+                        base = st["requests"] if mode == "on" else st["joined"]
+                    if await Seishiro.set_fsub_request_limit(cid, int(txt), base_real=base):
+                        src = "Telegram link ke real numbers se" if base is not None else "bot ke counters se"
+                        await cq.message.reply(f"<b>Target set: {int(txt)}</b>\n<i>Counting ab se shuru ({src}).</i>")
             await _show_channel_sched(cq, cid)
 
         elif cmd == "fsx_limx":

@@ -840,12 +840,20 @@ async def settings_callback(client: Bot, callback_query):
                             else:
                                 fsub_list += f"{idx}. {chat.title} {status_emoji}\n"
 
-                        stats = await Seishiro.get_fsub_stats(channel_id)
+                        # REAL numbers: Telegram ke Invite Link screen jaise (bot ka apna counter drift karta hai)
+                        from plugins.fsub_extra import get_real_stats
+                        stats = await get_real_stats(client, channel_id)
                         fsub_list += f"    <code>{channel_id}</code> - {status_text}\n"
-                        fsub_list += (
-                            f"    👥 Jᴏɪɴᴇᴅ: <b>{stats['join_count']}</b> | "
-                            f"📥 Rᴇǫᴜᴇsᴛs: <b>{stats['request_count']}</b>\n\n"
-                        )
+                        if stats["source"] == "telegram":
+                            fsub_list += (
+                                f"    👥 Jᴏɪɴᴇᴅ: <b>{stats['joined']}</b> | "
+                                f"📥 Rᴇǫᴜᴇsᴛs: <b>{stats['pending']}</b> (pending)\n\n"
+                            )
+                        else:
+                            fsub_list += (
+                                f"    👥 Jᴏɪɴᴇᴅ: <b>~{stats['joined']}</b> | "
+                                f"📥 Rᴇǫᴜᴇsᴛs: <b>~{stats['requests']}</b> (bot counter)\n\n"
+                            )
                         
                     except Exception as e:
                         print(f"Error fetching channel {channel_id}: {e}")
