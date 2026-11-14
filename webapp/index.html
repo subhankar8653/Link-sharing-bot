@@ -4,186 +4,171 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<title>Unlock Link</title>
+<title>Unlock access</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
-    --bg: #070812;
-    --glass: rgba(255,255,255,.055);
-    --glass-b: rgba(255,255,255,.12);
-    --text: #f4f6ff;
-    --muted: #9aa3c0;
-    --violet: #8b5cf6; --blue: #3b82f6; --cyan: #22d3ee; --pink: #ec4899;
-    --ok: #34d399; --bad: #fb7185; --warn: #fbbf24;
+    --bg: #0a0d14;
+    --panel: #11151f;
+    --panel-2: #161b28;
+    --line: rgba(255,255,255,.07);
+    --line-2: rgba(255,255,255,.12);
+    --text: #eef1f8;
+    --muted: #8b94a8;
+    --accent: #4f8cff;
+    --accent-2: #7aa7ff;
+    --ok: #3ddc97;
+    --bad: #ff6b81;
+    --warn: #f5b74a;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow-x: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Inter, sans-serif;
+    -webkit-font-smoothing: antialiased; }
 
-  /* ───── animated background ───── */
-  .bg { position: fixed; inset: 0; overflow: hidden; z-index: 0; }
-  .blob { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .55; will-change: transform; }
-  .b1 { width: 340px; height: 340px; background: var(--violet); top: -90px; left: -90px; animation: f1 14s ease-in-out infinite; }
-  .b2 { width: 300px; height: 300px; background: var(--blue); bottom: -80px; right: -90px; animation: f2 17s ease-in-out infinite; }
-  .b3 { width: 240px; height: 240px; background: var(--pink); top: 45%; left: 55%; opacity: .28; animation: f3 20s ease-in-out infinite; }
-  .grid { position: absolute; inset: 0; opacity: .5;
-    background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
-    background-size: 36px 36px; mask-image: radial-gradient(circle at 50% 40%, #000 0%, transparent 75%); }
-  @keyframes f1 { 50% { transform: translate(70px, 90px) scale(1.15); } }
-  @keyframes f2 { 50% { transform: translate(-80px, -70px) scale(1.2); } }
-  @keyframes f3 { 50% { transform: translate(-90px, 60px) scale(.85); } }
+  .bg { position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(700px 420px at 50% -10%, rgba(79,140,255,.20), transparent 62%),
+      radial-gradient(500px 380px at 100% 110%, rgba(122,92,255,.12), transparent 60%),
+      var(--bg); }
+  .bg::after { content: ""; position: absolute; inset: 0; opacity: .5;
+    background-image: radial-gradient(rgba(255,255,255,.05) 1px, transparent 1px); background-size: 22px 22px;
+    mask-image: radial-gradient(circle at 50% 30%, #000, transparent 70%); -webkit-mask-image: radial-gradient(circle at 50% 30%, #000, transparent 70%); }
 
   .wrap { position: relative; z-index: 1; min-height: 100%; display: flex; align-items: center; justify-content: center;
-    padding: calc(18px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom)); }
+    padding: calc(20px + env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom)); }
 
-  /* ───── glass card ───── */
-  .card { width: 100%; max-width: 410px; position: relative; padding: 26px 20px 20px; text-align: center;
-    background: var(--glass); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
-    border: 1px solid var(--glass-b); border-radius: 28px;
-    box-shadow: 0 20px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12);
-    animation: rise .7s cubic-bezier(.2,.9,.3,1) both; }
-  .card::before { content: ""; position: absolute; inset: -1px; border-radius: 28px; padding: 1px; pointer-events: none;
-    background: linear-gradient(135deg, rgba(139,92,246,.7), transparent 40%, transparent 60%, rgba(34,211,238,.6));
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
-  @keyframes rise { from { opacity: 0; transform: translateY(26px) scale(.96); } to { opacity: 1; transform: none; } }
+  .card { width: 100%; max-width: 400px; padding: 28px 20px 18px; border-radius: 26px; text-align: center;
+    background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02));
+    border: 1px solid var(--line-2); box-shadow: 0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08);
+    animation: rise .6s cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
 
-  .chip { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; letter-spacing: .4px;
-    padding: 6px 12px; border-radius: 99px; background: rgba(139,92,246,.16); color: #c9b8ff; border: 1px solid rgba(139,92,246,.35); }
-  .live { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 rgba(52,211,153,.7); animation: ping 1.8s infinite; }
-  @keyframes ping { 70% { box-shadow: 0 0 0 8px rgba(52,211,153,0); } 100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); } }
+  .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); margin-bottom: 18px; }
 
-  /* ───── progress ring ───── */
-  .ringbox { position: relative; width: 150px; height: 150px; margin: 20px auto 14px; }
-  .ringbox svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
-  .ring-bg { fill: none; stroke: rgba(255,255,255,.08); stroke-width: 9; }
-  .ring-fg { fill: none; stroke: url(#grad); stroke-width: 9; stroke-linecap: round; stroke-dasharray: 339.3; stroke-dashoffset: 339.3;
-    transition: stroke-dashoffset .9s cubic-bezier(.3,.8,.2,1); filter: drop-shadow(0 0 7px rgba(139,92,246,.8)); }
-  .ring-in { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  .ring-icon { font-size: 38px; line-height: 1; animation: bob 2.6s ease-in-out infinite; }
-  .ring-num { margin-top: 6px; font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .6px; }
-  @keyframes bob { 50% { transform: translateY(-5px) scale(1.06); } }
-  .ringbox::after { content: ""; position: absolute; inset: 14px; border-radius: 50%; z-index: -1;
-    background: radial-gradient(circle, rgba(139,92,246,.28), transparent 70%); animation: breathe 3s ease-in-out infinite; }
-  @keyframes breathe { 50% { transform: scale(1.18); opacity: .6; } }
+  /* avatar + progress ring */
+  .avatar-wrap { position: relative; width: 116px; height: 116px; margin: 0 auto 16px; }
+  .avatar-wrap svg.ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring-bg { fill: none; stroke: rgba(255,255,255,.08); stroke-width: 4; }
+  .ring-fg { fill: none; stroke: url(#rg); stroke-width: 4; stroke-linecap: round; stroke-dasharray: 326.7; stroke-dashoffset: 326.7;
+    transition: stroke-dashoffset .8s cubic-bezier(.3,.8,.2,1); }
+  .avatar { position: absolute; inset: 9px; border-radius: 50%; overflow: hidden; background: var(--panel-2);
+    display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 28px rgba(0,0,0,.45); }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .avatar .initial { font-size: 40px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #4f8cff, #7a5cff);
+    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+  .badge { position: absolute; right: 2px; bottom: 4px; width: 30px; height: 30px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; background: var(--panel); border: 2px solid var(--bg); color: var(--accent-2);
+    transition: color .3s; }
+  .badge.done { color: var(--ok); }
+  .badge svg { width: 15px; height: 15px; }
 
-  h1 { margin: 0 0 6px; font-size: 21px; font-weight: 800; letter-spacing: -.2px;
-    background: linear-gradient(90deg, #fff, #c9b8ff 55%, #8be9fd); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .sub { margin: 0 auto 16px; max-width: 320px; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+  h1 { margin: 0 0 6px; font-size: 21px; font-weight: 700; letter-spacing: -.2px; line-height: 1.25; word-break: break-word; }
+  .sub { margin: 0 auto 20px; max-width: 300px; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
 
-  /* ───── steps ───── */
-  .steps { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 0 0 16px; }
-  .step { width: 34px; height: 34px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
-    font-size: 13px; font-weight: 700; color: var(--muted); background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.09);
-    transition: all .4s cubic-bezier(.3,.8,.2,1); }
-  .step.cur { color: #fff; background: linear-gradient(135deg, var(--violet), var(--blue)); border-color: transparent;
-    box-shadow: 0 6px 18px rgba(99,102,241,.55); transform: translateY(-3px) scale(1.08); animation: glow 1.8s ease-in-out infinite; }
-  .step.done { color: #04120c; background: linear-gradient(135deg, #34d399, #22d3ee); border-color: transparent; animation: pop .45s ease; }
-  .step.skip { color: var(--warn); border-color: rgba(251,191,36,.35); }
-  @keyframes glow { 50% { box-shadow: 0 8px 26px rgba(99,102,241,.85); } }
-  @keyframes pop { 40% { transform: scale(1.3); } }
+  /* steps */
+  .steps { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; text-align: left; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px;
+    background: var(--panel); border: 1px solid var(--line); transition: border-color .3s, background .3s, transform .3s; }
+  .row .dot { flex: none; width: 28px; height: 28px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
+    font-size: 12.5px; font-weight: 700; color: var(--muted); background: rgba(255,255,255,.06); transition: all .3s; }
+  .row .dot svg { width: 15px; height: 15px; }
+  .row .t { flex: 1; font-size: 14px; font-weight: 600; }
+  .row .t small { display: block; margin-top: 2px; font-size: 11.5px; font-weight: 500; color: var(--muted); }
+  .row .st { flex: none; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+  .row.cur { border-color: rgba(79,140,255,.55); background: linear-gradient(180deg, rgba(79,140,255,.10), rgba(79,140,255,.04)); transform: scale(1.01); }
+  .row.cur .dot { color: #fff; background: var(--accent); box-shadow: 0 0 0 4px rgba(79,140,255,.18); }
+  .row.cur .st { color: var(--accent-2); }
+  .row.done .dot { color: #06140d; background: var(--ok); }
+  .row.done .st { color: var(--ok); }
+  .row.skip .dot { color: var(--warn); }
+  .row.skip .st { color: var(--warn); }
 
-  /* ───── daily goal ───── */
-  .goal { margin: 0 0 16px; padding: 11px 13px; text-align: left; border-radius: 16px;
-    background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.08); }
-  .goal-top { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
-  .goal-top b { color: #fff; }
-  .bar { height: 7px; border-radius: 9px; background: rgba(255,255,255,.08); overflow: hidden; }
-  .bar > i { display: block; height: 100%; width: 0; border-radius: 9px; transition: width .9s cubic-bezier(.3,.8,.2,1);
-    background: linear-gradient(90deg, var(--violet), var(--cyan), var(--ok)); background-size: 200% 100%; animation: slide 3s linear infinite; }
-  @keyframes slide { to { background-position: -200% 0; } }
-
-  /* ───── button ───── */
-  .btn { position: relative; overflow: hidden; width: 100%; border: 0; border-radius: 17px; padding: 16px; font-size: 16px; font-weight: 700;
-    color: #fff; cursor: pointer; letter-spacing: .2px;
-    background: linear-gradient(120deg, var(--violet), var(--blue) 55%, var(--cyan));
-    box-shadow: 0 10px 28px rgba(99,102,241,.5); transition: transform .15s, opacity .25s, box-shadow .25s; animation: pulse 2.4s ease-in-out infinite; }
-  .btn::after { content: ""; position: absolute; top: 0; left: -80%; width: 55%; height: 100%;
-    background: linear-gradient(100deg, transparent, rgba(255,255,255,.4), transparent); transform: skewX(-20deg); animation: shine 2.8s infinite; }
-  .btn:active { transform: scale(.97); }
-  .btn:disabled { opacity: .6; animation: none; box-shadow: none; cursor: default; }
-  .btn:disabled::after { display: none; }
-  .btn.alt { background: rgba(255,255,255,.1); box-shadow: none; animation: none; }
-  @keyframes shine { 55%, 100% { left: 140%; } }
-  @keyframes pulse { 50% { box-shadow: 0 12px 38px rgba(99,102,241,.8); } }
-  .spin { display: inline-block; width: 16px; height: 16px; margin-right: 9px; vertical-align: -2px; border-radius: 50%;
-    border: 2.5px solid rgba(255,255,255,.35); border-top-color: #fff; animation: rot .75s linear infinite; }
+  .btn { position: relative; overflow: hidden; width: 100%; border: 0; border-radius: 15px; padding: 15px 16px; font-size: 15.5px; font-weight: 650;
+    color: #fff; cursor: pointer; letter-spacing: .1px; display: flex; align-items: center; justify-content: center; gap: 9px;
+    background: linear-gradient(180deg, #5b95ff, #3f78f0); box-shadow: 0 10px 26px rgba(63,120,240,.38), inset 0 1px 0 rgba(255,255,255,.25);
+    transition: transform .15s, opacity .2s, box-shadow .2s; }
+  .btn svg { width: 17px; height: 17px; }
+  .btn:active { transform: scale(.98); }
+  .btn:disabled { opacity: .55; box-shadow: none; cursor: default; }
+  .btn.alt { background: var(--panel-2); box-shadow: none; border: 1px solid var(--line-2); }
+  .spin { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,.3); border-top-color: #fff; animation: rot .75s linear infinite; }
   @keyframes rot { to { transform: rotate(360deg); } }
 
-  .msg { min-height: 20px; margin-top: 12px; font-size: 12.5px; color: var(--muted); transition: color .3s; }
+  .msg { min-height: 18px; margin-top: 12px; font-size: 12.5px; color: var(--muted); transition: color .25s; }
   .msg.bad { color: var(--bad); } .msg.good { color: var(--ok); }
-  .foot { margin-top: 10px; font-size: 11px; color: rgba(154,163,192,.6); }
+  .foot { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 10px; font-size: 11px; color: rgba(139,148,168,.7); }
+  .foot svg { width: 12px; height: 12px; }
 
-  /* ───── generic screens ───── */
-  .screen { display: none; } .screen.on { display: block; animation: fade .5s ease both; }
-  @keyframes fade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-  .loader { width: 46px; height: 46px; margin: 34px auto 16px; border-radius: 50%; border: 3.5px solid rgba(255,255,255,.1); border-top-color: var(--violet); border-right-color: var(--cyan); animation: rot .9s linear infinite; }
+  .screen { display: none; } .screen.on { display: block; animation: fade .45s ease both; }
+  @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .loader { width: 40px; height: 40px; margin: 40px auto 16px; border-radius: 50%; border: 3px solid rgba(255,255,255,.08); border-top-color: var(--accent); animation: rot .8s linear infinite; }
 
-  .big-icon { width: 92px; height: 92px; margin: 14px auto 14px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 42px; }
-  .big-icon.ok { background: radial-gradient(circle, rgba(52,211,153,.28), rgba(52,211,153,.06)); border: 1px solid rgba(52,211,153,.45); animation: popin .6s cubic-bezier(.3,1.6,.4,1) both; }
-  .big-icon.bad { background: radial-gradient(circle, rgba(251,113,133,.25), rgba(251,113,133,.05)); border: 1px solid rgba(251,113,133,.45); animation: shake .6s ease both; }
-  @keyframes popin { from { transform: scale(0); } to { transform: scale(1); } }
-  @keyframes shake { 20%,60% { transform: translateX(-7px); } 40%,80% { transform: translateX(7px); } }
-  .check path { stroke-dasharray: 60; stroke-dashoffset: 60; animation: draw .6s .25s ease forwards; }
+  .big { width: 88px; height: 88px; margin: 6px auto 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .big.ok { background: rgba(61,220,151,.10); border: 1px solid rgba(61,220,151,.4); color: var(--ok); animation: pop .5s cubic-bezier(.3,1.5,.4,1) both; }
+  .big.bad { background: rgba(255,107,129,.10); border: 1px solid rgba(255,107,129,.4); color: var(--bad); animation: shake .5s ease both; }
+  .big svg { width: 40px; height: 40px; }
+  .big.ok svg path { stroke-dasharray: 40; stroke-dashoffset: 40; animation: draw .5s .2s ease forwards; }
+  @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   @keyframes draw { to { stroke-dashoffset: 0; } }
-  .goalmsg { margin: 0 0 14px; padding: 10px 12px; border-radius: 14px; font-size: 13px; font-weight: 600; color: #fde68a;
-    background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.3); }
-  #confetti { position: fixed; inset: 0; z-index: 5; pointer-events: none; }
+  @keyframes shake { 25%,75% { transform: translateX(-6px); } 50% { transform: translateX(6px); } }
   .hidden { display: none !important; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
-<div class="bg"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="grid"></div></div>
-<canvas id="confetti"></canvas>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5.2v13.6a1 1 0 0 0 1.5.86l11-6.8a1 1 0 0 0 0-1.72l-11-6.8A1 1 0 0 0 8 5.2z"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 11V8a6 6 0 0 1 12 0v3M5 11h14v10H5z"/></symbol>
+    <symbol id="i-unlock" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 11V8a6 6 0 0 1 11.2-3M5 11h14v10H5z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" d="M6 12h12"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 8v5M12 17h.01M10.3 3.9L2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></symbol>
+  </defs>
+</svg>
+<div class="bg"></div>
 
 <div class="wrap">
   <div class="card">
 
     <div class="screen on" id="s-load">
-      <span class="chip"><span class="live"></span>SECURE CONNECTION</span>
       <div class="loader"></div>
-      <div class="sub">Setting things up...</div>
+      <div class="sub">Preparing your session</div>
     </div>
 
     <div class="screen" id="s-main">
-      <span class="chip"><span class="live"></span>UNLOCK YOUR LINK</span>
-      <div class="ringbox">
-        <svg viewBox="0 0 120 120">
-          <defs><linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#8b5cf6"/><stop offset=".55" stop-color="#3b82f6"/><stop offset="1" stop-color="#22d3ee"/>
-          </linearGradient></defs>
-          <circle class="ring-bg" cx="60" cy="60" r="54"/>
-          <circle class="ring-fg" id="ring" cx="60" cy="60" r="54"/>
+      <div class="eyebrow">Unlocking access to</div>
+      <div class="avatar-wrap">
+        <svg class="ring" viewBox="0 0 120 120">
+          <defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f8cff"/><stop offset="1" stop-color="#7a5cff"/></linearGradient></defs>
+          <circle class="ring-bg" cx="60" cy="60" r="52"/>
+          <circle class="ring-fg" id="ring" cx="60" cy="60" r="52"/>
         </svg>
-        <div class="ring-in"><div class="ring-icon" id="ring-icon">🎬</div><div class="ring-num" id="ring-num">0 / 0</div></div>
+        <div class="avatar" id="avatar"></div>
+        <div class="badge" id="badge"><svg><use href="#i-lock"/></svg></div>
       </div>
-      <h1 id="title">Watch Ads to Unlock</h1>
-      <p class="sub" id="sub">Ad poora dekho — sab complete hote hi link bot chat mein aa jayega.</p>
+      <h1 id="title">Your link</h1>
+      <p class="sub" id="sub">Watch the short ads below. Your link is sent to the chat as soon as you finish.</p>
       <div class="steps" id="steps"></div>
-      <div class="goal hidden" id="goal">
-        <div class="goal-top"><span>🎯 Aaj ka goal</span><span><b id="goal-n">0</b> / <span id="goal-t">0</span> ads</span></div>
-        <div class="bar"><i id="goal-bar"></i></div>
-      </div>
-      <button class="btn" id="btn">▶  Start</button>
+      <button class="btn" id="btn"><svg><use href="#i-play"/></svg><span>Watch ad</span></button>
       <div class="msg" id="msg"></div>
-      <div class="foot">🔒 Ad poora dekhne par hi verify hoga</div>
+      <div class="foot"><svg><use href="#i-shield"/></svg>Secure verification</div>
     </div>
 
     <div class="screen" id="s-done">
-      <div class="big-icon ok">
-        <svg class="check" width="46" height="46" viewBox="0 0 52 52" fill="none" stroke="#34d399" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 27 l10 10 l19 -21"/></svg>
-      </div>
-      <h1>Link Unlocked!</h1>
-      <p class="sub">Aapka link bot chat mein bhej diya gaya hai.</p>
-      <div class="goalmsg hidden" id="goalmsg">🎉 Daily goal complete! Aaj ke baaki din free.</div>
-      <div class="foot" id="closing">Window band ho rahi hai...</div>
+      <div class="big ok"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+      <h1>Access unlocked</h1>
+      <p class="sub">Your link has been sent to the chat.</p>
+      <div class="foot" id="closing">Closing automatically</div>
     </div>
 
     <div class="screen" id="s-err">
-      <div class="big-icon bad">⚠️</div>
-      <h1 id="err-title">Error</h1>
+      <div class="big bad"><svg><use href="#i-alert"/></svg></div>
+      <h1 id="err-title">Something went wrong</h1>
       <p class="sub" id="err-text"></p>
-      <button class="btn alt" id="err-close">Close</button>
+      <button class="btn alt" id="err-close"><span>Close</span></button>
     </div>
 
   </div>
@@ -194,7 +179,7 @@
   const tg = window.Telegram && window.Telegram.WebApp;
   if (tg) {
     tg.ready(); tg.expand();
-    try { tg.setHeaderColor('#070812'); tg.setBackgroundColor('#070812'); } catch (e) {}
+    try { tg.setHeaderColor('#0a0d14'); tg.setBackgroundColor('#0a0d14'); } catch (e) {}
     try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {}
   }
   const $ = (id) => document.getElementById(id);
@@ -202,22 +187,23 @@
   const tap = () => { try { tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred('light'); } catch (e) {} };
   const show = (n) => ['load', 'main', 'done', 'err'].forEach((x) => $('s-' + x).classList.toggle('on', x === n));
   const closeApp = () => { tg ? tg.close() : window.close(); };
+  const icon = (id) => '<svg><use href="#' + id + '"/></svg>';
 
   const token = new URLSearchParams(location.search).get('t') || '';
   const initData = tg ? tg.initData : '';
 
   const ERRORS = {
-    auth:        ['Telegram se open karo', 'Ye page sirf bot ke andar Telegram Mini App se khulta hai.'],
-    invalid:     ['Link invalid hai', 'Bot mein wapas jao aur channel link dobara kholo.'],
-    used:        ['Link use ho chuka hai', 'Ye verification pehle hi use ho gaya. Bot mein original link dobara kholo.'],
-    not_yours:   ['Ye link aapke liye nahi hai', 'Apne account se bot mein link kholo.'],
-    no_ads:      ['Abhi ads available nahi hain', 'Thodi der baad try karo.'],
-    no_ad_shown: ['Ads load nahi hue', 'AdBlock/VPN band karke bot se link dobara kholo.'],
-    incomplete:  ['Ads poore nahi hue', 'Dobara try karo.'],
-    too_fast:    ['Thoda wait karo', 'Ads poore dekhne ke baad hi verify hota hai. Dobara try karo.'],
-    invite_error:['Link banane mein error', 'Bot mein wapas jao aur dobara try karo.'],
-    server:      ['Server error', 'Thodi der baad dobara try karo.'],
-    default:     ['Kuch galat ho gaya', 'Dobara try karo.']
+    auth:        ['Open from Telegram', 'This page only works inside the bot as a Telegram Mini App.'],
+    invalid:     ['Link not valid', 'Go back to the bot and open the channel link again.'],
+    used:        ['Already used', 'This verification was already used. Open the original link in the bot again.'],
+    not_yours:   ['Not your link', 'Open the link from your own account in the bot.'],
+    no_ads:      ['No ads available', 'Please try again in a little while.'],
+    no_ad_shown: ['Ads did not load', 'Turn off AdBlock or VPN and open the link in the bot again.'],
+    incomplete:  ['Ads not finished', 'Please try again.'],
+    too_fast:    ['Please wait a moment', 'Ads must be watched fully before verification. Try again.'],
+    invite_error:['Could not create link', 'Go back to the bot and try again.'],
+    server:      ['Server error', 'Please try again in a little while.'],
+    default:     ['Something went wrong', 'Please try again.']
   };
   function fail(code) {
     const e = ERRORS[code] || ERRORS.default;
@@ -249,11 +235,13 @@
     return loaded[key];
   }
   const loadMonetag = (id) => loadScript('https://libtl.com/sdk.js', { 'data-zone': id, 'data-sdk': 'show_' + id }, 'monetag-' + id);
+  let USER_ID = '';
 
-  // Result: 'ok' (poora dekha) | 'skipped' (beech me band) | 'failed' (load/no-fill → agle pe)
+  // 'ok' | 'skipped' (user closed early: retry) | 'failed' (load / no fill: move on)
   const PROVIDERS = {
     monetag: async (id) => {
-      try { await loadMonetag(id); const fn = window['show_' + id]; if (typeof fn !== 'function') return 'failed'; await fn(); return 'ok'; }
+      try { await loadMonetag(id); const fn = window['show_' + id]; if (typeof fn !== 'function') return 'failed';
+        await fn(USER_ID ? { ymid: String(USER_ID) } : undefined); return 'ok'; }
       catch (e) { return 'failed'; }
     },
     monetag_pop: async (id) => {
@@ -277,58 +265,49 @@
     }
   };
 
-  // ───────────── UI state ─────────────
-  let steps = [], status = [], idx = 0, shown = 0, failed = 0, busy = false, daily = { goal: 0, count: 0 };
-  const CIRC = 339.3;
+  // ───────────── State + render ─────────────
+  let steps = [], status = [], idx = 0, shown = 0, failed = 0, busy = false;
+  const CIRC = 326.7;
+  const setRing = (f) => { $('ring').style.strokeDashoffset = String(CIRC * (1 - Math.max(0, Math.min(1, f)))); };
+  const setMsg = (t, c) => { const m = $('msg'); m.textContent = t || ''; m.className = 'msg' + (c ? ' ' + c : ''); };
+  const setBtn = (html, disabled) => { const b = $('btn'); b.innerHTML = html; b.disabled = !!disabled; };
 
-  function setRing(frac) { $('ring').style.strokeDashoffset = String(CIRC * (1 - Math.max(0, Math.min(1, frac)))); }
-  function setMsg(t, cls) { const m = $('msg'); m.textContent = t || ''; m.className = 'msg' + (cls ? ' ' + cls : ''); }
-  function setGoal() {
-    if (!daily.goal) { $('goal').classList.add('hidden'); return; }
-    $('goal').classList.remove('hidden');
-    const n = Math.min(daily.goal, daily.count + shown);
-    $('goal-n').textContent = n; $('goal-t').textContent = daily.goal;
-    $('goal-bar').style.width = Math.round(100 * n / daily.goal) + '%';
+  function buildAvatar(ch) {
+    const box = $('avatar'); box.innerHTML = '';
+    const name = (ch && ch.title) || '';
+    const initial = document.createElement('div');
+    initial.className = 'initial';
+    initial.textContent = (name.trim()[0] || 'C').toUpperCase();
+    if (ch && ch.has_photo) {
+      const img = new Image();
+      img.alt = '';
+      img.onload = () => { box.innerHTML = ''; box.appendChild(img); };
+      img.onerror = () => { box.innerHTML = ''; box.appendChild(initial); };
+      img.src = '/miniapp/photo?t=' + encodeURIComponent(token);
+      box.appendChild(initial);   // placeholder jab tak photo load ho
+    } else { box.appendChild(initial); }
+    $('title').textContent = name || 'Your link';
   }
+
   function render() {
     const el = $('steps'); el.innerHTML = '';
     steps.forEach((_, i) => {
-      const d = document.createElement('div');
       const st = status[i];
-      d.className = 'step' + (st === 'ok' ? ' done' : st === 'skip' ? ' skip' : i === idx ? ' cur' : '');
-      d.textContent = st === 'ok' ? '✓' : st === 'skip' ? '–' : String(i + 1);
-      el.appendChild(d);
+      const row = document.createElement('div');
+      row.className = 'row' + (st === 'ok' ? ' done' : st === 'skip' ? ' skip' : i === idx ? ' cur' : '');
+      const dot = st === 'ok' ? icon('i-check') : st === 'skip' ? icon('i-minus') : String(i + 1);
+      const label = st === 'ok' ? 'Completed' : st === 'skip' ? 'Unavailable' : i === idx ? 'Up next' : 'Waiting';
+      row.innerHTML = '<div class="dot">' + dot + '</div><div class="t">Sponsored video ' + (i + 1) +
+        '<small>Short video ad</small></div><div class="st">' + label + '</div>';
+      el.appendChild(row);
     });
     const done = shown + failed;
     setRing(steps.length ? done / steps.length : 0);
-    $('ring-num').textContent = Math.min(done, steps.length) + ' / ' + steps.length;
-    if (idx < steps.length) {
-      $('title').textContent = 'Ad ' + (idx + 1) + ' of ' + steps.length;
-      $('ring-icon').textContent = ['🎬', '🍿', '📺', '🎞️', '⭐'][idx % 5];
-    }
-    setGoal();
-  }
-
-  // ───────────── Confetti ─────────────
-  function confetti() {
-    const c = $('confetti'), ctx = c.getContext('2d');
-    const W = c.width = innerWidth, H = c.height = innerHeight;
-    const cols = ['#8b5cf6', '#3b82f6', '#22d3ee', '#34d399', '#fbbf24', '#ec4899'];
-    const ps = Array.from({ length: 110 }, () => ({ x: W / 2, y: H * .38, vx: (Math.random() - .5) * 14, vy: -Math.random() * 13 - 3,
-      s: 4 + Math.random() * 6, r: Math.random() * 6.28, vr: (Math.random() - .5) * .4, c: cols[(Math.random() * cols.length) | 0] }));
-    let f = 0;
-    (function tick() {
-      ctx.clearRect(0, 0, W, H);
-      ps.forEach((p) => { p.vy += .32; p.x += p.vx; p.y += p.vy; p.r += p.vr;
-        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); ctx.restore(); });
-      if (++f < 150) requestAnimationFrame(tick); else ctx.clearRect(0, 0, W, H);
-    })();
   }
 
   // ───────────── Flow ─────────────
   async function finish() {
-    $('btn').disabled = true;
-    $('btn').innerHTML = '<span class="spin"></span>Verifying...';
+    setBtn('<div class="spin"></div><span>Verifying</span>', true);
     setMsg('');
     let res;
     try { res = await api('/api/mini/complete', { shown: shown, failed: failed }); } catch (e) { return fail('server'); }
@@ -338,29 +317,25 @@
     }
     if (!res.ok) return fail(res.error);
     try { tg && tg.disableClosingConfirmation(); } catch (e) {}
-    if (res.info && res.info.goal_reached) $('goalmsg').classList.remove('hidden');
+    $('badge').className = 'badge done'; $('badge').innerHTML = icon('i-unlock');
     show('done'); haptic('success');
-    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) confetti();
-    setTimeout(closeApp, 2400);
+    setTimeout(closeApp, 2200);
   }
+
+  const nextLabel = () => '<svg><use href="#i-play"/></svg><span>Watch ad ' + (idx + 1) + ' of ' + steps.length + '</span>';
 
   async function playCurrent() {
     if (busy) return;
     busy = true; tap();
-    const btn = $('btn');
-    btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Loading ad...';
+    setBtn('<div class="spin"></div><span>Loading ad</span>', true);
     setMsg('');
     const ad = steps[idx];
     const fn = PROVIDERS[ad.provider];
     const result = fn ? await fn(ad.id) : 'failed';
 
-    if (result === 'ok') {
-      status[idx] = 'ok'; shown++; idx++; haptic('success'); setMsg('✓ Ad complete!', 'good');
-    } else if (result === 'failed') {
-      status[idx] = 'skip'; failed++; idx++; setMsg('Ye ad available nahi tha — next try karte hain.');
-    } else {
-      setMsg('Ad poora dekhna zaroori hai. Dobara try karo.', 'bad'); haptic('warning');
-    }
+    if (result === 'ok') { status[idx] = 'ok'; shown++; idx++; haptic('success'); }
+    else if (result === 'failed') { status[idx] = 'skip'; failed++; idx++; setMsg('That ad was not available, moving on.'); }
+    else { setMsg('Please watch the ad to the end to continue.', 'bad'); haptic('warning'); }
     busy = false;
     render();
 
@@ -368,8 +343,7 @@
       if (shown < 1) return fail('no_ad_shown');
       return finish();
     }
-    btn.disabled = false;
-    btn.textContent = result === 'skipped' ? '↻  Retry Ad' : '▶  Next Ad';
+    setBtn(result === 'skipped' ? '<svg><use href="#i-play"/></svg><span>Try again</span>' : nextLabel(), false);
   }
   $('btn').onclick = playCurrent;
 
@@ -380,19 +354,14 @@
     if (!res.ok) return fail(res.error);
     steps = res.steps || [];
     if (!steps.length) return fail('no_ads');
+    USER_ID = res.uid || '';
     status = steps.map(() => null);
-    daily = res.daily || daily;
     try { tg && tg.enableClosingConfirmation(); } catch (e) {}
-    render(); show('main');
-
-    // Optional passive In-App interstitial (admin panel se ON/OFF)
-    if (res.inapp_zone) {
-      try {
-        await loadMonetag(res.inapp_zone);
-        const fn = window['show_' + res.inapp_zone];
-        if (typeof fn === 'function') fn({ type: 'inApp', inAppSettings: { frequency: 2, capping: 0.1, interval: 30, timeout: 5, everyPage: false } });
-      } catch (e) {}
-    }
+    buildAvatar(res.channel);
+    $('sub').textContent = steps.length === 1
+      ? 'Watch one short ad. Your link is sent to the chat as soon as you finish.'
+      : 'Watch ' + steps.length + ' short ads. Your link is sent to the chat as soon as you finish.';
+    render(); setBtn(nextLabel(), false); show('main');
   })();
 })();
 </script>
