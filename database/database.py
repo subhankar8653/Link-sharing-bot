@@ -1,7 +1,7 @@
 import motor.motor_asyncio
 import base64
 import logging
-from datetime import datetime, date
+from datetime import datetime, timedelta, date
 from typing import List, Optional
 from config import * 
 
@@ -1173,22 +1173,37 @@ class Master:
             res = await self.fsub_data.update_one({"channel_id": channel_id}, {"$unset": {"remove_at": ""}})
         return res.matched_count > 0
 
-    async def set_fsub_request_limit(self, channel_id: int, limit: int) -> bool:
-        """Ab se `limit` NAYE requests (request mode) / joins (normal mode) aate hi channel auto remove. 0 = clear."""
+    async def set_fsub_request_limit(self, channel_id: int, limit: int, base_real=None) -> bool:
+        """Ab se `limit` NAYE requests (request mode) / joins (normal mode) aate hi channel auto remove. 0 = clear.
+        base_real = Telegram invite-link ke REAL numbers ka abhi ka total (counting yahin se shuru)."""
         doc = await self.fsub_data.find_one({"channel_id": channel_id})
         if not doc:
             return False
         if limit and limit > 0:
-            await self.fsub_data.update_one({"channel_id": channel_id}, {"$set": {
+            fields = {
                 "request_limit": int(limit),
                 "limit_base_req": doc.get("request_count", 0),
                 "limit_base_join": doc.get("join_count", 0),
-            }})
+                "limit_carry": 0,
+            }
+            if base_real is not None:
+                fields["limit_base_real"] = int(base_real)
+            await self.fsub_data.update_one({"channel_id": channel_id}, {"$set": fields})
+            if base_real is None:
+                await self.fsub_data.update_one({"channel_id": channel_id}, {"$unset": {"limit_base_real": ""}})
         else:
             await self.fsub_data.update_one({"channel_id": channel_id}, {"$unset": {
                 "request_limit": "", "limit_base_req": "", "limit_base_join": "",
+                "limit_base_real": "", "limit_carry": "",
             }})
         return True
+
+    async def set_fsub_limit_carry(self, channel_id: int, carry: int) -> None:
+        """Link rotate hone par progress yaad rakho (naya link 0 se shuru hota hai)."""
+        await self.fsub_data.update_one(
+            {"channel_id": channel_id},
+            {"$set": {"limit_carry": int(carry), "limit_base_real": 0}},
+        )
 
     async def set_fsub_link_rotation(self, channel_id: int, hours: int) -> bool:
         """Har `hours` ghante mein purana invite link expire + naya link. 0 = off."""
@@ -1204,6 +1219,42 @@ class Master:
 
     async def mark_fsub_rotated(self, channel_id: int) -> None:
         await self.fsub_data.update_one({"channel_id": channel_id}, {"$set": {"rotate_since": datetime.utcnow()}})
+
+    # ── Ads-free (Mini App daily goal reward): sirf ads hatate hain, FSub PHIR BHI lagta hai ──
+
+    async def set_ads_free(self, user_id: int, seconds: int) -> None:
+        """Ads-free time badhao (kabhi kam nahi karta)."""
+        if seconds <= 0:
+            return
+        try:
+            target = datetime.now() + timedelta(seconds=int(seconds))
+            user = await self.user_data.find_one({"_id": int(user_id)}) or {}
+            cur = user.get("ads_free_until")
+            if isinstance(cur, datetime) and cur >= target:
+                return
+            await self.user_data.update_one(
+                {"_id": int(user_id)}, {"$set": {"ads_free_until": target}}, upsert=True
+            )
+        except Exception as e:
+            logging.error(f"set_ads_free error: {e}")
+
+    async def has_ads_free(self, user_id: int) -> bool:
+        try:
+            user = await self.user_data.find_one({"_id": int(user_id)})
+            until = user.get("ads_free_until") if user else None
+            return isinstance(until, datetime) and datetime.now() <= until
+        except Exception as e:
+            logging.error(f"has_ads_free error: {e}")
+            return False
+
+    async def reset_miniapp_progress(self, user_id: int) -> None:
+        """Goal poora hone ke baad aaj ka ads-count 0 karo (naya cycle)."""
+        try:
+            await self.database['miniapp_daily'].update_one(
+                {"_id": f"{int(user_id)}:{self._ist_date()}"}, {"$set": {"count": 0}}
+            )
+        except Exception as e:
+            logging.error(f"reset_miniapp_progress error: {e}")
 
     async def delete_old_tokens(self) -> None:
         """1 ghante se purane tokens delete karo (cleanup)."""
