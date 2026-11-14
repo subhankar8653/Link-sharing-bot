@@ -185,6 +185,13 @@ class Bot(Client):
         self.username = usr_bot_me.username
         logger = self.LOGGER(__name__)
 
+        # FSub auto-remove / request-target / link-rotation maintenance loop
+        try:
+            from plugins.fsub_extra import start_fsub_maintenance
+            start_fsub_maintenance(self)
+        except Exception as e:
+            logger.error(f"fsub maintenance start failed: {e}")
+
         # ── 1. Session Reset ──────────────────────────────────────────
         if os.getenv("RESET_SESSION", "false").lower() == "true":
             logger.info("=" * 60)
