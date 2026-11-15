@@ -4,365 +4,492 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<title>Unlock access</title>
+<title>Senpai Sync</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="config.js"></script>
 <style>
   :root {
-    --bg: #0a0d14;
-    --panel: #11151f;
-    --panel-2: #161b28;
-    --line: rgba(255,255,255,.07);
-    --line-2: rgba(255,255,255,.12);
-    --text: #eef1f8;
-    --muted: #8b94a8;
-    --accent: #4f8cff;
-    --accent-2: #7aa7ff;
-    --ok: #3ddc97;
-    --bad: #ff6b81;
-    --warn: #f5b74a;
+    --bg:#0a0d14; --panel:#11151f; --panel-2:#171c29; --line:rgba(255,255,255,.07); --line-2:rgba(255,255,255,.12);
+    --text:#eef1f8; --muted:#8b94a8; --accent:#4f8cff; --accent-2:#7aa7ff; --violet:#7a5cff;
+    --ok:#3ddc97; --bad:#ff6b81; --warn:#f5b74a;
   }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow-x: hidden;
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Inter, sans-serif;
-    -webkit-font-smoothing: antialiased; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text); overflow-x:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Inter,sans-serif; -webkit-font-smoothing:antialiased; }
+  button { font-family:inherit; }
+  svg.i { width:20px; height:20px; flex:none; }
+  .bg { position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:radial-gradient(700px 420px at 50% -10%,rgba(79,140,255,.20),transparent 62%),
+               radial-gradient(500px 380px at 100% 110%,rgba(122,92,255,.12),transparent 60%),var(--bg); }
+  .hidden { display:none !important; }
 
-  .bg { position: fixed; inset: 0; z-index: 0; pointer-events: none;
-    background:
-      radial-gradient(700px 420px at 50% -10%, rgba(79,140,255,.20), transparent 62%),
-      radial-gradient(500px 380px at 100% 110%, rgba(122,92,255,.12), transparent 60%),
-      var(--bg); }
-  .bg::after { content: ""; position: absolute; inset: 0; opacity: .5;
-    background-image: radial-gradient(rgba(255,255,255,.05) 1px, transparent 1px); background-size: 22px 22px;
-    mask-image: radial-gradient(circle at 50% 30%, #000, transparent 70%); -webkit-mask-image: radial-gradient(circle at 50% 30%, #000, transparent 70%); }
+  /* ───────── shared controls ───────── */
+  .btn { position:relative; width:100%; border:0; border-radius:15px; padding:14px 16px; font-size:15px; font-weight:650; color:#fff; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:9px;
+    background:linear-gradient(180deg,#5b95ff,#3f78f0); box-shadow:0 10px 26px rgba(63,120,240,.34), inset 0 1px 0 rgba(255,255,255,.25);
+    transition:transform .15s,opacity .2s; }
+  .btn:active { transform:scale(.98); } .btn:disabled { opacity:.5; box-shadow:none; cursor:default; }
+  .btn.alt { background:var(--panel-2); box-shadow:none; border:1px solid var(--line-2); }
+  .btn.sm { width:auto; padding:10px 16px; font-size:13.5px; border-radius:12px; }
+  .spin { width:16px; height:16px; border-radius:50%; border:2.5px solid rgba(255,255,255,.3); border-top-color:#fff; animation:rot .75s linear infinite; }
+  @keyframes rot { to { transform:rotate(360deg); } }
+  .screen { display:none; } .screen.on { display:block; animation:fade .45s ease both; }
+  @keyframes fade { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
 
-  .wrap { position: relative; z-index: 1; min-height: 100%; display: flex; align-items: center; justify-content: center;
-    padding: calc(20px + env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom)); }
+  /* ───────── link-unlock (gate) ───────── */
+  .wrap { position:relative; z-index:1; min-height:100%; display:flex; align-items:center; justify-content:center;
+    padding:calc(20px + env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom)); }
+  .card { width:100%; max-width:400px; padding:28px 20px 18px; border-radius:26px; text-align:center;
+    background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.02)); border:1px solid var(--line-2);
+    box-shadow:0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08); animation:rise .6s cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes rise { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:none; } }
+  .eyebrow { font-size:11px; font-weight:600; letter-spacing:1.4px; text-transform:uppercase; color:var(--muted); margin-bottom:18px; }
+  .avatar-wrap { position:relative; width:116px; height:116px; margin:0 auto 16px; }
+  .avatar-wrap svg.ring { position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg); }
+  .ring-bg { fill:none; stroke:rgba(255,255,255,.08); stroke-width:4; }
+  .ring-fg { fill:none; stroke:url(#rg); stroke-width:4; stroke-linecap:round; stroke-dasharray:326.7; stroke-dashoffset:326.7; transition:stroke-dashoffset .8s cubic-bezier(.3,.8,.2,1); }
+  .avatar { position:absolute; inset:9px; border-radius:50%; overflow:hidden; background:var(--panel-2); display:flex; align-items:center; justify-content:center; box-shadow:0 8px 28px rgba(0,0,0,.45); }
+  .avatar img { width:100%; height:100%; object-fit:cover; display:block; }
+  .initial { width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; background:linear-gradient(135deg,#4f8cff,#7a5cff); }
+  .badge { position:absolute; right:2px; bottom:4px; width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    background:var(--panel); border:2px solid var(--bg); color:var(--accent-2); } .badge.done { color:var(--ok); } .badge svg { width:15px; height:15px; }
+  h1 { margin:0 0 6px; font-size:21px; font-weight:700; letter-spacing:-.2px; line-height:1.25; word-break:break-word; }
+  .sub { margin:0 auto 20px; max-width:300px; font-size:13.5px; line-height:1.55; color:var(--muted); }
+  .steps { display:flex; flex-direction:column; gap:8px; margin-bottom:18px; text-align:left; }
+  .row { display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:14px; background:var(--panel); border:1px solid var(--line); transition:all .3s; }
+  .row .dot { flex:none; width:28px; height:28px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:700; color:var(--muted); background:rgba(255,255,255,.06); }
+  .row .dot svg { width:15px; height:15px; }
+  .row .t { flex:1; font-size:14px; font-weight:600; } .row .t small { display:block; margin-top:2px; font-size:11.5px; font-weight:500; color:var(--muted); }
+  .row .st { flex:none; font-size:11.5px; font-weight:600; color:var(--muted); }
+  .row.cur { border-color:rgba(79,140,255,.55); background:linear-gradient(180deg,rgba(79,140,255,.10),rgba(79,140,255,.04)); }
+  .row.cur .dot { color:#fff; background:var(--accent); box-shadow:0 0 0 4px rgba(79,140,255,.18); } .row.cur .st { color:var(--accent-2); }
+  .row.done .dot { color:#06140d; background:var(--ok); } .row.done .st { color:var(--ok); }
+  .row.skip .dot,.row.skip .st { color:var(--warn); }
+  .msg { min-height:18px; margin-top:12px; font-size:12.5px; color:var(--muted); } .msg.bad { color:var(--bad); }
+  .foot { display:flex; align-items:center; justify-content:center; gap:6px; margin-top:10px; font-size:11px; color:rgba(139,148,168,.7); } .foot svg { width:12px; height:12px; }
+  .loader { width:40px; height:40px; margin:40px auto 16px; border-radius:50%; border:3px solid rgba(255,255,255,.08); border-top-color:var(--accent); animation:rot .8s linear infinite; }
+  .big { width:88px; height:88px; margin:6px auto 18px; border-radius:50%; display:flex; align-items:center; justify-content:center; }
+  .big.ok { background:rgba(61,220,151,.10); border:1px solid rgba(61,220,151,.4); color:var(--ok); animation:pop .5s cubic-bezier(.3,1.5,.4,1) both; }
+  .big.bad { background:rgba(255,107,129,.10); border:1px solid rgba(255,107,129,.4); color:var(--bad); animation:shake .5s ease both; }
+  .big svg { width:40px; height:40px; } .big.ok svg path { stroke-dasharray:40; stroke-dashoffset:40; animation:draw .5s .2s ease forwards; }
+  @keyframes pop { from { transform:scale(.4); opacity:0; } to { transform:scale(1); opacity:1; } }
+  @keyframes draw { to { stroke-dashoffset:0; } }
+  @keyframes shake { 25%,75% { transform:translateX(-6px); } 50% { transform:translateX(6px); } }
 
-  .card { width: 100%; max-width: 400px; padding: 28px 20px 18px; border-radius: 26px; text-align: center;
-    background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02));
-    border: 1px solid var(--line-2); box-shadow: 0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08);
-    animation: rise .6s cubic-bezier(.2,.8,.2,1) both; }
-  @keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
-
-  .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); margin-bottom: 18px; }
-
-  /* avatar + progress ring */
-  .avatar-wrap { position: relative; width: 116px; height: 116px; margin: 0 auto 16px; }
-  .avatar-wrap svg.ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
-  .ring-bg { fill: none; stroke: rgba(255,255,255,.08); stroke-width: 4; }
-  .ring-fg { fill: none; stroke: url(#rg); stroke-width: 4; stroke-linecap: round; stroke-dasharray: 326.7; stroke-dashoffset: 326.7;
-    transition: stroke-dashoffset .8s cubic-bezier(.3,.8,.2,1); }
-  .avatar { position: absolute; inset: 9px; border-radius: 50%; overflow: hidden; background: var(--panel-2);
-    display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 28px rgba(0,0,0,.45); }
-  .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .avatar .initial { font-size: 40px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #4f8cff, #7a5cff);
-    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
-  .badge { position: absolute; right: 2px; bottom: 4px; width: 30px; height: 30px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center; background: var(--panel); border: 2px solid var(--bg); color: var(--accent-2);
-    transition: color .3s; }
-  .badge.done { color: var(--ok); }
-  .badge svg { width: 15px; height: 15px; }
-
-  h1 { margin: 0 0 6px; font-size: 21px; font-weight: 700; letter-spacing: -.2px; line-height: 1.25; word-break: break-word; }
-  .sub { margin: 0 auto 20px; max-width: 300px; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
-
-  /* steps */
-  .steps { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; text-align: left; }
-  .row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px;
-    background: var(--panel); border: 1px solid var(--line); transition: border-color .3s, background .3s, transform .3s; }
-  .row .dot { flex: none; width: 28px; height: 28px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
-    font-size: 12.5px; font-weight: 700; color: var(--muted); background: rgba(255,255,255,.06); transition: all .3s; }
-  .row .dot svg { width: 15px; height: 15px; }
-  .row .t { flex: 1; font-size: 14px; font-weight: 600; }
-  .row .t small { display: block; margin-top: 2px; font-size: 11.5px; font-weight: 500; color: var(--muted); }
-  .row .st { flex: none; font-size: 11.5px; font-weight: 600; color: var(--muted); }
-  .row.cur { border-color: rgba(79,140,255,.55); background: linear-gradient(180deg, rgba(79,140,255,.10), rgba(79,140,255,.04)); transform: scale(1.01); }
-  .row.cur .dot { color: #fff; background: var(--accent); box-shadow: 0 0 0 4px rgba(79,140,255,.18); }
-  .row.cur .st { color: var(--accent-2); }
-  .row.done .dot { color: #06140d; background: var(--ok); }
-  .row.done .st { color: var(--ok); }
-  .row.skip .dot { color: var(--warn); }
-  .row.skip .st { color: var(--warn); }
-
-  .btn { position: relative; overflow: hidden; width: 100%; border: 0; border-radius: 15px; padding: 15px 16px; font-size: 15.5px; font-weight: 650;
-    color: #fff; cursor: pointer; letter-spacing: .1px; display: flex; align-items: center; justify-content: center; gap: 9px;
-    background: linear-gradient(180deg, #5b95ff, #3f78f0); box-shadow: 0 10px 26px rgba(63,120,240,.38), inset 0 1px 0 rgba(255,255,255,.25);
-    transition: transform .15s, opacity .2s, box-shadow .2s; }
-  .btn svg { width: 17px; height: 17px; }
-  .btn:active { transform: scale(.98); }
-  .btn:disabled { opacity: .55; box-shadow: none; cursor: default; }
-  .btn.alt { background: var(--panel-2); box-shadow: none; border: 1px solid var(--line-2); }
-  .spin { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,.3); border-top-color: #fff; animation: rot .75s linear infinite; }
-  @keyframes rot { to { transform: rotate(360deg); } }
-
-  .msg { min-height: 18px; margin-top: 12px; font-size: 12.5px; color: var(--muted); transition: color .25s; }
-  .msg.bad { color: var(--bad); } .msg.good { color: var(--ok); }
-  .foot { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 10px; font-size: 11px; color: rgba(139,148,168,.7); }
-  .foot svg { width: 12px; height: 12px; }
-
-  .screen { display: none; } .screen.on { display: block; animation: fade .45s ease both; }
-  @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-  .loader { width: 40px; height: 40px; margin: 40px auto 16px; border-radius: 50%; border: 3px solid rgba(255,255,255,.08); border-top-color: var(--accent); animation: rot .8s linear infinite; }
-
-  .big { width: 88px; height: 88px; margin: 6px auto 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
-  .big.ok { background: rgba(61,220,151,.10); border: 1px solid rgba(61,220,151,.4); color: var(--ok); animation: pop .5s cubic-bezier(.3,1.5,.4,1) both; }
-  .big.bad { background: rgba(255,107,129,.10); border: 1px solid rgba(255,107,129,.4); color: var(--bad); animation: shake .5s ease both; }
-  .big svg { width: 40px; height: 40px; }
-  .big.ok svg path { stroke-dasharray: 40; stroke-dashoffset: 40; animation: draw .5s .2s ease forwards; }
-  @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-  @keyframes draw { to { stroke-dashoffset: 0; } }
-  @keyframes shake { 25%,75% { transform: translateX(-6px); } 50% { transform: translateX(6px); } }
-  .hidden { display: none !important; }
-  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+  /* ───────── home app ───────── */
+  #app { position:relative; z-index:1; min-height:100%; padding:calc(14px + env(safe-area-inset-top)) 16px calc(96px + env(safe-area-inset-bottom)); max-width:520px; margin:0 auto; }
+  .top { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+  .ava { width:42px; height:42px; border-radius:50%; overflow:hidden; flex:none; background:var(--panel-2); }
+  .ava .initial { font-size:17px; } .ava img { width:100%; height:100%; object-fit:cover; display:block; }
+  .top .who { flex:1; min-width:0; } .top .who b { display:block; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .top .who span { font-size:12px; color:var(--muted); }
+  .pill { display:flex; align-items:center; gap:7px; padding:8px 12px; border-radius:99px; background:var(--panel); border:1px solid var(--line-2); font-size:13.5px; font-weight:700; }
+  .pill svg { width:15px; height:15px; color:var(--accent-2); }
+  .view { display:none; } .view.on { display:block; animation:fade .35s ease both; }
+  .hero { position:relative; overflow:hidden; border-radius:22px; padding:20px; margin-bottom:14px;
+    background:linear-gradient(135deg,#2b4fd8,#5b4bd6 60%,#7a5cff); box-shadow:0 18px 40px rgba(63,90,220,.35); }
+  .hero::after { content:""; position:absolute; right:-40px; top:-40px; width:170px; height:170px; border-radius:50%; background:rgba(255,255,255,.09); }
+  .hero small { font-size:11.5px; letter-spacing:1.2px; text-transform:uppercase; opacity:.8; font-weight:600; }
+  .hero .num { font-size:38px; font-weight:800; letter-spacing:-.5px; margin:6px 0 2px; }
+  .hero .inr { font-size:13px; opacity:.85; }
+  .hero .acts { display:flex; gap:10px; margin-top:16px; position:relative; z-index:1; }
+  .hero .acts .btn { background:rgba(255,255,255,.16); box-shadow:none; border:1px solid rgba(255,255,255,.2); backdrop-filter:blur(6px); }
+  .sec { background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:16px; margin-bottom:14px; }
+  .sec h3 { margin:0 0 4px; font-size:15px; font-weight:700; } .sec p.d { margin:0 0 14px; font-size:12.5px; color:var(--muted); line-height:1.5; }
+  .days { display:flex; gap:6px; margin-bottom:14px; }
+  .day { flex:1; height:46px; border-radius:12px; background:var(--panel-2); border:1px solid var(--line); display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:10.5px; color:var(--muted); font-weight:600; }
+  .day b { font-size:13px; color:var(--text); } .day.done { background:rgba(61,220,151,.12); border-color:rgba(61,220,151,.4); } .day.done b { color:var(--ok); }
+  .day.today { border-color:rgba(79,140,255,.6); }
+  .bar { height:8px; border-radius:9px; background:rgba(255,255,255,.08); overflow:hidden; margin:10px 0 14px; }
+  .bar > i { display:block; height:100%; width:0; border-radius:9px; background:linear-gradient(90deg,var(--accent),var(--violet)); transition:width .8s cubic-bezier(.3,.8,.2,1); }
+  .kv { display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted); } .kv b { color:var(--text); }
+  .lb { display:flex; align-items:center; gap:12px; padding:10px 0; border-top:1px solid var(--line); } .lb:first-of-type { border-top:0; }
+  .lb .rk { width:22px; text-align:center; font-weight:700; color:var(--muted); font-size:13px; } .lb .rk.top3 { color:var(--warn); }
+  .lb .ava { width:34px; height:34px; } .lb .nm { flex:1; font-size:14px; font-weight:600; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .lb .pt { font-size:13px; font-weight:700; color:var(--accent-2); }
+  .lb.me .nm { color:var(--accent-2); }
+  .earnring { position:relative; width:150px; height:150px; margin:6px auto 14px; }
+  .earnring svg { width:100%; height:100%; transform:rotate(-90deg); } .earnring .in { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .earnring .in b { font-size:30px; font-weight:800; } .earnring .in span { font-size:12px; color:var(--muted); }
+  .steps2 { list-style:none; margin:0; padding:0; } .steps2 li { display:flex; gap:12px; padding:9px 0; font-size:13px; color:var(--muted); line-height:1.45; }
+  .steps2 li i { flex:none; width:22px; height:22px; border-radius:7px; background:rgba(79,140,255,.14); color:var(--accent-2); font-style:normal; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+  .linkbox { display:flex; align-items:center; gap:8px; background:var(--panel-2); border:1px solid var(--line-2); border-radius:13px; padding:6px 6px 6px 12px; margin-bottom:12px; }
+  .linkbox span { flex:1; min-width:0; font-size:12.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .stat2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+  .stat2 div { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:14px; } .stat2 b { display:block; font-size:22px; font-weight:800; } .stat2 span { font-size:12px; color:var(--muted); }
+  label.f { display:block; font-size:12px; font-weight:600; color:var(--muted); margin:0 0 6px; }
+  input.in { width:100%; background:var(--panel-2); border:1px solid var(--line-2); border-radius:13px; color:var(--text); padding:13px 14px; font-size:15px; outline:none; margin-bottom:12px; }
+  input.in:focus { border-color:rgba(79,140,255,.7); }
+  .tx { display:flex; align-items:center; gap:12px; padding:11px 0; border-top:1px solid var(--line); } .tx:first-of-type { border-top:0; }
+  .tx .ic { width:34px; height:34px; border-radius:11px; background:var(--panel-2); display:flex; align-items:center; justify-content:center; color:var(--accent-2); flex:none; }
+  .tx .mid { flex:1; min-width:0; font-size:13.5px; font-weight:600; } .tx .mid small { display:block; font-size:11.5px; color:var(--muted); font-weight:500; margin-top:2px; }
+  .tx .amt { font-weight:700; font-size:13.5px; } .amt.pos { color:var(--ok); } .amt.neg { color:var(--bad); }
+  .tag { font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:99px; letter-spacing:.3px; } .tag.pending { background:rgba(245,183,74,.15); color:var(--warn); }
+  .tag.paid { background:rgba(61,220,151,.15); color:var(--ok); } .tag.rejected { background:rgba(255,107,129,.15); color:var(--bad); }
+  .note { font-size:11.5px; color:var(--muted); line-height:1.55; padding:2px 4px; }
+  .empty { text-align:center; color:var(--muted); font-size:13px; padding:18px 0; }
+  .nav { position:fixed; left:0; right:0; bottom:0; z-index:5; display:flex; justify-content:center; padding:10px 14px calc(10px + env(safe-area-inset-bottom));
+    background:linear-gradient(180deg,rgba(10,13,20,0),rgba(10,13,20,.92) 40%); }
+  .nav .bar2 { display:flex; width:100%; max-width:480px; background:rgba(23,28,41,.92); backdrop-filter:blur(14px); border:1px solid var(--line-2); border-radius:20px; padding:6px; box-shadow:0 14px 40px rgba(0,0,0,.5); }
+  .nav button { flex:1; border:0; background:transparent; color:var(--muted); padding:9px 4px 7px; border-radius:15px; display:flex; flex-direction:column; align-items:center; gap:4px; font-size:11px; font-weight:600; cursor:pointer; transition:all .2s; }
+  .nav button.on { color:#fff; background:rgba(79,140,255,.18); } .nav button.on svg { color:var(--accent-2); }
+  .toast { position:fixed; left:50%; top:calc(14px + env(safe-area-inset-top)); transform:translate(-50%,-30px); opacity:0; z-index:20; background:#1c2233; border:1px solid var(--line-2);
+    padding:11px 16px; border-radius:14px; font-size:13.5px; font-weight:600; box-shadow:0 12px 32px rgba(0,0,0,.5); transition:all .35s cubic-bezier(.3,1.3,.4,1); max-width:90%; text-align:center; }
+  .toast.on { transform:translate(-50%,0); opacity:1; } .toast.good { border-color:rgba(61,220,151,.5); color:var(--ok); } .toast.bad { border-color:rgba(255,107,129,.5); color:var(--bad); }
+  @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none !important; transition:none !important; } }
 </style>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5.2v13.6a1 1 0 0 0 1.5.86l11-6.8a1 1 0 0 0 0-1.72l-11-6.8A1 1 0 0 0 8 5.2z"/></symbol>
-    <symbol id="i-lock" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 11V8a6 6 0 0 1 12 0v3M5 11h14v10H5z"/></symbol>
-    <symbol id="i-unlock" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 11V8a6 6 0 0 1 11.2-3M5 11h14v10H5z"/></symbol>
-    <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
-    <symbol id="i-minus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" d="M6 12h12"/></symbol>
-    <symbol id="i-shield" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z"/></symbol>
-    <symbol id="i-alert" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 8v5M12 17h.01M10.3 3.9L2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></symbol>
-  </defs>
-</svg>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-home" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 11l9-7.5L21 11M5.5 9.5V20h13V9.5"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5.2v13.6a1 1 0 0 0 1.5.86l11-6.8a1 1 0 0 0 0-1.72l-11-6.8A1 1 0 0 0 8 5.2z"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M16 19v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4V19M9.5 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM21 19v-1.5a4 4 0 0 0-3-3.87M15.5 3.2a3.5 3.5 0 0 1 0 6.6"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 7.5A2.5 2.5 0 0 1 5.5 5H18v3M3 7.5V17a2 2 0 0 0 2 2h14.5a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H5.5A2.5 2.5 0 0 1 3 7.5zM16 13.5h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" d="M6 12h12"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 11V8a6 6 0 0 1 12 0v3M5 11h14v10H5z"/></symbol>
+  <symbol id="i-unlock" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M6 11V8a6 6 0 0 1 11.2-3M5 11h14v10H5z"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 8v5M12 17h.01M10.3 3.9L2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 9h10v11H9zM5 15V4h10"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 12v7h16v-7M12 15V3M7.5 7.5L12 3l4.5 4.5"/></symbol>
+  <symbol id="i-coin" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7.5v9M9.5 10a2.5 2 0 0 1 2.5-1.5h.5a2 2 0 0 1 0 4h-1a2 2 0 0 0 0 4h.5a2.5 2 0 0 0 2.5-1.5"/></symbol>
+  <symbol id="i-gift" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 12h16v8H4zM3 8h18v4H3zM12 8v12M12 8S10 3 7.5 4.5 8.5 8 12 8zm0 0s2-5 4.5-3.5S15.5 8 12 8z"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M7 17L17 7M9 7h8v8"/></symbol>
+</defs></svg>
 <div class="bg"></div>
 
-<div class="wrap">
-  <div class="card">
-
-    <div class="screen on" id="s-load">
-      <div class="loader"></div>
-      <div class="sub">Preparing your session</div>
+<!-- ═════════ LINK-UNLOCK (token ke saath) ═════════ -->
+<div class="wrap hidden" id="gate"><div class="card">
+  <div class="screen on" id="g-load"><div class="loader"></div><div class="sub">Preparing your session</div></div>
+  <div class="screen" id="g-main">
+    <div class="eyebrow">Unlocking access to</div>
+    <div class="avatar-wrap">
+      <svg class="ring" viewBox="0 0 120 120"><defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f8cff"/><stop offset="1" stop-color="#7a5cff"/></linearGradient></defs>
+        <circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" id="g-ring" cx="60" cy="60" r="52"/></svg>
+      <div class="avatar" id="g-avatar"></div><div class="badge" id="g-badge"><svg><use href="#i-lock"/></svg></div>
     </div>
-
-    <div class="screen" id="s-main">
-      <div class="eyebrow">Unlocking access to</div>
-      <div class="avatar-wrap">
-        <svg class="ring" viewBox="0 0 120 120">
-          <defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f8cff"/><stop offset="1" stop-color="#7a5cff"/></linearGradient></defs>
-          <circle class="ring-bg" cx="60" cy="60" r="52"/>
-          <circle class="ring-fg" id="ring" cx="60" cy="60" r="52"/>
-        </svg>
-        <div class="avatar" id="avatar"></div>
-        <div class="badge" id="badge"><svg><use href="#i-lock"/></svg></div>
-      </div>
-      <h1 id="title">Your link</h1>
-      <p class="sub" id="sub">Watch the short ads below. Your link is sent to the chat as soon as you finish.</p>
-      <div class="steps" id="steps"></div>
-      <button class="btn" id="btn"><svg><use href="#i-play"/></svg><span>Watch ad</span></button>
-      <div class="msg" id="msg"></div>
-      <div class="foot"><svg><use href="#i-shield"/></svg>Secure verification</div>
-    </div>
-
-    <div class="screen" id="s-done">
-      <div class="big ok"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
-      <h1>Access unlocked</h1>
-      <p class="sub">Your link has been sent to the chat.</p>
-      <div class="foot" id="closing">Closing automatically</div>
-    </div>
-
-    <div class="screen" id="s-err">
-      <div class="big bad"><svg><use href="#i-alert"/></svg></div>
-      <h1 id="err-title">Something went wrong</h1>
-      <p class="sub" id="err-text"></p>
-      <button class="btn alt" id="err-close"><span>Close</span></button>
-    </div>
-
+    <h1 id="g-title">Your link</h1>
+    <p class="sub" id="g-sub"></p>
+    <div class="steps" id="g-steps"></div>
+    <button class="btn" id="g-btn"></button>
+    <div class="msg" id="g-msg"></div>
+    <div class="foot"><svg><use href="#i-shield"/></svg>Secure verification</div>
   </div>
+  <div class="screen" id="g-done">
+    <div class="big ok"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+    <h1>Access unlocked</h1><p class="sub">Your link has been sent to the chat.</p><div class="foot">Closing automatically</div>
+  </div>
+  <div class="screen" id="g-err">
+    <div class="big bad"><svg><use href="#i-alert"/></svg></div>
+    <h1 id="g-err-t">Something went wrong</h1><p class="sub" id="g-err-d"></p><button class="btn alt" id="g-err-b">Close</button>
+  </div>
+</div></div>
+
+<!-- ═════════ SENPAI SYNC HOME APP ═════════ -->
+<div id="app" class="hidden">
+  <div class="top">
+    <div class="ava" id="a-ava"></div>
+    <div class="who"><b id="a-name">Senpai Sync</b><span>Senpai Sync</span></div>
+    <div class="pill"><svg><use href="#i-coin"/></svg><span id="a-pts">0</span></div>
+  </div>
+  <div id="v-home" class="view on"></div>
+  <div id="v-earn" class="view"></div>
+  <div id="v-invite" class="view"></div>
+  <div id="v-wallet" class="view"></div>
+  <div class="nav"><div class="bar2">
+    <button data-tab="home" class="on"><svg class="i"><use href="#i-home"/></svg>Home</button>
+    <button data-tab="earn"><svg class="i"><use href="#i-play"/></svg>Earn</button>
+    <button data-tab="invite"><svg class="i"><use href="#i-users"/></svg>Invite</button>
+    <button data-tab="wallet"><svg class="i"><use href="#i-wallet"/></svg>Wallet</button>
+  </div></div>
 </div>
+<div class="toast" id="toast"></div>
 
 <script>
 (function () {
   const tg = window.Telegram && window.Telegram.WebApp;
-  if (tg) {
-    tg.ready(); tg.expand();
-    try { tg.setHeaderColor('#0a0d14'); tg.setBackgroundColor('#0a0d14'); } catch (e) {}
-    try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {}
-  }
+  if (tg) { tg.ready(); tg.expand(); try { tg.setHeaderColor('#0a0d14'); tg.setBackgroundColor('#0a0d14'); } catch (e) {} try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {} }
   const $ = (id) => document.getElementById(id);
+  const API = (window.SYNC_API || '').replace(/\/$/, '');
+  const initData = tg ? tg.initData : '';
+  const params = new URLSearchParams(location.search);
+  const token = params.get('t') || '';
   const haptic = (t) => { try { tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(t); } catch (e) {} };
   const tap = () => { try { tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred('light'); } catch (e) {} };
-  const show = (n) => ['load', 'main', 'done', 'err'].forEach((x) => $('s-' + x).classList.toggle('on', x === n));
+  const icon = (id, cls) => '<svg class="' + (cls || 'i') + '"><use href="#' + id + '"/></svg>';
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const closeApp = () => { tg ? tg.close() : window.close(); };
-  const icon = (id) => '<svg><use href="#' + id + '"/></svg>';
 
-  const token = new URLSearchParams(location.search).get('t') || '';
-  const initData = tg ? tg.initData : '';
-
-  const ERRORS = {
-    auth:        ['Open from Telegram', 'This page only works inside the bot as a Telegram Mini App.'],
-    invalid:     ['Link not valid', 'Go back to the bot and open the channel link again.'],
-    used:        ['Already used', 'This verification was already used. Open the original link in the bot again.'],
-    not_yours:   ['Not your link', 'Open the link from your own account in the bot.'],
-    no_ads:      ['No ads available', 'Please try again in a little while.'],
-    no_ad_shown: ['Ads did not load', 'Turn off AdBlock or VPN and open the link in the bot again.'],
-    incomplete:  ['Ads not finished', 'Please try again.'],
-    too_fast:    ['Please wait a moment', 'Ads must be watched fully before verification. Try again.'],
-    invite_error:['Could not create link', 'Go back to the bot and try again.'],
-    server:      ['Server error', 'Please try again in a little while.'],
-    default:     ['Something went wrong', 'Please try again.']
-  };
-  function fail(code) {
-    const e = ERRORS[code] || ERRORS.default;
-    $('err-title').textContent = e[0]; $('err-text').textContent = e[1];
-    try { tg && tg.disableClosingConfirmation(); } catch (x) {}
-    haptic('error'); show('err');
-  }
-  $('err-close').onclick = closeApp;
-
-  async function api(path, extra) {
-    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ initData: initData, token: token }, extra || {})) });
+  async function post(path, extra) {
+    const r = await fetch(API + path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ initData: initData }, extra || {})) });
     return r.json();
   }
 
-  // ───────────── Ad providers ─────────────
+  // ───────────── Ad providers (gate + earn dono use karte hain) ─────────────
   const loaded = {};
   function loadScript(src, attrs, key) {
     if (loaded[key]) return loaded[key];
     loaded[key] = new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = src;
+      const s = document.createElement('script'); s.src = src;
       Object.keys(attrs || {}).forEach((k) => s.setAttribute(k, attrs[k]));
-      const t = setTimeout(() => reject(new Error('load timeout')), 12000);
-      s.onload = () => { clearTimeout(t); resolve(); };
-      s.onerror = () => { clearTimeout(t); reject(new Error('load error')); };
+      const t = setTimeout(() => reject(new Error('timeout')), 12000);
+      s.onload = () => { clearTimeout(t); resolve(); }; s.onerror = () => { clearTimeout(t); reject(new Error('load')); };
       document.head.appendChild(s);
     });
     return loaded[key];
   }
   const loadMonetag = (id) => loadScript('https://libtl.com/sdk.js', { 'data-zone': id, 'data-sdk': 'show_' + id }, 'monetag-' + id);
   let USER_ID = '';
-
-  // 'ok' | 'skipped' (user closed early: retry) | 'failed' (load / no fill: move on)
+  // 'ok' | 'skipped' (beech me band) | 'failed' (load/no fill)
   const PROVIDERS = {
-    monetag: async (id) => {
-      try { await loadMonetag(id); const fn = window['show_' + id]; if (typeof fn !== 'function') return 'failed';
-        await fn(USER_ID ? { ymid: String(USER_ID) } : undefined); return 'ok'; }
-      catch (e) { return 'failed'; }
-    },
-    monetag_pop: async (id) => {
-      try { await loadMonetag(id); const fn = window['show_' + id]; if (typeof fn !== 'function') return 'failed'; await fn('pop'); return 'ok'; }
-      catch (e) { return 'failed'; }
-    },
-    adsgram: async (id) => {
-      try {
-        await loadScript('https://sad.adsgram.ai/js/sad.min.js', {}, 'adsgram');
-        if (!window.Adsgram) return 'failed';
-        const res = await window.Adsgram.init({ blockId: String(id) }).show();
-        return res && res.done ? 'ok' : 'skipped';
-      } catch (res) { return (res && res.error === false) ? 'skipped' : 'failed'; }
-    },
-    gigapub: async (id) => {
-      try {
-        await loadScript('https://ad.gigapub.tech/script?id=' + encodeURIComponent(id), {}, 'gigapub-' + id);
-        if (typeof window.showGiga !== 'function') return 'failed';
-        await window.showGiga(); return 'ok';
-      } catch (e) { return 'failed'; }
-    }
+    monetag: async (id) => { try { await loadMonetag(id); const fn = window['show_' + id]; if (typeof fn !== 'function') return 'failed'; await fn(USER_ID ? { ymid: String(USER_ID) } : undefined); return 'ok'; } catch (e) { return 'failed'; } },
+    monetag_pop: async (id) => { try { await loadMonetag(id); const fn = window['show_' + id]; if (typeof fn !== 'function') return 'failed'; await fn('pop'); return 'ok'; } catch (e) { return 'failed'; } },
+    adsgram: async (id) => { try { await loadScript('https://sad.adsgram.ai/js/sad.min.js', {}, 'adsgram'); if (!window.Adsgram) return 'failed'; const r = await window.Adsgram.init({ blockId: String(id) }).show(); return r && r.done ? 'ok' : 'skipped'; } catch (r) { return (r && r.error === false) ? 'skipped' : 'failed'; } },
+    gigapub: async (id) => { try { await loadScript('https://ad.gigapub.tech/script?id=' + encodeURIComponent(id), {}, 'gigapub-' + id); if (typeof window.showGiga !== 'function') return 'failed'; await window.showGiga(); return 'ok'; } catch (e) { return 'failed'; } }
   };
 
-  // ───────────── State + render ─────────────
-  let steps = [], status = [], idx = 0, shown = 0, failed = 0, busy = false;
-  const CIRC = 326.7;
-  const setRing = (f) => { $('ring').style.strokeDashoffset = String(CIRC * (1 - Math.max(0, Math.min(1, f)))); };
-  const setMsg = (t, c) => { const m = $('msg'); m.textContent = t || ''; m.className = 'msg' + (c ? ' ' + c : ''); };
-  const setBtn = (html, disabled) => { const b = $('btn'); b.innerHTML = html; b.disabled = !!disabled; };
-
-  function buildAvatar(ch) {
-    const box = $('avatar'); box.innerHTML = '';
-    const name = (ch && ch.title) || '';
-    const initial = document.createElement('div');
-    initial.className = 'initial';
-    initial.textContent = (name.trim()[0] || 'C').toUpperCase();
-    if (ch && ch.has_photo) {
-      const img = new Image();
-      img.alt = '';
-      img.onload = () => { box.innerHTML = ''; box.appendChild(img); };
-      img.onerror = () => { box.innerHTML = ''; box.appendChild(initial); };
-      img.src = '/miniapp/photo?t=' + encodeURIComponent(token);
-      box.appendChild(initial);   // placeholder jab tak photo load ho
-    } else { box.appendChild(initial); }
-    $('title').textContent = name || 'Your link';
-  }
-
-  function render() {
-    const el = $('steps'); el.innerHTML = '';
-    steps.forEach((_, i) => {
-      const st = status[i];
-      const row = document.createElement('div');
-      row.className = 'row' + (st === 'ok' ? ' done' : st === 'skip' ? ' skip' : i === idx ? ' cur' : '');
-      const dot = st === 'ok' ? icon('i-check') : st === 'skip' ? icon('i-minus') : String(i + 1);
-      const label = st === 'ok' ? 'Completed' : st === 'skip' ? 'Unavailable' : i === idx ? 'Up next' : 'Waiting';
-      row.innerHTML = '<div class="dot">' + dot + '</div><div class="t">Sponsored video ' + (i + 1) +
-        '<small>Short video ad</small></div><div class="st">' + label + '</div>';
-      el.appendChild(row);
-    });
-    const done = shown + failed;
-    setRing(steps.length ? done / steps.length : 0);
-  }
-
-  // ───────────── Flow ─────────────
-  async function finish() {
-    setBtn('<div class="spin"></div><span>Verifying</span>', true);
-    setMsg('');
-    let res;
-    try { res = await api('/api/mini/complete', { shown: shown, failed: failed }); } catch (e) { return fail('server'); }
-    if (!res.ok && res.error === 'too_fast') {
-      await new Promise((r) => setTimeout(r, 4000));
-      try { res = await api('/api/mini/complete', { shown: shown, failed: failed }); } catch (e) { return fail('server'); }
+  /* ════════════════════════ GATE (link unlock) ════════════════════════ */
+  function startGate() {
+    $('gate').classList.remove('hidden');
+    const show = (n) => ['load', 'main', 'done', 'err'].forEach((x) => $('g-' + x).classList.toggle('on', x === n));
+    const ERR = {
+      auth: ['Open from Telegram', 'This page only works inside the bot as a Telegram Mini App.'],
+      invalid: ['Link not valid', 'Go back to the bot and open the channel link again.'],
+      used: ['Already used', 'This verification was already used. Open the original link in the bot again.'],
+      not_yours: ['Not your link', 'Open the link from your own account in the bot.'],
+      no_ads: ['No ads available', 'Please try again in a little while.'],
+      no_ad_shown: ['Ads did not load', 'Turn off AdBlock or VPN and open the link in the bot again.'],
+      incomplete: ['Ads not finished', 'Please try again.'],
+      too_fast: ['Please wait a moment', 'Ads must be watched fully before verification. Try again.'],
+      invite_error: ['Could not create link', 'Go back to the bot and try again.'],
+      server: ['Server error', 'Please try again in a little while.'], default: ['Something went wrong', 'Please try again.']
+    };
+    const fail = (c) => { const e = ERR[c] || ERR.default; $('g-err-t').textContent = e[0]; $('g-err-d').textContent = e[1];
+      try { tg && tg.disableClosingConfirmation(); } catch (x) {} haptic('error'); show('err'); };
+    $('g-err-b').onclick = closeApp;
+    const gapi = (p, x) => post(p, Object.assign({ token: token }, x || {}));
+    let steps = [], status = [], idx = 0, shown = 0, failed = 0, busy = false;
+    const CIRC = 326.7;
+    const setMsg = (t, c) => { const m = $('g-msg'); m.textContent = t || ''; m.className = 'msg' + (c ? ' ' + c : ''); };
+    const setBtn = (h, d) => { const b = $('g-btn'); b.innerHTML = h; b.disabled = !!d; };
+    const nextLabel = () => icon('i-play') + '<span>Watch ad ' + (idx + 1) + ' of ' + steps.length + '</span>';
+    function avatar(ch) {
+      const box = $('g-avatar'); box.innerHTML = '';
+      const name = (ch && ch.title) || '';
+      const ini = document.createElement('div'); ini.className = 'initial'; ini.style.fontSize = '40px'; ini.textContent = (name.trim()[0] || 'C').toUpperCase();
+      box.appendChild(ini);
+      if (ch && ch.has_photo) { const img = new Image(); img.alt = ''; img.onload = () => { box.innerHTML = ''; box.appendChild(img); }; img.src = API + '/miniapp/photo?t=' + encodeURIComponent(token); }
+      $('g-title').textContent = name || 'Your link';
     }
-    if (!res.ok) return fail(res.error);
-    try { tg && tg.disableClosingConfirmation(); } catch (e) {}
-    $('badge').className = 'badge done'; $('badge').innerHTML = icon('i-unlock');
-    show('done'); haptic('success');
-    setTimeout(closeApp, 2200);
-  }
-
-  const nextLabel = () => '<svg><use href="#i-play"/></svg><span>Watch ad ' + (idx + 1) + ' of ' + steps.length + '</span>';
-
-  async function playCurrent() {
-    if (busy) return;
-    busy = true; tap();
-    setBtn('<div class="spin"></div><span>Loading ad</span>', true);
-    setMsg('');
-    const ad = steps[idx];
-    const fn = PROVIDERS[ad.provider];
-    const result = fn ? await fn(ad.id) : 'failed';
-
-    if (result === 'ok') { status[idx] = 'ok'; shown++; idx++; haptic('success'); }
-    else if (result === 'failed') { status[idx] = 'skip'; failed++; idx++; setMsg('That ad was not available, moving on.'); }
-    else { setMsg('Please watch the ad to the end to continue.', 'bad'); haptic('warning'); }
-    busy = false;
-    render();
-
-    if (idx >= steps.length) {
-      if (shown < 1) return fail('no_ad_shown');
-      return finish();
+    function render() {
+      const el = $('g-steps'); el.innerHTML = '';
+      steps.forEach((_, i) => {
+        const st = status[i]; const row = document.createElement('div');
+        row.className = 'row' + (st === 'ok' ? ' done' : st === 'skip' ? ' skip' : i === idx ? ' cur' : '');
+        const dot = st === 'ok' ? icon('i-check', '') : st === 'skip' ? icon('i-minus', '') : String(i + 1);
+        const label = st === 'ok' ? 'Completed' : st === 'skip' ? 'Unavailable' : i === idx ? 'Up next' : 'Waiting';
+        row.innerHTML = '<div class="dot">' + dot + '</div><div class="t">Sponsored video ' + (i + 1) + '<small>Short video ad</small></div><div class="st">' + label + '</div>';
+        el.appendChild(row);
+      });
+      const d = shown + failed; $('g-ring').style.strokeDashoffset = String(CIRC * (1 - (steps.length ? d / steps.length : 0)));
     }
-    setBtn(result === 'skipped' ? '<svg><use href="#i-play"/></svg><span>Try again</span>' : nextLabel(), false);
+    async function finish() {
+      setBtn('<div class="spin"></div><span>Verifying</span>', true); setMsg('');
+      let res; try { res = await gapi('/api/mini/complete', { shown: shown, failed: failed }); } catch (e) { return fail('server'); }
+      if (!res.ok && res.error === 'too_fast') { await new Promise((r) => setTimeout(r, 4000)); try { res = await gapi('/api/mini/complete', { shown: shown, failed: failed }); } catch (e) { return fail('server'); } }
+      if (!res.ok) return fail(res.error);
+      try { tg && tg.disableClosingConfirmation(); } catch (e) {}
+      $('g-badge').className = 'badge done'; $('g-badge').innerHTML = icon('i-unlock', '');
+      show('done'); haptic('success'); setTimeout(closeApp, 2200);
+    }
+    async function play() {
+      if (busy) return; busy = true; tap();
+      setBtn('<div class="spin"></div><span>Loading ad</span>', true); setMsg('');
+      const ad = steps[idx]; const fn = PROVIDERS[ad.provider]; const result = fn ? await fn(ad.id) : 'failed';
+      if (result === 'ok') { status[idx] = 'ok'; shown++; idx++; haptic('success'); }
+      else if (result === 'failed') { status[idx] = 'skip'; failed++; idx++; setMsg('That ad was not available, moving on.'); }
+      else { setMsg('Please watch the ad to the end to continue.', 'bad'); haptic('warning'); }
+      busy = false; render();
+      if (idx >= steps.length) { if (shown < 1) return fail('no_ad_shown'); return finish(); }
+      setBtn(result === 'skipped' ? icon('i-play') + '<span>Try again</span>' : nextLabel(), false);
+    }
+    $('g-btn').onclick = play;
+    (async function init() {
+      if (!initData) return fail('auth');
+      let res; try { res = await gapi('/api/mini/init'); } catch (e) { return fail('server'); }
+      if (!res.ok) return fail(res.error);
+      steps = res.steps || []; if (!steps.length) return fail('no_ads');
+      USER_ID = res.uid || ''; status = steps.map(() => null);
+      try { tg && tg.enableClosingConfirmation(); } catch (e) {}
+      avatar(res.channel);
+      $('g-sub').textContent = 'Watch ' + (steps.length === 1 ? 'one short ad' : steps.length + ' short ads') + '. Your link is sent to the chat as soon as you finish.';
+      render(); setBtn(nextLabel(), false); show('main');
+    })();
   }
-  $('btn').onclick = playCurrent;
 
-  (async function init() {
-    if (!token || !initData) return fail('auth');
-    let res;
-    try { res = await api('/api/mini/init'); } catch (e) { return fail('server'); }
-    if (!res.ok) return fail(res.error);
-    steps = res.steps || [];
-    if (!steps.length) return fail('no_ads');
-    USER_ID = res.uid || '';
-    status = steps.map(() => null);
-    try { tg && tg.enableClosingConfirmation(); } catch (e) {}
-    buildAvatar(res.channel);
-    $('sub').textContent = steps.length === 1
-      ? 'Watch one short ad. Your link is sent to the chat as soon as you finish.'
-      : 'Watch ' + steps.length + ' short ads. Your link is sent to the chat as soon as you finish.';
-    render(); setBtn(nextLabel(), false); show('main');
-  })();
+  /* ════════════════════════ HOME APP ════════════════════════ */
+  const S = { me: null, cfg: null, hist: null, wds: null, top: null, tab: 'home', busy: false };
+  let toastT;
+  function toast(t, cls) { const el = $('toast'); el.textContent = t; el.className = 'toast on ' + (cls || ''); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('on'), 2600); }
+  const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
+  const initial = (n) => (String(n || 'S').trim()[0] || 'S').toUpperCase();
+  function avaHTML(name, photo, size) {
+    const st = size ? ' style="font-size:' + size + 'px"' : '';
+    return photo ? '<img src="' + esc(photo) + '" alt="" onerror="this.parentNode.innerHTML=\'<div class=initial>' + esc(initial(name)) + '</div>\'">' : '<div class="initial"' + st + '>' + esc(initial(name)) + '</div>';
+  }
+  const ERR_MSG = {
+    auth: 'Open this app from Telegram.', disabled: 'Rewards are paused right now.', cap: 'Daily ad limit reached. Come back tomorrow.',
+    cooldown: 'Please wait before the next ad.', no_ads: 'No ads available right now.', too_fast: 'Please watch the ad fully.', invalid: 'Session expired, try again.',
+    done: 'Already claimed today.', bad_upi: 'Enter a valid UPI ID (name@bank).', min: 'Amount is below the minimum.', balance: 'Not enough balance.',
+    pending_limit: 'You already have 2 pending requests.', banned: 'Your account is restricted.', server: 'Server error, try again.', expired: 'Session expired, try again.'
+  };
+
+  async function boot() {
+    $('app').classList.remove('hidden');
+    if (!initData) { $('v-home').innerHTML = '<div class="sec"><h3>Open from Telegram</h3><p class="d">This app works inside Telegram. Open it from the bot.</p></div>'; return; }
+    const res = await post('/api/sync/me', { start_param: (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || '' }).catch(() => null);
+    if (!res || !res.ok) { $('v-home').innerHTML = '<div class="sec"><h3>Could not load</h3><p class="d">' + esc(ERR_MSG[res && res.error] || 'Please try again in a little while.') + '</p></div>'; return; }
+    S.me = res.me; S.cfg = res.config; USER_ID = S.me.id;
+    document.querySelectorAll('.nav button').forEach((b) => { b.onclick = () => { tap(); go(b.dataset.tab); }; });
+    renderTop(); go('home');
+    post('/api/sync/leaderboard').then((r) => { if (r.ok) { S.top = r.top; if (S.tab === 'home') renderHome(); } });
+    setInterval(tick, 1000);
+  }
+  function renderTop() {
+    $('a-ava').innerHTML = avaHTML(S.me.name, S.me.photo); $('a-name').textContent = S.me.name; $('a-pts').textContent = fmt(S.me.points);
+  }
+  function go(tab) {
+    S.tab = tab;
+    document.querySelectorAll('.nav button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+    ['home', 'earn', 'invite', 'wallet'].forEach((t) => $('v-' + t).classList.toggle('on', t === tab));
+    ({ home: renderHome, earn: renderEarn, invite: renderInvite, wallet: renderWallet })[tab]();
+    window.scrollTo(0, 0);
+  }
+  function setMe(me) { S.me = me; renderTop(); if (S.tab === 'home') renderHome(); if (S.tab === 'earn') renderEarn(); if (S.tab === 'wallet') renderWallet(); if (S.tab === 'invite') renderInvite(); }
+
+  function renderHome() {
+    const m = S.me, c = S.cfg;
+    const streak = m.streak || 0, dayIdx = m.can_checkin ? (streak % 7) : ((streak - 1 + 7) % 7);
+    let days = '';
+    for (let i = 0; i < 7; i++) {
+      const done = m.can_checkin ? i < (streak % 7) : i <= dayIdx; const today = i === (m.can_checkin ? streak % 7 : dayIdx);
+      days += '<div class="day' + (done ? ' done' : '') + (today && m.can_checkin ? ' today' : '') + '"><b>' + (done ? icon('i-check', '').replace('<svg', '<svg width="14" height="14"') : (i + 1)) + '</b>Day</div>';
+    }
+    const pct = Math.min(100, Math.round(100 * m.ads_today / Math.max(1, m.ads_cap)));
+    let lb = '';
+    if (S.top && S.top.length) S.top.forEach((r, i) => { lb += '<div class="lb' + (r.me ? ' me' : '') + '"><div class="rk' + (i < 3 ? ' top3' : '') + '">' + (i + 1) + '</div><div class="ava">' + avaHTML(r.name, r.photo, 14) + '</div><div class="nm">' + esc(r.name) + '</div><div class="pt">' + fmt(r.earned) + ' SP</div></div>'; });
+    else lb = '<div class="empty">No entries yet.</div>';
+    $('v-home').innerHTML =
+      '<div class="hero"><small>Sync Points</small><div class="num">' + fmt(m.points) + '</div><div class="inr">approx. Rs ' + m.inr.toFixed(2) + '</div>' +
+      '<div class="acts"><button class="btn sm" data-go="earn">' + icon('i-play') + 'Earn</button><button class="btn sm" data-go="wallet">' + icon('i-out') + 'Withdraw</button></div></div>' +
+      '<div class="sec"><h3>Daily check-in</h3><p class="d">Come back every day. Your streak adds a small bonus.</p><div class="days">' + days + '</div>' +
+      '<button class="btn" id="b-checkin"' + (m.can_checkin ? '' : ' disabled') + '>' + icon('i-gift') + '<span>' + (m.can_checkin ? 'Claim today\'s bonus' : 'Claimed for today') + '</span></button></div>' +
+      '<div class="sec"><h3>Today\'s ads</h3><p class="d">Watch short video ads and earn ' + c.ad_reward + ' SP each.</p><div class="bar"><i style="width:' + pct + '%"></i></div>' +
+      '<div class="kv"><span>Watched today</span><b>' + m.ads_today + ' / ' + m.ads_cap + '</b></div></div>' +
+      '<div class="sec"><h3>Top earners</h3><p class="d">All-time points earned.</p>' + lb + '</div>';
+    bindActions($('v-home'));
+  }
+
+  function renderEarn() {
+    const m = S.me, c = S.cfg, CIRC = 2 * Math.PI * 52, frac = Math.min(1, m.ads_today / Math.max(1, m.ads_cap));
+    $('v-earn').innerHTML =
+      '<div class="sec" style="text-align:center"><div class="earnring"><svg viewBox="0 0 120 120"><defs><linearGradient id="eg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f8cff"/><stop offset="1" stop-color="#7a5cff"/></linearGradient></defs>' +
+      '<circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="8"/><circle cx="60" cy="60" r="52" fill="none" stroke="url(#eg)" stroke-width="8" stroke-linecap="round" stroke-dasharray="' + CIRC.toFixed(1) + '" stroke-dashoffset="' + (CIRC * (1 - frac)).toFixed(1) + '" style="transition:stroke-dashoffset .8s"/></svg>' +
+      '<div class="in"><b>' + m.ads_today + '/' + m.ads_cap + '</b><span>ads today</span></div></div>' +
+      '<h3 style="margin:0 0 4px;font-size:17px">Watch &amp; earn</h3><p class="d">Earn <b style="color:var(--text)">' + c.ad_reward + ' SP</b> for every short video ad you watch to the end.</p>' +
+      '<button class="btn" id="b-watch"></button><div class="msg" id="e-msg"></div></div>' +
+      '<div class="sec"><h3>How it works</h3><ul class="steps2"><li><i>1</i><span>Tap the button and a short video ad plays.</span></li><li><i>2</i><span>Watch it until the end. Closing early gives no reward.</span></li>' +
+      '<li><i>3</i><span>Points are added instantly. Wait ' + c.cooldown + ' seconds between ads. Limit: ' + c.daily_cap + ' ads per day.</span></li></ul></div>';
+    $('b-watch').onclick = watchAd; updateWatchBtn();
+  }
+  function updateWatchBtn() {
+    const b = $('b-watch'); if (!b || S.busy) return;
+    const m = S.me;
+    if (m.ads_today >= m.ads_cap) { b.disabled = true; b.innerHTML = icon('i-check') + '<span>Daily limit reached</span>'; }
+    else if (m.cooldown_left > 0) { b.disabled = true; b.innerHTML = '<span>Next ad in ' + m.cooldown_left + 's</span>'; }
+    else { b.disabled = false; b.innerHTML = icon('i-play') + '<span>Watch ad  +' + S.cfg.ad_reward + ' SP</span>'; }
+  }
+  function tick() { if (S.me && S.me.cooldown_left > 0) { S.me.cooldown_left--; if (S.tab === 'earn') updateWatchBtn(); } }
+
+  async function watchAd() {
+    if (S.busy) return; S.busy = true; tap();
+    const b = $('b-watch'); b.disabled = true; b.innerHTML = '<div class="spin"></div><span>Loading ad</span>';
+    const msg = (t, c) => { const e = $('e-msg'); if (e) { e.textContent = t || ''; e.className = 'msg' + (c ? ' ' + c : ''); } };
+    msg('');
+    try {
+      const st = await post('/api/sync/ad_start');
+      if (!st.ok) { msg(ERR_MSG[st.error] || 'Could not start ad.', 'bad'); if (st.left) S.me.cooldown_left = st.left; return; }
+      const fn = PROVIDERS[st.ad.provider]; const result = fn ? await fn(st.ad.id) : 'failed';
+      if (result === 'skipped') { msg('Watch the ad to the end to earn points.', 'bad'); haptic('warning'); return; }
+      if (result === 'failed') { msg('No ad available right now. Try again shortly.', 'bad'); return; }
+      const cl = await post('/api/sync/ad_claim', { nonce: st.nonce });
+      if (!cl.ok) { msg(ERR_MSG[cl.error] || 'Could not add points.', 'bad'); return; }
+      haptic('success'); toast('+' + cl.reward + ' SP added', 'good'); setMe(cl.me);
+    } catch (e) { msg('Network error. Try again.', 'bad'); }
+    finally { S.busy = false; updateWatchBtn(); }
+  }
+
+  function renderInvite() {
+    const m = S.me, c = S.cfg;
+    $('v-invite').innerHTML =
+      '<div class="stat2"><div><b>' + m.ref.count + '</b><span>Friends joined</span></div><div><b>' + fmt(m.ref.earned) + '</b><span>SP earned</span></div></div>' +
+      '<div class="sec"><h3>Invite friends</h3><p class="d">You get <b style="color:var(--text)">' + c.ref_reward + ' SP</b> when a friend you invite watches their first ad.</p>' +
+      '<div class="linkbox"><span id="reflink">' + esc(m.ref.link || 'Unavailable') + '</span><button class="btn sm" id="b-copy" style="padding:9px 12px">' + icon('i-copy') + '</button></div>' +
+      '<button class="btn" id="b-share">' + icon('i-share') + '<span>Share invite link</span></button></div>' +
+      '<div class="sec"><h3>How it works</h3><ul class="steps2"><li><i>1</i><span>Share your personal link with friends.</span></li><li><i>2</i><span>They open the bot with your link.</span></li><li><i>3</i><span>After their first completed ad you receive the bonus.</span></li></ul></div>';
+    $('b-copy').onclick = () => { tap(); const l = m.ref.link; if (navigator.clipboard && l) navigator.clipboard.writeText(l).then(() => toast('Link copied', 'good')).catch(() => toast('Copy failed', 'bad')); };
+    $('b-share').onclick = () => { tap(); const u = 'https://t.me/share/url?url=' + encodeURIComponent(m.ref.link) + '&text=' + encodeURIComponent('Join Senpai Sync and earn rewards.'); tg && tg.openTelegramLink ? tg.openTelegramLink(u) : window.open(u, '_blank'); };
+  }
+
+  async function loadHistory() {
+    const r = await post('/api/sync/history').catch(() => null);
+    if (r && r.ok) { S.hist = r.history; S.wds = r.withdrawals; if (S.tab === 'wallet') renderWallet(); }
+  }
+  const TXI = { ad: 'i-play', checkin: 'i-gift', referral: 'i-users', welcome: 'i-gift', withdraw: 'i-out', refund: 'i-coin' };
+  function ago(iso) { const s = Math.max(1, (Date.now() - new Date(iso).getTime()) / 1000); if (s < 3600) return Math.floor(s / 60) + 'm ago'; if (s < 86400) return Math.floor(s / 3600) + 'h ago'; return Math.floor(s / 86400) + 'd ago'; }
+  function renderWallet() {
+    const m = S.me, c = S.cfg; if (!S.hist) loadHistory();
+    const need = c.min_withdraw * c.points_per_inr, enough = m.points >= need;
+    let wds = '';
+    (S.wds || []).forEach((w) => { wds += '<div class="tx"><div class="ic">' + icon('i-out') + '</div><div class="mid">Rs ' + w.inr + '<small>' + esc(w.upi) + ' - ' + ago(w.ts) + '</small></div><span class="tag ' + w.status + '">' + w.status.toUpperCase() + '</span></div>'; });
+    let hist = '';
+    (S.hist || []).forEach((h) => { hist += '<div class="tx"><div class="ic">' + icon(TXI[h.type] || 'i-coin') + '</div><div class="mid">' + esc(h.note || h.type) + '<small>' + ago(h.ts) + '</small></div><div class="amt ' + (h.amount >= 0 ? 'pos' : 'neg') + '">' + (h.amount >= 0 ? '+' : '') + fmt(h.amount) + '</div></div>'; });
+    $('v-wallet').innerHTML =
+      '<div class="hero"><small>Balance</small><div class="num">' + fmt(m.points) + ' SP</div><div class="inr">approx. Rs ' + m.inr.toFixed(2) + ' &middot; ' + c.points_per_inr + ' SP = Rs 1</div></div>' +
+      '<div class="sec"><h3>Withdraw</h3><p class="d">Minimum Rs ' + c.min_withdraw + ' (' + fmt(need) + ' SP). Requests are reviewed manually.</p>' +
+      '<label class="f">UPI ID</label><input class="in" id="w-upi" placeholder="name@bank" autocomplete="off" autocapitalize="off">' +
+      '<label class="f">Amount (Rs)</label><input class="in" id="w-amt" type="number" inputmode="numeric" min="' + c.min_withdraw + '" placeholder="' + c.min_withdraw + '">' +
+      '<button class="btn" id="b-wd"' + (enough ? '' : ' disabled') + '>' + icon('i-out') + '<span>' + (enough ? 'Request withdrawal' : 'Reach ' + fmt(need) + ' SP to withdraw') + '</span></button><div class="msg" id="w-msg"></div></div>' +
+      (wds ? '<div class="sec"><h3>Withdrawal requests</h3>' + wds + '</div>' : '') +
+      '<div class="sec"><h3>Activity</h3>' + (hist || '<div class="empty">No activity yet.</div>') + '</div>' +
+      '<p class="note">Rewards depend on ad availability and may change. Payout requests are verified manually and can be rejected for suspicious or fraudulent activity.</p>';
+    const b = $('b-wd'); if (b) b.onclick = withdraw;
+  }
+  async function withdraw() {
+    if (S.busy) return; S.busy = true; tap();
+    const msg = (t, c) => { const e = $('w-msg'); if (e) { e.textContent = t || ''; e.className = 'msg' + (c ? ' ' + c : ''); } };
+    const b = $('b-wd'); b.disabled = true; b.innerHTML = '<div class="spin"></div><span>Submitting</span>';
+    try {
+      const r = await post('/api/sync/withdraw', { upi: $('w-upi').value.trim(), inr: parseInt($('w-amt').value, 10) || 0 });
+      if (!r.ok) { msg(ERR_MSG[r.error] || 'Could not submit.', 'bad'); haptic('error'); return; }
+      haptic('success'); toast('Withdrawal requested', 'good'); S.hist = null; S.wds = null; setMe(r.me); loadHistory();
+    } catch (e) { msg('Network error. Try again.', 'bad'); }
+    finally { S.busy = false; if ($('b-wd')) renderWallet(); }
+  }
+
+  function bindActions(root) {
+    root.querySelectorAll('[data-go]').forEach((b) => { b.onclick = () => { tap(); go(b.dataset.go); }; });
+    const ci = $('b-checkin');
+    if (ci) ci.onclick = async () => {
+      if (S.busy) return; S.busy = true; tap(); ci.disabled = true;
+      try { const r = await post('/api/sync/checkin'); if (r.ok) { haptic('success'); toast('+' + r.reward + ' SP check-in bonus', 'good'); S.busy = false; setMe(r.me); } else { toast(ERR_MSG[r.error] || 'Could not claim.', 'bad'); } }
+      catch (e) { toast('Network error', 'bad'); } finally { S.busy = false; }
+    };
+  }
+
+  /* ════════════════════════ ENTRY ════════════════════════ */
+  if (token) startGate(); else boot();
 })();
 </script>
 </body>

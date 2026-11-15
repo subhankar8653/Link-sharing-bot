@@ -1,0 +1,4 @@
+{
+  "rewrites": [{ "source": "/miniapp", "destination": "/index.html" }],
+  "headers": [{ "source": "/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }]
+}
