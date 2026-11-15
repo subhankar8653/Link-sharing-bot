@@ -172,3 +172,29 @@ async def api_mini_complete(request):
         return web.json_response({"ok": False, "error": "server"})
 
     return web.json_response({"ok": ok, "error": None if ok else reason, "info": info})
+
+
+@routes.get("/config.js")
+async def miniapp_config_js(request):
+    # Railway se serve hone par API same origin hai. Vercel par is file ko apne Railway URL se badlo.
+    return web.Response(text='window.SYNC_API = "";', content_type="application/javascript",
+                        headers={"Cache-Control": "no-store"})
+
+
+@routes.post("/api/sync/{action}")
+async def api_sync(request):
+    from plugins.miniapp import validate_init_data
+    from plugins.sync_app import handle
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad_request"}, status=400)
+    user = validate_init_data(str(body.get("initData", "")))
+    if not user:
+        return web.json_response({"ok": False, "error": "auth"})
+    try:
+        res = await handle(request.match_info["action"], user, body, request.app.get("bot"))
+    except Exception as e:
+        logger.error(f"sync api error ({request.match_info['action']}): {e}", exc_info=True)
+        res = {"ok": False, "error": "server"}
+    return web.json_response(res)

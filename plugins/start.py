@@ -24,6 +24,7 @@ from plugins.settings import revoke_invite_after_5_minutes
 from plugins.premium import shorten_link, _get_bot_config
 from plugins.miniapp import miniapp_ready, get_miniapp_settings, seconds_until_ist_midnight
 from plugins.fsub_extra import render_fsub_text
+from plugins.sync_app import sync_enabled_and_url, sync_register_from_bot
 from helper_func import *
 from plugins.tutorial import send_fsub_tutorial_if_not_joined, send_linkshortner_tutorial_if_not_verified
 
@@ -1070,6 +1071,11 @@ async def start_command(client: Bot, message: Message):
     try:
         text = message.text
 
+        # ── Referral (/start ref_<uid>): Senpai Sync login + referrer save, phir normal welcome ──
+        if len(text) > 7 and text.split(" ", 1)[1].startswith("ref_"):
+            await sync_register_from_bot(message.from_user, text.split(" ", 1)[1][4:])
+            text = "/start"
+
         # ── Deep link ─────────────────────────────────────────────────
         if len(text) > 7:
             try:
@@ -1253,7 +1259,12 @@ async def start_command(client: Bot, message: Message):
         # ── Normal /start ──────────────────────────────────────────────
         else:
             is_adm = await _is_admin(uid)
+            # Senpai Sync ON ho toh bot start par login + Mini App ka button
+            sync_url = await sync_enabled_and_url()
+            if sync_url:
+                await sync_register_from_bot(message.from_user)
             btns   = [
+                *([[InlineKeyboardButton("Open Senpai Sync", web_app=WebAppInfo(url=f"{sync_url}/miniapp"))]] if sync_url else []),
                 [
                     InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data="about"),
                     InlineKeyboardButton("Hᴇʟᴘ •",  callback_data="help")

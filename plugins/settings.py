@@ -123,7 +123,8 @@ async def settings_command(client: Client, message: Message):
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("Lɪɴᴋ sʜᴀʀᴇ ᴍᴇɴᴜ", callback_data="link_share"), InlineKeyboardButton("Aᴅᴍɪɴ ᴍᴇɴᴜ", callback_data="admin_bna_system")],
             [InlineKeyboardButton("Bᴀɴ ᴍᴇɴᴜ", callback_data="ban_menu"), InlineKeyboardButton("Fsᴜʙ ᴍᴇɴᴜ", callback_data="fsub_settings_menu")],
-            [InlineKeyboardButton("🎬 Mɪɴɪ Aᴘᴘ Mᴇɴᴜ", callback_data="mini_menu")],
+            [InlineKeyboardButton("🎬 Mɪɴɪ Aᴘᴘ Mᴇɴᴜ", callback_data="mini_menu"),
+             InlineKeyboardButton("Sᴇɴᴘᴀɪ Sʏɴᴄ", callback_data="sync_menu")],
             [InlineKeyboardButton("Vɪᴇᴡ sᴛᴀᴛᴜs", callback_data="status")],
             [InlineKeyboardButton("• Cʟᴏsᴇ •", callback_data="close")]
         ])
@@ -151,7 +152,8 @@ async def settings_callback(client: Bot, callback_query):
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Lɪɴᴋ sʜᴀʀᴇ ᴍᴇɴᴜ", callback_data="link_share"), InlineKeyboardButton("Aᴅᴍɪɴ ᴍᴇɴᴜ", callback_data="admin_bna_system")],
                 [InlineKeyboardButton("Bᴀɴ ᴍᴇɴᴜ", callback_data="ban_menu"), InlineKeyboardButton("Fsᴜʙ ᴍᴇɴᴜ", callback_data="fsub_settings_menu")],
-                [InlineKeyboardButton("🎬 Mɪɴɪ Aᴘᴘ Mᴇɴᴜ", callback_data="mini_menu")],
+                [InlineKeyboardButton("🎬 Mɪɴɪ Aᴘᴘ Mᴇɴᴜ", callback_data="mini_menu"),
+                 InlineKeyboardButton("Sᴇɴᴘᴀɪ Sʏɴᴄ", callback_data="sync_menu")],
                 [InlineKeyboardButton("Vɪᴇᴡ sᴛᴀᴛᴜs", callback_data="view_status")],
                 [InlineKeyboardButton("• Cʟᴏsᴇ •", callback_data="close")]
             ])
