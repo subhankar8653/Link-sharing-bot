@@ -221,9 +221,19 @@
   const closeApp = () => { tg ? tg.close() : window.close(); };
 
   async function post(path, extra) {
-    const r = await fetch(API + path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ initData: initData }, extra || {})) });
+    let r;
+    try {
+      r = await fetch(API + path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ initData: initData }, extra || {})) });
+    } catch (e) { const er = new Error('network'); er.kind = 'network'; throw er; }
+    if (!(r.headers.get('content-type') || '').includes('json')) { const er = new Error('notjson'); er.kind = 'notjson'; er.status = r.status; throw er; }
     return r.json();
+  }
+  function faultText(f) {
+    if (!f) return '';
+    if (!API && /vercel\.app$/.test(location.hostname)) return 'SYNC_API is not set on Vercel. Add it in Settings > Environment Variables, then Redeploy.';
+    if (f.kind === 'notjson') return 'Server replied HTTP ' + f.status + ' (not the bot API). Check SYNC_API: ' + (API || '(empty)');
+    return 'Could not reach the bot server' + (API ? ' (' + API + ')' : '') + '. Check SYNC_API, and that the Mini App URL set in the bot matches this site.';
   }
 
   // ───────────── Ad providers (gate + earn dono use karte hain) ─────────────
@@ -348,8 +358,12 @@
   async function boot() {
     $('app').classList.remove('hidden');
     if (!initData) { $('v-home').innerHTML = '<div class="sec"><h3>Open from Telegram</h3><p class="d">This app works inside Telegram. Open it from the bot.</p></div>'; return; }
-    const res = await post('/api/sync/me', { start_param: (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || '' }).catch(() => null);
-    if (!res || !res.ok) { $('v-home').innerHTML = '<div class="sec"><h3>Could not load</h3><p class="d">' + esc(ERR_MSG[res && res.error] || 'Please try again in a little while.') + '</p></div>'; return; }
+    let res = null, fault = null;
+    try { res = await post('/api/sync/me', { start_param: (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || '' }); } catch (e) { fault = e; }
+    if (!res || !res.ok) {
+      const why = fault ? faultText(fault) : (ERR_MSG[res && res.error] || 'Please try again in a little while.');
+      $('v-home').innerHTML = '<div class="sec"><h3>Could not load</h3><p class="d">' + esc(why) + '</p></div>'; return;
+    }
     S.me = res.me; S.cfg = res.config; USER_ID = S.me.id;
     document.querySelectorAll('.nav button').forEach((b) => { b.onclick = () => { tap(); go(b.dataset.tab); }; });
     renderTop(); go('home');
