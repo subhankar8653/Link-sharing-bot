@@ -53,6 +53,12 @@ PROVIDER_LABEL = {
     "gigapub": "Gigapub",
 }
 DEFAULT_MIN_SECONDS = 5
+FLOW_LABELS = {
+    "fsub_ads": "FSub first, then Ads",
+    "ads_fsub": "Ads first, then FSub",
+    "ads_only": "Only Ads (no FSub)",
+    "fsub_only": "Only FSub (no Ads)",
+}
 MAX_TIMES = 10
 
 
@@ -80,8 +86,13 @@ async def get_miniapp_settings() -> dict:
         "daily_goal": int(cfg.get("miniapp_daily_goal", 0)),          # 0 = off
         "free_seconds": int(cfg.get("verify_premium_seconds", 86400)),  # sirf jab Daily Goal OFF ho
         "goal_reward_seconds": int(cfg.get("miniapp_goal_reward", 86400)),  # goal poora -> itni der ads-free
+        "flow": cfg.get("link_flow", "fsub_ads") if cfg.get("link_flow", "fsub_ads") in FLOW_LABELS else "fsub_ads",
         "inapp": False,   # passive in-app ads hata diye (auto-ads uncounted the)
     }
+
+
+async def get_link_flow() -> str:
+    return (await get_miniapp_settings())["flow"]
 
 
 async def _save_ads(ads: list) -> None:
@@ -199,6 +210,7 @@ def _menu_text(s: dict) -> str:
         f"• Status: <b>{status}</b>   • Ads/session: <b>{steps}</b>\n"
         f"• Daily Goal: <b>{goal}</b>   • Min watch: <b>{s['min_seconds']}s</b>\n"
         f"• {rule}\n"
+        f"• Link flow: <b>{FLOW_LABELS[s['flow']]}</b>\n"
         f"• URL: <code>{url}</code>\n\n"
         f"<b>Ads (order mein):</b>\n{ads}"
     )
@@ -211,8 +223,9 @@ def _menu_kb(s: dict) -> InlineKeyboardMarkup:
          InlineKeyboardButton("🎯 Daily Goal", callback_data="mini_goal")],
         [InlineKeyboardButton("⏱ Free Time", callback_data="mini_free"),
          InlineKeyboardButton("⏳ Min Watch", callback_data="mini_wait")],
-        [InlineKeyboardButton("📊 Stats", callback_data="mini_stats"),
-         InlineKeyboardButton("🌐 Set URL", callback_data="mini_url")],
+        [InlineKeyboardButton("🔀 Link Flow", callback_data="mini_flow"),
+         InlineKeyboardButton("📊 Stats", callback_data="mini_stats")],
+        [InlineKeyboardButton("🌐 Set URL", callback_data="mini_url")],
         [InlineKeyboardButton("back", callback_data="settings_main")],
     ])
 
@@ -458,6 +471,30 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
             await _set_bot_config("miniapp_min_seconds", max(0, min(60, int(parts[1]))))
             await cq.answer("✅ Saved")
             cq.data = "mini_wait"
+            await mini_callbacks(client, cq)
+
+        # ── Link flow (ads / fsub ka order) ───────────
+        elif cmd == "mini_flow":
+            s = await get_miniapp_settings()
+            rows = [[InlineKeyboardButton(("✅ " if s["flow"] == k else "") + lbl, callback_data=f"mini_flowset:{k}")]
+                    for k, lbl in FLOW_LABELS.items()]
+            rows.append(_back())
+            await cq.message.edit_text(
+                "<b>🔀 Link Flow</b>\n\n"
+                "Channel link se aane wale user ke liye order chuno:\n\n"
+                "<b>FSub first, then Ads:</b> pehle FSub join, uske baad ads (FSub ke turant baad ka link seedha milta hai).\n"
+                "<b>Ads first, then FSub:</b> pehle ads; daily goal poora hone par FSub, phir ads-free time.\n"
+                "<b>Only Ads:</b> sirf ads, FSub nahi.\n"
+                "<b>Only FSub:</b> sirf FSub, ads nahi.\n\n"
+                "<i>Ads-free time mein bhi naya FSub channel add hone par FSub dikhta hai.</i>",
+                reply_markup=InlineKeyboardMarkup(rows),
+            )
+
+        elif cmd == "mini_flowset":
+            if parts[1] in FLOW_LABELS:
+                await _set_bot_config("link_flow", parts[1])
+                await cq.answer("✅ " + FLOW_LABELS[parts[1]])
+            cq.data = "mini_flow"
             await mini_callbacks(client, cq)
 
         # ── Stats ─────────────────────────────────────

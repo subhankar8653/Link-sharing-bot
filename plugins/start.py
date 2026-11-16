@@ -22,7 +22,7 @@ from config import *
 from database.database import Seishiro
 from plugins.settings import revoke_invite_after_5_minutes
 from plugins.premium import shorten_link, _get_bot_config
-from plugins.miniapp import miniapp_ready, get_miniapp_settings, seconds_until_ist_midnight
+from plugins.miniapp import miniapp_ready, get_miniapp_settings, seconds_until_ist_midnight, get_link_flow
 from plugins.fsub_extra import render_fsub_text
 from plugins.sync_app import sync_enabled_and_url, sync_register_from_bot
 from helper_func import *
@@ -482,66 +482,96 @@ async def fsub_stepcheck_cb(client: Bot, cq: CallbackQuery):
 # FORCE SUBSCRIBE DECORATOR
 # ═══════════════════════════════════════════
 
+async def _user_fsub_ok(client, uid):
+    channels = await Seishiro.get_fsub_channels()
+    if not channels or uid == OWNER_ID:
+        return True
+    # Premium users FSub bypass karte hain
+    if await Seishiro.has_premium_access(uid):
+        logger.info(f"User {uid} premium — FSub bypassed")
+        return True
+
+    # ── FSUB CHECK DURATION (cooldown) ─────────────────────────
+    # ON hone par: agar user ne is duration window (12h/24h/48h/7d)
+    # ke andar hi last FSub pass kiya tha, to naya channel add hone
+    # par bhi dubara check nahi lagega — turant access mil jaata hai.
+    try:
+        duration_cfg = await Seishiro.get_fsub_check_duration()
+    except Exception as e:
+        logger.error(f"fsub_check_duration fetch error: {e}")
+        duration_cfg = {"enabled": False, "hours": 0}
+    duration_on = bool(duration_cfg.get("enabled")) and duration_cfg.get("hours", 0) > 0
+
+    if duration_on:
+        try:
+            verified_at = await Seishiro.get_fsub_verified_at(uid)
+        except Exception as e:
+            logger.error(f"fsub_verified_at fetch error: {e}")
+            verified_at = None
+        if verified_at and (datetime.utcnow() - verified_at) < timedelta(hours=duration_cfg["hours"]):
+            return True
+
+    # ── PARALLEL CHECK (fast) ─────────────────────────────────
+    # Sab channels simultaneously check karo — ek ke baad ek nahi
+    results = await asyncio.gather(*[_channel_join_status(client, uid, cid) for cid in channels], return_exceptions=True)
+    for cid, res in zip(channels, results):
+        # Exception aa gayi toh False maano
+        sub_ok = res if isinstance(res, bool) else False
+        if not sub_ok:
+            if await Seishiro.get_channel_mode(cid) == "on":
+                # Request mode: ek baar aur check karo (no sleep)
+                sub_ok = await _channel_join_status(client, uid, cid)
+                if sub_ok:
+                    continue
+            return False
+
+    # Yahan tak pahunche matlab poora FSub sach mein pass hua — agar
+    # cooldown feature ON hai, is waqt ka timestamp save kar do.
+    if duration_on:
+        try:
+            await Seishiro.set_fsub_verified(uid)
+        except Exception as e:
+            logger.error(f"set_fsub_verified error: {e}")
+
+    return True
+
+
 def check_fsub(func):
     @wraps(func)
     async def wrapper(client, message, *args, **kwargs):
         uid = message.from_user.id
 
+        # Senpai Sync ON ho toh plain /start (ya ref link) par FSub nahi — seedha welcome +
+        # "Open Senpai Sync" button. FSub sirf channel-link wale /start par lagega.
+        try:
+            _cmd = getattr(message, "command", None)
+            if _cmd and _cmd[0].lower() == "start":
+                _param = _cmd[1] if len(_cmd) > 1 else ""
+                if (not _param or _param.startswith("ref_")) and await sync_enabled_and_url():
+                    return await func(client, message, *args, **kwargs)
+        except Exception as e:
+            logger.warning(f"fsub skip check failed: {e}")
+
+        # Link flow: channel link ke liye FSub kab lagana hai (miniapp.py -> Link Flow)
+        _link_param = ""
+        try:
+            _cmd2 = getattr(message, "command", None)
+            if _cmd2 and _cmd2[0].lower() == "start" and len(_cmd2) > 1 and not _cmd2[1].startswith("ref_"):
+                _link_param = _cmd2[1]
+        except Exception:
+            _link_param = ""
+        _flow = await get_link_flow() if _link_param else ""
+        if _flow in ("ads_fsub", "ads_only"):
+            # Entry par FSub nahi: "ads_only" mein kabhi nahi, "ads_fsub" mein ads ke baad (neeche link branch / Mini App complete)
+            return await func(client, message, *args, **kwargs)
+
         async def is_subscribed(uid):
-            channels = await Seishiro.get_fsub_channels()
-            if not channels or uid == OWNER_ID:
-                return True
-            # Premium users FSub bypass karte hain
-            if await Seishiro.has_premium_access(uid):
-                logger.info(f"User {uid} premium — FSub bypassed")
-                return True
-
-            # ── FSUB CHECK DURATION (cooldown) ─────────────────────────
-            # ON hone par: agar user ne is duration window (12h/24h/48h/7d)
-            # ke andar hi last FSub pass kiya tha, to naya channel add hone
-            # par bhi dubara check nahi lagega — turant access mil jaata hai.
-            try:
-                duration_cfg = await Seishiro.get_fsub_check_duration()
-            except Exception as e:
-                logger.error(f"fsub_check_duration fetch error: {e}")
-                duration_cfg = {"enabled": False, "hours": 0}
-            duration_on = bool(duration_cfg.get("enabled")) and duration_cfg.get("hours", 0) > 0
-
-            if duration_on:
-                try:
-                    verified_at = await Seishiro.get_fsub_verified_at(uid)
-                except Exception as e:
-                    logger.error(f"fsub_verified_at fetch error: {e}")
-                    verified_at = None
-                if verified_at and (datetime.utcnow() - verified_at) < timedelta(hours=duration_cfg["hours"]):
-                    return True
-
-            # ── PARALLEL CHECK (fast) ─────────────────────────────────
-            # Sab channels simultaneously check karo — ek ke baad ek nahi
-            results = await asyncio.gather(*[_channel_join_status(client, uid, cid) for cid in channels], return_exceptions=True)
-            for cid, res in zip(channels, results):
-                # Exception aa gayi toh False maano
-                sub_ok = res if isinstance(res, bool) else False
-                if not sub_ok:
-                    if await Seishiro.get_channel_mode(cid) == "on":
-                        # Request mode: ek baar aur check karo (no sleep)
-                        sub_ok = await _channel_join_status(client, uid, cid)
-                        if sub_ok:
-                            continue
-                    return False
-
-            # Yahan tak pahunche matlab poora FSub sach mein pass hua — agar
-            # cooldown feature ON hai, is waqt ka timestamp save kar do.
-            if duration_on:
-                try:
-                    await Seishiro.set_fsub_verified(uid)
-                except Exception as e:
-                    logger.error(f"set_fsub_verified error: {e}")
-
-            return True
+            return await _user_fsub_ok(client, uid)
 
         try:
             if not await is_subscribed(uid):
+                if _flow == "fsub_ads":
+                    await Seishiro.set_fsub_pending(uid)    # FSub ke baad pehli baar seedha link (ads nahi)
                 # Smart auto-check: sirf ON hone par hi step-by-step flow +
                 # background poll lagta hai. OFF (default) hone par bilkul
                 # pehle jaisa not_joined() (sab channels ek saath) chalta hai.
@@ -565,6 +595,37 @@ def check_fsub(func):
             logger.error(f"check_fsub error: {e}")
             await message.reply_text("An unexpected error occurred. Please contact the developer.")
     return wrapper
+
+
+class _UserMsg:
+    """Message jaisa object — Mini App complete hone par FSub screen bhejne ke liye (not_joined ko chahiye)."""
+    def __init__(self, client, user, payload: str):
+        self._c = client
+        self.from_user = user
+        self.command = ["start", payload]
+        self.text = f"/start {payload}"
+
+    async def reply(self, text, **kw):
+        return await self._c.send_message(self.from_user.id, text, **{k: v for k, v in kw.items() if k == "reply_markup"})
+
+    reply_text = reply
+
+    async def reply_photo(self, photo, caption=None, reply_markup=None, **kw):
+        return await self._c.send_photo(self.from_user.id, photo=photo, caption=caption, reply_markup=reply_markup)
+
+    async def reply_chat_action(self, action):
+        try:
+            await self._c.send_chat_action(self.from_user.id, action)
+        except Exception:
+            pass
+
+
+async def _fsub_gate(client, message) -> bool:
+    """FSub pass ho toh True. Warna FSub screen dikha ke False (Joined button wapas isi link par laata hai)."""
+    if await _user_fsub_ok(client, message.from_user.id):
+        return True
+    await not_joined(client, message)
+    return False
 
 
 # ═══════════════════════════════════════════
@@ -984,8 +1045,11 @@ async def _extend_free(uid: int, seconds: int) -> None:
 async def complete_miniapp_verification(client: Bot, uid: int, token: str, shown: int = 1) -> tuple[bool, str, dict]:
     """
     Returns (ok, reason, info).  reason: "ok" | "invalid_or_used" | "invite_error"
-    info: {"daily_count", "goal", "goal_reached"}
+    info: {"daily_count", "goal", "goal_reached", "fsub_required"}
     Token atomically claim hota hai, isliye double submit se 2 links nahi jaate.
+
+    Link flow "Ads first, then FSub": ads phase poora hote hi (daily goal ya goal OFF) FSub check hota hai —
+    pass nahi hua toh link ki jagah FSub screen jati hai; Joined dabane par link milta hai.
     """
     doc = await Seishiro.claim_verify_token(token, uid)
     if not doc:
@@ -993,12 +1057,57 @@ async def complete_miniapp_verification(client: Bot, uid: int, token: str, shown
 
     channel_id = doc["channel_id"]
     is_request = doc.get("is_request", False)
+    b64        = doc.get("b64", "")
+    shown      = max(1, shown)
 
-    await _resolve_peer_safe(client, channel_id)
-    invite_link = await _get_fresh_invite_link(client, channel_id, is_request)
-    if not invite_link:
-        await Seishiro.unclaim_verify_token(token)   # user dobara try kar sake
-        return False, "invite_error", {}
+    ms    = await get_miniapp_settings()
+    flow  = ms["flow"]
+    goal  = ms["daily_goal"]
+    prior = await Seishiro.get_miniapp_daily_count(uid)
+    phase1_done = goal == 0 or (prior + shown) >= goal           # ads phase poora hua?
+    fsub_ok = True
+    if flow == "ads_fsub" and phase1_done:
+        fsub_ok = await _user_fsub_ok(client, uid)
+
+    invite_link = None
+    if fsub_ok:
+        await _resolve_peer_safe(client, channel_id)
+        invite_link = await _get_fresh_invite_link(client, channel_id, is_request)
+        if not invite_link:
+            await Seishiro.unclaim_verify_token(token)           # user dobara try kar sake
+            return False, "invite_error", {}
+
+    # ── Daily goal / ads-free time (hamesha ads-free, premium nahi: FSub flow ke hisaab se lagta hai) ──
+    daily_count = await Seishiro.add_miniapp_progress(uid, shown)
+    goal_hit    = False
+    if goal > 0:
+        if daily_count >= goal:
+            goal_hit = True
+            await Seishiro.set_ads_free(uid, ms["goal_reward_seconds"])
+            await Seishiro.reset_miniapp_progress(uid)
+    else:
+        await Seishiro.set_ads_free(uid, ms["free_seconds"])
+    logger.info(f"MiniApp verified: user={uid}, channel={channel_id}, shown={shown}, "
+                f"daily={daily_count}/{goal}, goal_hit={goal_hit}, flow={flow}, fsub_ok={fsub_ok}")
+
+    # ── Purana "Watch Video Ad" wala message delete ──
+    try:
+        if doc.get("prompt_msg_id"):
+            await client.delete_messages(doc.get("prompt_chat_id", uid), doc["prompt_msg_id"])
+    except Exception as e:
+        logger.warning(f"prompt msg delete failed: {e}")
+
+    info = {"daily_count": daily_count, "goal": goal, "goal_reached": goal_hit, "fsub_required": not fsub_ok}
+
+    if not fsub_ok:
+        # Ads ho gaye, ab FSub: screen bhejo. Joined -> /start payload -> ads-free + FSub ok -> direct link
+        try:
+            user = await client.get_users(uid)
+            payload = ("req_" + b64) if is_request else b64
+            await not_joined(client, _UserMsg(client, user, payload))
+        except Exception as e:
+            logger.error(f"fsub screen after ads failed: {e}", exc_info=True)
+        return True, "ok", info
 
     # ── Normal-style link message (sirf CLICK HERE button) ──
     link_msg = await client.send_message(
@@ -1010,41 +1119,17 @@ async def complete_miniapp_verification(client: Bot, uid: int, token: str, shown
     )
     asyncio.create_task(delete_after_delay(link_msg, 300))
 
-    # ── Purana "Watch Video Ad" wala message delete ──
-    try:
-        if doc.get("prompt_msg_id"):
-            await client.delete_messages(doc.get("prompt_chat_id", uid), doc["prompt_msg_id"])
-    except Exception as e:
-        logger.warning(f"prompt msg delete failed: {e}")
-
     # ── Request-mode: approve notification ke liye link save (normal flow jaisa) ──
-    if is_request and doc.get("b64"):
+    if is_request and b64:
         try:
             await Seishiro.save_user_request_link(
-                uid, channel_id, doc["b64"],
+                uid, channel_id, b64,
                 link_msg_id=link_msg.id, link_chat_id=link_msg.chat.id, invite_link=invite_link
             )
         except Exception as e:
             logger.warning(f"save_user_request_link failed: {e}")
 
-    # ── Daily goal / free time ──
-    ms          = await get_miniapp_settings()
-    daily_count = await Seishiro.add_miniapp_progress(uid, max(1, shown))
-    goal        = ms["daily_goal"]
-    goal_hit    = False
-    if goal > 0:
-        # Goal ON: session ke baad koi free time nahi. Goal poora hote hi reward time tak ads-free
-        # (premium nahi — FSub phir bhi lagega) aur counter naye cycle ke liye 0.
-        if daily_count >= goal:
-            goal_hit = True
-            await Seishiro.set_ads_free(uid, ms["goal_reward_seconds"])
-            await Seishiro.reset_miniapp_progress(uid)
-    else:
-        await _extend_free(uid, ms["free_seconds"])
-    logger.info(f"MiniApp verified: user={uid}, channel={channel_id}, shown={shown}, "
-                f"daily={daily_count}/{goal}, goal_hit={goal_hit}")
-
-    return True, "ok", {"daily_count": daily_count, "goal": goal, "goal_reached": goal_hit}
+    return True, "ok", info
 
 
 # ═══════════════════════════════════════════
@@ -1161,8 +1246,19 @@ async def start_command(client: Bot, message: Message):
                         ]])
                     )
 
-                # ── Premium / ads-free (daily goal reward) → direct link ──
-                if await Seishiro.has_premium_access(uid) or await Seishiro.has_ads_free(uid):
+                # ── Link flow: kab direct link, kab ads ───────────────
+                flow     = await get_link_flow()
+                _premium = await Seishiro.has_premium_access(uid)
+                direct   = _premium or flow == "fsub_only"            # fsub_only: ads kabhi nahi
+                if not direct and await Seishiro.has_ads_free(uid):   # ads-free time chal raha hai
+                    if flow == "ads_fsub" and not await _fsub_gate(client, message):
+                        return                                         # FSub screen dikha di
+                    direct = True
+                if not direct and flow == "fsub_ads" and await Seishiro.pop_fsub_pending(uid):
+                    direct = True                                      # FSub abhi complete hua -> seedha link
+
+                # ── Premium / ads-free / flow ke hisaab se → direct link ──
+                if direct:
                     inv = await _get_fresh_invite_link(client, channel_id, is_request)
                     if not inv:
                         return await message.reply_text(
