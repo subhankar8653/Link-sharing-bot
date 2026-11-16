@@ -1256,6 +1256,26 @@ class Master:
         except Exception as e:
             logging.error(f"reset_miniapp_progress error: {e}")
 
+    # ── Link flow "FSub pehle, phir Ads": user ne FSub screen dekhi thi -> wapas aane par seedha link ──
+
+    async def set_fsub_pending(self, user_id: int) -> None:
+        try:
+            await self.user_data.update_one(
+                {"_id": int(user_id)}, {"$set": {"fsub_pending": datetime.now()}}, upsert=True)
+        except Exception as e:
+            logging.error(f"set_fsub_pending error: {e}")
+
+    async def pop_fsub_pending(self, user_id: int) -> bool:
+        """True agar user ne pichle 24h mein FSub screen dekhi thi (flag hata deta hai)."""
+        try:
+            doc = await self.user_data.find_one_and_update(
+                {"_id": int(user_id), "fsub_pending": {"$exists": True}}, {"$unset": {"fsub_pending": ""}})
+            at = doc.get("fsub_pending") if doc else None
+            return isinstance(at, datetime) and (datetime.now() - at) < timedelta(hours=24)
+        except Exception as e:
+            logging.error(f"pop_fsub_pending error: {e}")
+            return False
+
     async def delete_old_tokens(self) -> None:
         """1 ghante se purane tokens delete karo (cleanup)."""
         import datetime
