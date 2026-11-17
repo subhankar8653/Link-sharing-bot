@@ -135,6 +135,30 @@
   .toast { position:fixed; left:50%; top:calc(14px + env(safe-area-inset-top)); transform:translate(-50%,-30px); opacity:0; z-index:20; background:#1c2233; border:1px solid var(--line-2);
     padding:11px 16px; border-radius:14px; font-size:13.5px; font-weight:600; box-shadow:0 12px 32px rgba(0,0,0,.5); transition:all .35s cubic-bezier(.3,1.3,.4,1); max-width:90%; text-align:center; }
   .toast.on { transform:translate(-50%,0); opacity:1; } .toast.good { border-color:rgba(61,220,151,.5); color:var(--ok); } .toast.bad { border-color:rgba(255,107,129,.5); color:var(--bad); }
+
+  /* ───────── v9 polish ───────── */
+  .skel { border-radius:18px; background:linear-gradient(100deg,var(--panel) 30%,var(--panel-2) 50%,var(--panel) 70%); background-size:200% 100%; animation:sk 1.3s linear infinite; margin-bottom:14px; }
+  @keyframes sk { to { background-position:-200% 0; } }
+  .lvl { display:inline-flex; align-items:center; gap:6px; margin-top:10px; padding:5px 11px; border-radius:99px; font-size:11px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.22); position:relative; z-index:1; }
+  .lvl svg { width:12px; height:12px; }
+  .mini3 { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; }
+  .mini3 div { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:12px 8px; text-align:center; }
+  .mini3 b { display:block; font-size:19px; font-weight:800; } .mini3 span { font-size:11px; color:var(--muted); font-weight:600; }
+  .task { display:flex; align-items:center; gap:12px; padding:13px 0; border-top:1px solid var(--line); } .task:first-of-type { border-top:0; }
+  .task .ic { width:40px; height:40px; border-radius:13px; background:rgba(79,140,255,.14); color:var(--accent-2); display:flex; align-items:center; justify-content:center; flex:none; }
+  .task .mid { flex:1; min-width:0; } .task .mid b { display:block; font-size:14px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .task .mid small { font-size:12px; color:var(--accent-2); font-weight:700; }
+  .task .go { display:flex; gap:6px; flex:none; } .task .btn.sm { padding:8px 12px; font-size:12.5px; border-radius:11px; }
+  .tag.ok { background:rgba(61,220,151,.15); color:var(--ok); }
+  details.faq { border-top:1px solid var(--line); padding:12px 0; } details.faq:first-of-type { border-top:0; }
+  details.faq summary { cursor:pointer; font-size:14px; font-weight:650; list-style:none; display:flex; justify-content:space-between; align-items:center; }
+  details.faq summary::-webkit-details-marker { display:none; } details.faq summary::after { content:"+"; color:var(--muted); font-size:18px; }
+  details.faq[open] summary::after { content:"-"; } details.faq p { margin:10px 0 2px; font-size:13px; line-height:1.6; color:var(--muted); }
+  .proof { display:flex; align-items:center; gap:12px; padding:10px 0; border-top:1px solid var(--line); } .proof:first-of-type { border-top:0; }
+  .proof .ic { width:34px; height:34px; border-radius:11px; background:rgba(61,220,151,.12); color:var(--ok); display:flex; align-items:center; justify-content:center; flex:none; }
+  .proof .mid { flex:1; min-width:0; font-size:13.5px; font-weight:650; } .proof .mid small { display:block; margin-top:2px; font-size:11.5px; color:var(--muted); font-weight:500; }
+  .proof .amt { font-weight:800; font-size:14px; color:var(--ok); }
+  .sumline { display:flex; gap:10px; margin-bottom:12px; } .sumline div { flex:1; background:var(--panel-2); border:1px solid var(--line); border-radius:13px; padding:10px 12px; } .sumline b { display:block; font-size:17px; } .sumline span { font-size:11.5px; color:var(--muted); }
+  .nav button { font-size:10.5px; padding:9px 2px 7px; } .nav button svg { width:19px; height:19px; }
   @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none !important; transition:none !important; } }
 </style>
 </head>
@@ -154,6 +178,8 @@
   <symbol id="i-share" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 12v7h16v-7M12 15V3M7.5 7.5L12 3l4.5 4.5"/></symbol>
   <symbol id="i-coin" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7.5v9M9.5 10a2.5 2 0 0 1 2.5-1.5h.5a2 2 0 0 1 0 4h-1a2 2 0 0 0 0 4h.5a2.5 2 0 0 0 2.5-1.5"/></symbol>
   <symbol id="i-gift" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 12h16v8H4zM3 8h18v4H3zM12 8v12M12 8S10 3 7.5 4.5 8.5 8 12 8zm0 0s2-5 4.5-3.5S15.5 8 12 8z"/></symbol>
+  <symbol id="i-task" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 11.5l2.2 2.2L15.5 9M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.8l2.7 5.7 6.2.8-4.6 4.3 1.2 6.1L12 16.7 6.5 19.7l1.2-6.1L3.1 9.3l6.2-.8z"/></symbol>
   <symbol id="i-out" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M7 17L17 7M9 7h8v8"/></symbol>
 </defs></svg>
 <div class="bg"></div>
@@ -193,11 +219,13 @@
     <div class="pill"><svg><use href="#i-coin"/></svg><span id="a-pts">0</span></div>
   </div>
   <div id="v-home" class="view on"></div>
+  <div id="v-tasks" class="view"></div>
   <div id="v-earn" class="view"></div>
   <div id="v-invite" class="view"></div>
   <div id="v-wallet" class="view"></div>
   <div class="nav"><div class="bar2">
     <button data-tab="home" class="on"><svg class="i"><use href="#i-home"/></svg>Home</button>
+    <button data-tab="tasks"><svg class="i"><use href="#i-task"/></svg>Tasks</button>
     <button data-tab="earn"><svg class="i"><use href="#i-play"/></svg>Earn</button>
     <button data-tab="invite"><svg class="i"><use href="#i-users"/></svg>Invite</button>
     <button data-tab="wallet"><svg class="i"><use href="#i-wallet"/></svg>Wallet</button>
@@ -352,11 +380,12 @@
     auth: 'Open this app from Telegram.', disabled: 'Rewards are paused right now.', cap: 'Daily ad limit reached. Come back tomorrow.',
     cooldown: 'Please wait before the next ad.', no_ads: 'No ads available right now.', too_fast: 'Please watch the ad fully.', invalid: 'Session expired, try again.',
     done: 'Already claimed today.', bad_upi: 'Enter a valid UPI ID (name@bank).', min: 'Amount is below the minimum.', balance: 'Not enough balance.',
-    pending_limit: 'You already have 2 pending requests.', banned: 'Your account is restricted.', server: 'Server error, try again.', expired: 'Session expired, try again.'
+    pending_limit: 'You already have 2 pending requests.', not_joined: 'Join the channel first, then tap Verify.', verify_failed: 'Could not verify right now. Try again shortly.', banned: 'Your account is restricted.', server: 'Server error, try again.', expired: 'Session expired, try again.'
   };
 
   async function boot() {
     $('app').classList.remove('hidden');
+    $('v-home').innerHTML = '<div class="skel" style="height:170px"></div><div class="skel" style="height:90px"></div><div class="skel" style="height:200px"></div>';
     if (!initData) { $('v-home').innerHTML = '<div class="sec"><h3>Open from Telegram</h3><p class="d">This app works inside Telegram. Open it from the bot.</p></div>'; return; }
     let res = null, fault = null;
     try { res = await post('/api/sync/me', { start_param: (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || '' }); } catch (e) { fault = e; }
@@ -368,6 +397,7 @@
     document.querySelectorAll('.nav button').forEach((b) => { b.onclick = () => { tap(); go(b.dataset.tab); }; });
     renderTop(); go('home');
     post('/api/sync/leaderboard').then((r) => { if (r.ok) { S.top = r.top; if (S.tab === 'home') renderHome(); } });
+    loadPayouts(); loadTasks();
     setInterval(tick, 1000);
   }
   function renderTop() {
@@ -376,33 +406,86 @@
   function go(tab) {
     S.tab = tab;
     document.querySelectorAll('.nav button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
-    ['home', 'earn', 'invite', 'wallet'].forEach((t) => $('v-' + t).classList.toggle('on', t === tab));
-    ({ home: renderHome, earn: renderEarn, invite: renderInvite, wallet: renderWallet })[tab]();
+    ['home', 'tasks', 'earn', 'invite', 'wallet'].forEach((t) => $('v-' + t).classList.toggle('on', t === tab));
+    ({ home: renderHome, tasks: renderTasks, earn: renderEarn, invite: renderInvite, wallet: renderWallet })[tab]();
     window.scrollTo(0, 0);
   }
-  function setMe(me) { S.me = me; renderTop(); if (S.tab === 'home') renderHome(); if (S.tab === 'earn') renderEarn(); if (S.tab === 'wallet') renderWallet(); if (S.tab === 'invite') renderInvite(); }
+  function setMe(me) { S.me = me; renderTop(); if (S.tab === 'home') renderHome(); if (S.tab === 'earn') renderEarn(); if (S.tab === 'wallet') renderWallet(); if (S.tab === 'invite') renderInvite(); if (S.tab === 'tasks') renderTasks(); }
+
+  const LEVELS = [[0, 'Starter'], [500, 'Explorer'], [2500, 'Pro'], [10000, 'Elite']];
+  function level(earned) { let i = 0; LEVELS.forEach((l, k) => { if (earned >= l[0]) i = k; }); const nxt = LEVELS[i + 1]; return { name: LEVELS[i][1], next: nxt ? nxt[0] - earned : 0 }; }
+  function countUp(el, to) {
+    if (!el) return; const from = parseInt((el.dataset.v || '0'), 10) || 0; el.dataset.v = to;
+    if (from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = fmt(to); return; }
+    const t0 = performance.now(), dur = 700;
+    (function step(t) { const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(Math.round(from + (to - from) * e)); if (k < 1) requestAnimationFrame(step); })(t0);
+  }
+  function aboutHTML() {
+    const c = S.cfg;
+    return '<div class="sec"><h3>About Senpai Sync</h3><p class="d">Simple answers about how rewards work.</p>' +
+      '<details class="faq"><summary>How do I earn points?</summary><p>Claim the daily check-in, complete channel tasks, invite friends, or optionally watch a short video ad on the Earn tab. Points are added automatically after the action is verified.</p></details>' +
+      '<details class="faq"><summary>Are ads required?</summary><p>No. Check-in, tasks, invites, the leaderboard and your wallet all work without watching any ad. Ads appear only when you tap Watch ad on the Earn tab, and give ' + c.ad_reward + ' SP each.</p></details>' +
+      '<details class="faq"><summary>How do withdrawals work?</summary><p>' + c.points_per_inr + ' SP = Rs 1. Minimum withdrawal is Rs ' + c.min_withdraw + '. Requests are reviewed manually and paid by UPI. Verified payments are listed on the Wallet tab.</p></details>' +
+      '<details class="faq"><summary>What data do you store?</summary><p>Only your Telegram ID, display name, profile picture link, points and activity history. No phone number, no password. Your UPI ID is stored only when you request a withdrawal.</p></details>' +
+      '<details class="faq"><summary>Why can a payout be rejected?</summary><p>Requests can be rejected for fake accounts, automated activity or other fraudulent behaviour. Rejected requests are refunded to your balance.</p></details></div>';
+  }
+  function proofHTML(limit) {
+    const P = S.pay; if (!P) return '<div class="skel" style="height:90px"></div>';
+    let rows = '';
+    (P.items || []).slice(0, limit || 15).forEach((r) => { rows += '<div class="proof"><div class="ic">' + icon('i-check') + '</div><div class="mid">' + esc(r.who) + '<small>' + ago(r.ts) + (r.ref ? ' &middot; ref ...' + esc(r.ref) : '') + '</small></div><div class="amt">Rs ' + r.inr + '</div></div>'; });
+    return '<div class="sumline"><div><b>Rs ' + fmt(P.total) + '</b><span>Total paid</span></div><div><b>' + fmt(P.count) + '</b><span>Payments</span></div></div>' + (rows || '<div class="empty">No payments yet. Verified payouts will appear here.</div>');
+  }
+  async function loadPayouts() { const r = await post('/api/sync/payouts').catch(() => null); if (r && r.ok) { S.pay = r; if (S.tab === 'home') renderHome(); if (S.tab === 'wallet') renderWallet(); } }
 
   function renderHome() {
-    const m = S.me, c = S.cfg;
+    const m = S.me, c = S.cfg, lv = level(m.earned || 0);
     const streak = m.streak || 0, dayIdx = m.can_checkin ? (streak % 7) : ((streak - 1 + 7) % 7);
     let days = '';
     for (let i = 0; i < 7; i++) {
       const done = m.can_checkin ? i < (streak % 7) : i <= dayIdx; const today = i === (m.can_checkin ? streak % 7 : dayIdx);
       days += '<div class="day' + (done ? ' done' : '') + (today && m.can_checkin ? ' today' : '') + '"><b>' + (done ? icon('i-check', '').replace('<svg', '<svg width="14" height="14"') : (i + 1)) + '</b>Day</div>';
     }
-    const pct = Math.min(100, Math.round(100 * m.ads_today / Math.max(1, m.ads_cap)));
     let lb = '';
     if (S.top && S.top.length) S.top.forEach((r, i) => { lb += '<div class="lb' + (r.me ? ' me' : '') + '"><div class="rk' + (i < 3 ? ' top3' : '') + '">' + (i + 1) + '</div><div class="ava">' + avaHTML(r.name, r.photo, 14) + '</div><div class="nm">' + esc(r.name) + '</div><div class="pt">' + fmt(r.earned) + ' SP</div></div>'; });
     else lb = '<div class="empty">No entries yet.</div>';
     $('v-home').innerHTML =
-      '<div class="hero"><small>Sync Points</small><div class="num">' + fmt(m.points) + '</div><div class="inr">approx. Rs ' + m.inr.toFixed(2) + '</div>' +
+      '<div class="hero"><small>Sync Points</small><div class="num" id="h-num" data-v="' + (S._shown || 0) + '">' + fmt(S._shown || 0) + '</div><div class="inr">approx. Rs ' + m.inr.toFixed(2) + '</div>' +
+      '<span class="lvl">' + icon('i-star', '') + esc(lv.name) + (lv.next ? ' &middot; ' + fmt(lv.next) + ' SP to next' : ' &middot; max level') + '</span>' +
       '<div class="acts"><button class="btn sm" data-go="earn">' + icon('i-play') + 'Earn</button><button class="btn sm" data-go="wallet">' + icon('i-out') + 'Withdraw</button></div></div>' +
+      '<div class="mini3"><div><b>' + streak + '</b><span>Day streak</span></div><div><b>' + m.ads_today + '/' + m.ads_cap + '</b><span>Ads today</span></div><div><b>' + m.ref.count + '</b><span>Friends</span></div></div>' +
       '<div class="sec"><h3>Daily check-in</h3><p class="d">Come back every day. Your streak adds a small bonus.</p><div class="days">' + days + '</div>' +
       '<button class="btn" id="b-checkin"' + (m.can_checkin ? '' : ' disabled') + '>' + icon('i-gift') + '<span>' + (m.can_checkin ? 'Claim today\'s bonus' : 'Claimed for today') + '</span></button></div>' +
-      '<div class="sec"><h3>Today\'s ads</h3><p class="d">Watch short video ads and earn ' + c.ad_reward + ' SP each.</p><div class="bar"><i style="width:' + pct + '%"></i></div>' +
-      '<div class="kv"><span>Watched today</span><b>' + m.ads_today + ' / ' + m.ads_cap + '</b></div></div>' +
-      '<div class="sec"><h3>Top earners</h3><p class="d">All-time points earned.</p>' + lb + '</div>';
+      '<div class="sec"><h3>Payment proof</h3><p class="d">Recent verified payouts to members.</p>' + proofHTML(3) +
+      '<button class="btn alt" data-go="wallet" style="margin-top:12px">' + icon('i-wallet') + '<span>See all payments</span></button></div>' +
+      '<div class="sec"><h3>Top earners</h3><p class="d">All-time points earned.</p>' + lb + '</div>' + aboutHTML();
     bindActions($('v-home'));
+    countUp($('h-num'), m.points); S._shown = m.points;
+  }
+
+  /* ───── Tasks ───── */
+  async function loadTasks() { const r = await post('/api/sync/tasks').catch(() => null); if (r && r.ok) { S.tasks = r.tasks; if (S.tab === 'tasks') renderTasks(); } }
+  function openLink(u) { try { if (tg && tg.openTelegramLink && /^https:\/\/t\.me\//.test(u)) tg.openTelegramLink(u); else window.open(u, '_blank'); } catch (e) { window.open(u, '_blank'); } }
+  function renderTasks() {
+    if (!S.tasks) { $('v-tasks').innerHTML = '<div class="skel" style="height:220px"></div>'; loadTasks(); return; }
+    let rows = '';
+    S.tasks.forEach((t) => {
+      rows += '<div class="task"><div class="ic">' + icon('i-users') + '</div><div class="mid"><b>' + esc(t.title) + '</b><small>+' + t.reward + ' SP</small></div>' +
+        (t.done ? '<span class="tag ok">DONE</span>' : '<div class="go"><button class="btn sm alt" data-open="' + esc(t.url) + '">Open</button><button class="btn sm" data-claim="' + esc(t.id) + '">Verify</button></div>') + '</div>';
+    });
+    $('v-tasks').innerHTML = '<div class="sec"><h3>Channel tasks</h3><p class="d">Join the channel, then tap Verify. Points are added once membership is confirmed.</p>' +
+      (rows || '<div class="empty">No tasks available right now. Check back soon.</div>') + '</div>' +
+      '<p class="note">Tasks are optional. Leaving a channel later does not remove points already earned.</p>';
+    $('v-tasks').querySelectorAll('[data-open]').forEach((b) => { b.onclick = () => { tap(); openLink(b.dataset.open); }; });
+    $('v-tasks').querySelectorAll('[data-claim]').forEach((b) => { b.onclick = () => claimTask(b); });
+  }
+  async function claimTask(b) {
+    if (S.busy) return; S.busy = true; tap(); const old = b.innerHTML; b.disabled = true; b.innerHTML = '<div class="spin"></div>';
+    try {
+      const r = await post('/api/sync/task_claim', { id: b.dataset.claim });
+      if (r.ok) { haptic('success'); toast('+' + r.reward + ' SP task completed', 'good'); const t = (S.tasks || []).find((x) => x.id === b.dataset.claim); if (t) t.done = true; S.busy = false; setMe(r.me); return; }
+      toast(ERR_MSG[r.error] || 'Could not verify.', 'bad'); haptic('warning');
+    } catch (e) { toast('Network error', 'bad'); }
+    S.busy = false; b.disabled = false; b.innerHTML = old;
   }
 
   function renderEarn() {
@@ -460,7 +543,7 @@
     const r = await post('/api/sync/history').catch(() => null);
     if (r && r.ok) { S.hist = r.history; S.wds = r.withdrawals; if (S.tab === 'wallet') renderWallet(); }
   }
-  const TXI = { ad: 'i-play', checkin: 'i-gift', referral: 'i-users', welcome: 'i-gift', withdraw: 'i-out', refund: 'i-coin' };
+  const TXI = { ad: 'i-play', checkin: 'i-gift', referral: 'i-users', welcome: 'i-gift', withdraw: 'i-out', refund: 'i-coin', task: 'i-task' };
   function ago(iso) { const s = Math.max(1, (Date.now() - new Date(iso).getTime()) / 1000); if (s < 3600) return Math.floor(s / 60) + 'm ago'; if (s < 86400) return Math.floor(s / 3600) + 'h ago'; return Math.floor(s / 86400) + 'd ago'; }
   function renderWallet() {
     const m = S.me, c = S.cfg; if (!S.hist) loadHistory();
@@ -476,6 +559,7 @@
       '<label class="f">Amount (Rs)</label><input class="in" id="w-amt" type="number" inputmode="numeric" min="' + c.min_withdraw + '" placeholder="' + c.min_withdraw + '">' +
       '<button class="btn" id="b-wd"' + (enough ? '' : ' disabled') + '>' + icon('i-out') + '<span>' + (enough ? 'Request withdrawal' : 'Reach ' + fmt(need) + ' SP to withdraw') + '</span></button><div class="msg" id="w-msg"></div></div>' +
       (wds ? '<div class="sec"><h3>Withdrawal requests</h3>' + wds + '</div>' : '') +
+      '<div class="sec"><h3>Payment proof</h3><p class="d">Verified payouts to members (names are masked).</p>' + proofHTML(15) + '</div>' +
       '<div class="sec"><h3>Activity</h3>' + (hist || '<div class="empty">No activity yet.</div>') + '</div>' +
       '<p class="note">Rewards depend on ad availability and may change. Payout requests are verified manually and can be rejected for suspicious or fraudulent activity.</p>';
     const b = $('b-wd'); if (b) b.onclick = withdraw;
@@ -503,7 +587,10 @@
   }
 
   /* ════════════════════════ ENTRY ════════════════════════ */
-  if (token) startGate(); else boot();
+  const MODE = window.SYNC_MODE || 'both';
+  if (token && MODE !== 'home') startGate();
+  else if (MODE === 'gate') { $('app').classList.remove('hidden'); $('v-home').innerHTML = '<div class="sec"><h3>Open from the bot</h3><p class="d">This page unlocks a channel link. Open it from the button in the bot chat.</p></div>'; document.querySelector('.nav').classList.add('hidden'); }
+  else boot();
 })();
 </script>
 </body>
