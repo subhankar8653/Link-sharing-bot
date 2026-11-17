@@ -61,13 +61,14 @@ async def sync_ready() -> bool:
 
 
 async def sync_enabled_and_url() -> str:
-    """Enabled + URL ho toh URL return, warna ''."""
+    """Senpai Sync (Home app) ON + https URL ho toh URL. Home URL alag set ho sakta hai
+    (sync_app_url), warna Mini App URL. Alag URL = Adsgram ke liye Home-only app, gate alag."""
     from plugins.miniapp import get_miniapp_settings
+    cfg = await _get_bot_config()
     st = await get_sync_settings()
     ms = await get_miniapp_settings()
-    if st["enabled"] and ms["url"].startswith("https://"):
-        return ms["url"]
-    return ""
+    url = (cfg.get("sync_app_url") or ms["url"] or "").rstrip("/")
+    return url if (st["enabled"] and url.startswith("https://")) else ""
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -355,9 +356,80 @@ async def notify_admin_withdrawal(bot, wd_id: str, wd: dict) -> None:
         logger.warning(f"withdraw admin notify failed: {e}")
 
 
+async def act_tasks(tg: dict, body: dict, bot) -> dict:
+    """Channel-join tasks (bot membership verify karta hai)."""
+    uid = int(tg["id"])
+    await register_user(tg)
+    rows = await _col("sync_tasks").find({"active": True}).sort("created", 1).limit(30).to_list(30)
+    done = set()
+    async for d in _col("sync_task_done").find({"uid": uid}):
+        done.add(d["task_id"])
+    return {"ok": True, "tasks": [
+        {"id": str(r["_id"]), "title": r["title"], "reward": r["reward"], "url": r["url"],
+         "done": str(r["_id"]) in done} for r in rows]}
+
+
+async def act_task_claim(tg: dict, body: dict, bot) -> dict:
+    from bson import ObjectId
+    from pymongo.errors import DuplicateKeyError
+    st = await get_sync_settings()
+    uid = int(tg["id"])
+    await register_user(tg)
+    tid = str(body.get("id", ""))[:40]
+    try:
+        oid = ObjectId(tid)
+    except Exception:
+        return {"ok": False, "error": "invalid"}
+    task = await _col("sync_tasks").find_one({"_id": oid, "active": True})
+    if not task:
+        return {"ok": False, "error": "invalid"}
+    if await _col("sync_task_done").find_one({"_id": f"{uid}:{tid}"}):
+        return {"ok": False, "error": "done"}
+    try:
+        m = await bot.get_chat_member(task["channel_id"], uid)
+        name = getattr(m.status, "name", str(m.status)).upper()
+        joined = name in ("MEMBER", "ADMINISTRATOR", "OWNER") or (name == "RESTRICTED" and getattr(m, "is_member", False))
+    except Exception as e:
+        if type(e).__name__ == "UserNotParticipant":
+            joined = False
+        else:
+            logger.warning(f"task verify failed ({task['channel_id']}): {e}")
+            return {"ok": False, "error": "verify_failed"}
+    if not joined:
+        return {"ok": False, "error": "not_joined"}
+    try:
+        await _col("sync_task_done").insert_one({"_id": f"{uid}:{tid}", "uid": uid, "task_id": tid,
+                                                 "ts": datetime.datetime.utcnow()})
+    except DuplicateKeyError:
+        return {"ok": False, "error": "done"}
+    await _col("sync_users").update_one({"_id": uid}, {"$inc": {"points": task["reward"], "earned": task["reward"]}})
+    await _tx(uid, "task", task["reward"], f"Task: {task['title']}")
+    u = await _col("sync_users").find_one({"_id": uid})
+    return {"ok": True, "reward": task["reward"],
+            "me": _profile(u, st, getattr(bot, "username", ""), _cooldown_left(u, st))}
+
+
+def _mask(name: str) -> str:
+    n = (name or "User").strip()
+    return (n[0] + "***" + (n[-1] if len(n) > 2 else "")).strip()
+
+
+async def act_payouts(tg: dict, body: dict, bot) -> dict:
+    """Public payout proof: asli 'paid' withdrawals (naam masked)."""
+    rows = await _col("sync_withdrawals").find({"status": "paid"}).sort("decided", -1).limit(15).to_list(15)
+    cnt = tot = 0
+    async for r in _col("sync_withdrawals").aggregate(
+            [{"$match": {"status": "paid"}}, {"$group": {"_id": None, "c": {"$sum": 1}, "t": {"$sum": "$inr"}}}]):
+        cnt, tot = r["c"], r["t"]
+    return {"ok": True, "count": cnt, "total": tot, "items": [
+        {"who": _mask(r.get("name", "")), "inr": r["inr"], "ref": (r.get("ref") or "")[-4:],
+         "ts": (r.get("decided") or r["created"]).isoformat() + "Z"} for r in rows]}
+
+
 ACTIONS = {
     "me": act_me, "ad_start": act_ad_start, "ad_claim": act_ad_claim, "checkin": act_checkin,
     "history": act_history, "leaderboard": act_leaderboard, "withdraw": act_withdraw,
+    "tasks": act_tasks, "task_claim": act_task_claim, "payouts": act_payouts,
 }
 
 

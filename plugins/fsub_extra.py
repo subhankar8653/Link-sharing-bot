@@ -116,28 +116,50 @@ _REAL_TTL = 20
 
 async def get_real_stats(client, cid: int, force: bool = False) -> dict:
     """
-    Telegram invite-link ke ASLI numbers (jo Invite Links screen mein dikhte hain):
-      pending  = abhi pending join requests (is link se)
-      joined   = is link se join hue members
-      requests = pending + joined  (is link se aaye total requests)
-    Link na ho (public username channel) ya API fail ho toh bot ke DB counters (source="db").
+    Telegram ke ASLI numbers (Invite Links screen jaise), 3 tarike se (pehla jo chale):
+      1. "telegram": bot ke banaye invite link ki info  -> pending (requested) + joined (usage)
+      2. "channel" : channel ke pending join requests (poore channel ke, sab links ko milake)
+      3. "db"      : bot ka apna counter (drift karta hai) — sirf last fallback
+    result["why"] mein fail hone ki wajah (admin ko list mein dikhti hai).
     """
     c = _REAL_CACHE.get(cid)
     if c and not force and time.time() - c[0] < _REAL_TTL:
         return c[1]
-    res = None
+    res, why = None, ""
     try:
+        from pyrogram import raw
+        peer = await client.resolve_peer(cid)
+        # (1) bot ka invite link -> usage / requested
         cached = await Seishiro.get_current_invite_link(cid)
         if cached and cached.get("invite_link"):
-            li = await client.get_chat_invite_link(cid, cached["invite_link"])
-            pending = int(getattr(li, "pending_join_request_count", 0) or 0)
-            joined = int(getattr(li, "member_count", 0) or 0)
-            res = {"joined": joined, "pending": pending, "requests": pending + joined, "source": "telegram"}
+            try:
+                r = await client.invoke(raw.functions.messages.GetExportedChatInvite(peer=peer, link=cached["invite_link"]))
+                inv = r.invite
+                pending = int(getattr(inv, "requested", 0) or 0)
+                joined = int(getattr(inv, "usage", 0) or 0)
+                res = {"joined": joined, "pending": pending, "requests": pending + joined, "source": "telegram"}
+            except Exception as e:
+                why = type(e).__name__
+                logger.warning(f"real stats (invite) failed ({cid}): {e}")
+        else:
+            why = "no link yet"
+        # (2) channel-level pending requests
+        if res is None:
+            try:
+                full = await client.invoke(raw.functions.channels.GetFullChannel(channel=peer))
+                pending = int(getattr(full.full_chat, "requests_pending", 0) or 0)
+                st = await Seishiro.get_fsub_stats(cid)
+                res = {"joined": st["join_count"], "pending": pending, "requests": pending, "source": "channel"}
+            except Exception as e:
+                why = (why + " / " if why else "") + type(e).__name__
+                logger.warning(f"real stats (channel) failed ({cid}): {e}")
     except Exception as e:
+        why = type(e).__name__
         logger.warning(f"real stats failed ({cid}): {e}")
     if res is None:
         st = await Seishiro.get_fsub_stats(cid)
         res = {"joined": st["join_count"], "pending": None, "requests": st["request_count"], "source": "db"}
+    res["why"] = why
     _REAL_CACHE[cid] = (time.time(), res)
     return res
 

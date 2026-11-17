@@ -851,10 +851,15 @@ async def settings_callback(client: Bot, callback_query):
                                 f"    👥 Jᴏɪɴᴇᴅ: <b>{stats['joined']}</b> | "
                                 f"📥 Rᴇǫᴜᴇsᴛs: <b>{stats['pending']}</b> (pending)\n\n"
                             )
+                        elif stats["source"] == "channel":
+                            fsub_list += (
+                                f"    📥 Pᴇɴᴅɪɴɢ Rᴇǫᴜᴇsᴛs: <b>{stats['pending']}</b> (channel)\n\n"
+                            )
                         else:
                             fsub_list += (
                                 f"    👥 Jᴏɪɴᴇᴅ: <b>~{stats['joined']}</b> | "
-                                f"📥 Rᴇǫᴜᴇsᴛs: <b>~{stats['requests']}</b> (bot counter)\n\n"
+                                f"📥 Rᴇǫᴜᴇsᴛs: <b>~{stats['requests']}</b> (bot counter"
+                                + (f" - {stats['why']}" if stats.get('why') else "") + ")\n\n"
                             )
                         
                     except Exception as e:

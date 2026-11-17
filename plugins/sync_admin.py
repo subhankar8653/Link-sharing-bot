@@ -22,7 +22,7 @@ from pyrogram.types import (
 from bot import Bot
 from config import OWNER_ID
 from database.database import Seishiro
-from plugins.premium import _set_bot_config
+from plugins.premium import _set_bot_config, _get_bot_config
 from plugins.sync_app import SYNC_SETTINGS, get_sync_settings, sync_stats, _col, _tx
 
 logger = logging.getLogger(__name__)
@@ -32,11 +32,12 @@ async def _admin_ok(uid: int) -> bool:
     return uid == OWNER_ID or await Seishiro.is_admin(uid)
 
 
-def _menu_text(st: dict) -> str:
+def _menu_text(st: dict, home_url: str = "") -> str:
     lines = "\n".join(f"• {SYNC_SETTINGS[k][1]}: <b>{st[k]}</b>" for k in SYNC_SETTINGS)
     return (
         "<b>Senpai Sync Menu</b>\n\n"
-        f"• Status: <b>{'ON' if st['enabled'] else 'OFF'}</b>\n{lines}\n\n"
+        f"• Status: <b>{'ON' if st['enabled'] else 'OFF'}</b>\n{lines}\n"
+        f"• Home URL: <code>{home_url or 'same as Mini App URL'}</code>\n\n"
         "<i>SP = Sync Points. Rs value = points / Points per Rs.</i>"
     )
 
@@ -47,6 +48,8 @@ def _menu_kb(st: dict) -> InlineKeyboardMarkup:
     for i in range(0, len(keys), 2):
         rows.append([InlineKeyboardButton(SYNC_SETTINGS[k][1].split(" (")[0], callback_data=f"sync_set:{k}")
                      for k in keys[i:i + 2]])
+    rows.append([InlineKeyboardButton("Tasks", callback_data="sync_tasks"),
+                 InlineKeyboardButton("Home URL", callback_data="sync_url")])
     rows.append([InlineKeyboardButton("Withdrawals", callback_data="sync_wd"),
                  InlineKeyboardButton("Stats", callback_data="sync_stats")])
     rows.append([InlineKeyboardButton("back", callback_data="settings_main")])
@@ -55,7 +58,8 @@ def _menu_kb(st: dict) -> InlineKeyboardMarkup:
 
 async def _show_menu(msg):
     st = await get_sync_settings()
-    await msg.edit_text(_menu_text(st), reply_markup=_menu_kb(st))
+    cfg = await _get_bot_config()
+    await msg.edit_text(_menu_text(st, cfg.get("sync_app_url", "")), reply_markup=_menu_kb(st))
 
 
 @Bot.on_message(filters.command("sync") & filters.private)
@@ -63,7 +67,8 @@ async def cmd_sync(client: Bot, msg: Message):
     if not await _admin_ok(msg.from_user.id):
         return await msg.reply("Only admins can use this.")
     st = await get_sync_settings()
-    await msg.reply(_menu_text(st), reply_markup=_menu_kb(st))
+    cfg = await _get_bot_config()
+    await msg.reply(_menu_text(st, cfg.get("sync_app_url", "")), reply_markup=_menu_kb(st))
 
 
 @Bot.on_callback_query(filters.regex(r"^sync_"), group=-1)
@@ -109,6 +114,110 @@ async def sync_callbacks(client: Bot, cq: CallbackQuery):
                 elif txt.lower() != "/cancel":
                     await cq.message.reply(f"Number {lo} se {hi} ke beech hona chahiye.")
             await _show_menu(cq.message)
+
+        elif cmd == "sync_url":
+            cfg = await _get_bot_config()
+            await cq.message.edit_text(
+                "<b>Home App URL</b>\n\n"
+                f"Abhi: <code>{cfg.get('sync_app_url') or 'same as Mini App URL'}</code>\n\n"
+                "Senpai Sync (Home app) ke liye alag https URL bhejo — jaise Adsgram ke liye alag Vercel project "
+                "(SYNC_MODE=home). Link-unlock gate apne Mini App URL par rahega.\n"
+                "<code>-</code> bhejo = Mini App URL hi use karo.\n<i>/cancel — cancel</i>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("back", callback_data="sync_menu")]]),
+            )
+            try:
+                resp = await client.listen(chat_id=cq.message.chat.id, timeout=300)
+            except Exception:
+                resp = None
+            if resp:
+                txt = (resp.text or "").strip()
+                try:
+                    await resp.delete()
+                except Exception:
+                    pass
+                if txt == "-":
+                    await _set_bot_config("sync_app_url", "")
+                elif txt.startswith("https://"):
+                    await _set_bot_config("sync_app_url", txt.split()[0].rstrip("/"))
+                elif txt.lower() != "/cancel":
+                    await cq.message.reply("URL https:// se shuru hona chahiye.")
+            await _show_menu(cq.message)
+
+        elif cmd == "sync_tasks":
+            rows = await _col("sync_tasks").find({}).sort("created", 1).limit(20).to_list(20)
+            kb = [[InlineKeyboardButton(f"{'ON' if r.get('active') else 'OFF'} | {r['title'][:22]} | {r['reward']} SP",
+                                        callback_data=f"sync_taskv:{r['_id']}")] for r in rows]
+            kb.append([InlineKeyboardButton("Add Task", callback_data="sync_taskadd")])
+            kb.append([InlineKeyboardButton("back", callback_data="sync_menu")])
+            await cq.message.edit_text(
+                "<b>Channel Tasks</b>\n\nUser channel join karta hai, bot membership verify karke points deta hai. "
+                "Bot ko us channel mein <b>admin</b> hona chahiye.",
+                reply_markup=InlineKeyboardMarkup(kb))
+
+        elif cmd == "sync_taskv":
+            r = await _col("sync_tasks").find_one({"_id": ObjectId(parts[1])})
+            if not r:
+                await cq.answer("Nahi mila", show_alert=True)
+                raise StopPropagation
+            await cq.message.edit_text(
+                f"<b>{r['title']}</b>\n\n<blockquote>Channel: <code>{r['channel_id']}</code>\n"
+                f"Reward: {r['reward']} SP\nLink: {r['url']}\nStatus: {'ON' if r.get('active') else 'OFF'}</blockquote>",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Turn OFF" if r.get("active") else "Turn ON", callback_data=f"sync_taskon:{r['_id']}"),
+                     InlineKeyboardButton("Delete", callback_data=f"sync_taskdel:{r['_id']}")],
+                    [InlineKeyboardButton("back", callback_data="sync_tasks")]]))
+
+        elif cmd == "sync_taskon":
+            r = await _col("sync_tasks").find_one({"_id": ObjectId(parts[1])})
+            if r:
+                await _col("sync_tasks").update_one({"_id": r["_id"]}, {"$set": {"active": not r.get("active")}})
+            cq.data = f"sync_taskv:{parts[1]}"
+            await sync_callbacks(client, cq)
+
+        elif cmd == "sync_taskdel":
+            await _col("sync_tasks").delete_one({"_id": ObjectId(parts[1])})
+            await cq.answer("Deleted")
+            cq.data = "sync_tasks"
+            await sync_callbacks(client, cq)
+
+        elif cmd == "sync_taskadd":
+            await cq.message.edit_text(
+                "<b>Add Task</b>\n\nFormat: <code>channel_id reward title</code>\n"
+                "Example: <code>-1001234567890 5 Join Anime Hub</code>\n\n"
+                "Bot us channel mein admin ho. Link khud ban jayega.\n<i>/cancel — cancel</i>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("back", callback_data="sync_tasks")]]))
+            try:
+                resp = await client.listen(chat_id=cq.message.chat.id, timeout=300)
+            except Exception:
+                resp = None
+            if resp:
+                txt = (resp.text or "").strip()
+                try:
+                    await resp.delete()
+                except Exception:
+                    pass
+                p = txt.split(None, 2)
+                if txt.lower() == "/cancel":
+                    pass
+                elif len(p) < 3 or not p[0].lstrip("-").isdigit() or not p[1].isdigit() or not (1 <= int(p[1]) <= 10000):
+                    await cq.message.reply("Format galat. Example: -1001234567890 5 Join Anime Hub")
+                else:
+                    cid, reward, title = int(p[0]), int(p[1]), p[2].strip()[:40]
+                    try:
+                        chat = await client.get_chat(cid)
+                        me = await client.get_chat_member(cid, "me")
+                        if getattr(me.status, "name", "").upper() not in ("ADMINISTRATOR", "OWNER"):
+                            raise ValueError("Bot us channel mein admin nahi hai")
+                        url = f"https://t.me/{chat.username}" if chat.username else (
+                            await client.create_chat_invite_link(cid, name="Senpai Sync task")).invite_link
+                        await _col("sync_tasks").insert_one({
+                            "title": title, "channel_id": cid, "reward": reward, "url": url,
+                            "active": True, "created": datetime.datetime.utcnow()})
+                        await cq.message.reply(f"Task added: <b>{title}</b> ({reward} SP)")
+                    except Exception as e:
+                        await cq.message.reply(f"Task add nahi hua: <code>{str(e)[:150]}</code>")
+            cq.data = "sync_tasks"
+            await sync_callbacks(client, cq)
 
         elif cmd == "sync_stats":
             s = await sync_stats()
@@ -198,6 +307,21 @@ async def withdrawal_decision(client: Bot, cq: CallbackQuery):
         except Exception:
             pass
         await cq.answer("Marked paid" if approve else "Rejected and refunded", show_alert=True)
+        if approve:
+            # Payout proof ke liye payment reference (UTR) — public list mein sirf last 4 digits dikhte hain
+            try:
+                ask = await cq.message.reply("Payment reference / UTR bhejo (ya /skip):")
+                resp = await client.listen(chat_id=cq.message.chat.id, timeout=180)
+                ref = (resp.text or "").strip()
+                if ref and ref.lower() != "/skip":
+                    await _col("sync_withdrawals").update_one({"_id": wd["_id"]}, {"$set": {"ref": ref[:40]}})
+                for x in (resp, ask):
+                    try:
+                        await x.delete()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         try:
             await cq.message.edit_text(
                 f"<b>Withdrawal {'PAID' if approve else 'REJECTED'}</b>\n\n"

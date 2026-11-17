@@ -177,7 +177,7 @@ async def api_mini_complete(request):
 @routes.get("/config.js")
 async def miniapp_config_js(request):
     # Railway se serve hone par API same origin hai. Vercel par is file ko apne Railway URL se badlo.
-    return web.Response(text='window.SYNC_API = "";', content_type="application/javascript",
+    return web.Response(text='window.SYNC_API = ""; window.SYNC_MODE = "both";', content_type="application/javascript",
                         headers={"Cache-Control": "no-store"})
 
 

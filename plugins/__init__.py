@@ -15,10 +15,12 @@ async def _allowed_origins() -> set:
     allowed = {o.strip().rstrip("/") for o in os.environ.get("MINIAPP_ORIGINS", "").split(",") if o.strip()}
     try:
         from plugins.miniapp import get_miniapp_settings
-        url = (await get_miniapp_settings())["url"]
-        if url:
-            p = urlparse(url)
-            allowed.add(f"{p.scheme}://{p.netloc}")
+        from plugins.premium import _get_bot_config
+        cfg = await _get_bot_config()
+        for url in ((await get_miniapp_settings())["url"], cfg.get("sync_app_url", "")):
+            if url:
+                p = urlparse(url)
+                allowed.add(f"{p.scheme}://{p.netloc}")
     except Exception:
         pass
     _ORIGINS.update(ts=time.time(), set=allowed)
