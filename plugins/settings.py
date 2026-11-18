@@ -125,6 +125,7 @@ async def settings_command(client: Client, message: Message):
             [InlineKeyboardButton("Bᴀɴ ᴍᴇɴᴜ", callback_data="ban_menu"), InlineKeyboardButton("Fsᴜʙ ᴍᴇɴᴜ", callback_data="fsub_settings_menu")],
             [InlineKeyboardButton("🎬 Mɪɴɪ Aᴘᴘ Mᴇɴᴜ", callback_data="mini_menu"),
              InlineKeyboardButton("Sᴇɴᴘᴀɪ Sʏɴᴄ", callback_data="sync_menu")],
+            [InlineKeyboardButton("🗑 Aᴜᴛᴏ Dᴇʟᴇᴛᴇ", callback_data="autodel_menu")],
             [InlineKeyboardButton("Vɪᴇᴡ sᴛᴀᴛᴜs", callback_data="status")],
             [InlineKeyboardButton("• Cʟᴏsᴇ •", callback_data="close")]
         ])
@@ -154,6 +155,7 @@ async def settings_callback(client: Bot, callback_query):
                 [InlineKeyboardButton("Bᴀɴ ᴍᴇɴᴜ", callback_data="ban_menu"), InlineKeyboardButton("Fsᴜʙ ᴍᴇɴᴜ", callback_data="fsub_settings_menu")],
                 [InlineKeyboardButton("🎬 Mɪɴɪ Aᴘᴘ Mᴇɴᴜ", callback_data="mini_menu"),
                  InlineKeyboardButton("Sᴇɴᴘᴀɪ Sʏɴᴄ", callback_data="sync_menu")],
+                [InlineKeyboardButton("🗑 Aᴜᴛᴏ Dᴇʟᴇᴛᴇ", callback_data="autodel_menu")],
                 [InlineKeyboardButton("Vɪᴇᴡ sᴛᴀᴛᴜs", callback_data="view_status")],
                 [InlineKeyboardButton("• Cʟᴏsᴇ •", callback_data="close")]
             ])

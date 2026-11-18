@@ -351,6 +351,7 @@ async def notify_admin_withdrawal(bot, wd_id: str, wd: dict) -> None:
                 InlineKeyboardButton("Mark Paid", callback_data=f"syncwd_ok:{wd_id}"),
                 InlineKeyboardButton("Reject + Refund", callback_data=f"syncwd_no:{wd_id}"),
             ]]),
+            keep=True,          # admin ki withdrawal request auto-delete nahi hogi
         )
     except Exception as e:
         logger.warning(f"withdraw admin notify failed: {e}")

@@ -203,7 +203,9 @@
   </div>
   <div class="screen" id="g-done">
     <div class="big ok"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
-    <h1>Access unlocked</h1><p class="sub">Your link has been sent to the chat.</p><div class="foot">Closing automatically</div>
+    <h1 id="g-done-t">Access unlocked</h1><p class="sub" id="g-done-d">Your link is ready. It has also been sent to the chat.</p>
+    <button class="btn" id="g-open" style="margin-bottom:10px">Open channel</button>
+    <button class="btn alt" id="g-back">Back to chat</button>
   </div>
   <div class="screen" id="g-err">
     <div class="big bad"><svg><use href="#i-alert"/></svg></div>
@@ -341,7 +343,21 @@
       if (!res.ok) return fail(res.error);
       try { tg && tg.disableClosingConfirmation(); } catch (e) {}
       $('g-badge').className = 'badge done'; $('g-badge').innerHTML = icon('i-unlock', '');
-      show('done'); haptic('success'); setTimeout(closeApp, 2200);
+      const info = res.info || {};
+      const link = info.invite_link || '';
+      if (link) {
+        $('g-open').classList.remove('hidden');
+        $('g-open').onclick = () => { tap(); try { if (tg && tg.openTelegramLink && /^https:\/\/t\.me\//.test(link)) tg.openTelegramLink(link); else window.open(link, '_blank'); } catch (e) { window.open(link, '_blank'); } };
+      } else {
+        // FSub baaki hai: link abhi nahi, pehle chat mein channels join karne hain
+        $('g-open').classList.add('hidden');
+        $('g-done-t').textContent = 'Ads completed';
+        $('g-done-d').textContent = 'One more step: join the required channels in the chat to receive your link.';
+      }
+      $('g-back').onclick = closeApp;
+      show('done'); haptic('success');
+      // Link button dikhana hai toh window khud band nahi hogi
+      if (!link) setTimeout(closeApp, 3500);
     }
     async function play() {
       if (busy) return; busy = true; tap();

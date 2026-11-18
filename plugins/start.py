@@ -558,6 +558,14 @@ def check_fsub(func):
     async def wrapper(client, message, *args, **kwargs):
         uid = message.from_user.id
 
+        # /start premium (text link se) — plans dekhne ke liye FSub nahi
+        try:
+            _c0 = getattr(message, "command", None)
+            if _c0 and _c0[0].lower() == "start" and len(_c0) > 1 and _c0[1] == "premium":
+                return await func(client, message, *args, **kwargs)
+        except Exception:
+            pass
+
         # Senpai Sync ON ho toh plain /start (ya ref link) par FSub nahi — seedha welcome +
         # "Open Senpai Sync" button. FSub sirf channel-link wale /start par lagega.
         try:
@@ -1143,6 +1151,8 @@ async def complete_miniapp_verification(client: Bot, uid: int, token: str, shown
     )
     asyncio.create_task(delete_after_delay(link_msg, 300))
 
+    info["invite_link"] = invite_link      # Mini App ka success screen bhi isi link ka button dikhata hai
+
     # ── Request-mode: approve notification ke liye link save (normal flow jaisa) ──
     if is_request and b64:
         try:
@@ -1179,6 +1189,16 @@ async def start_command(client: Bot, message: Message):
 
     try:
         text = message.text
+
+        # ── /start premium: plans screen ───────────────────────────────
+        if len(text) > 7 and text.split(" ", 1)[1].strip() == "premium":
+            from plugins.premium import _build_plans_ui
+            caption, kb, ui = await _build_plans_ui()
+            try:
+                await message.reply_photo(photo=ui["sub_img"], caption=caption, reply_markup=kb)
+            except Exception:
+                await message.reply_text(caption, reply_markup=kb)
+            return
 
         # ── Referral (/start ref_<uid>): Senpai Sync login + referrer save, phir normal welcome ──
         if len(text) > 7 and text.split(" ", 1)[1].startswith("ref_"):
@@ -1305,15 +1325,17 @@ async def start_command(client: Bot, message: Message):
                     token = secrets.token_urlsafe(12)
                     await Seishiro.create_verify_token(uid, channel_id, token, is_request, b64)
                     web_url = f"{ms['url']}/miniapp?t={token}"
+                    _tut = (await _get_bot_config()).get("miniapp_tutorial")
+                    _rows = [[InlineKeyboardButton("Watch Video Ad", web_app=WebAppInfo(url=web_url))]]
+                    if _tut:
+                        _rows.append([InlineKeyboardButton("How to watch ads", callback_data="ads_tut")])
                     prompt_msg = await message.reply_text(
                         "<b>Your link is ready</b>\n\n"
                         "<blockquote>Tap <b>Watch Video Ad</b>, finish the short ads in the Mini App "
                         "and your channel link will arrive in this chat automatically.\n\n"
-                        "Premium users skip this step.</blockquote>",
-                        reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("Watch Video Ad", web_app=WebAppInfo(url=web_url))],
-                            [InlineKeyboardButton("Buy Premium", callback_data="prem_plans")],
-                        ])
+                        f"<a href=\"https://t.me/{client.username}?start=premium\">Premium</a> users skip this step."
+                        "</blockquote>",
+                        reply_markup=InlineKeyboardMarkup(_rows)
                     )
                     await Seishiro.set_token_prompt(token, prompt_msg.chat.id, prompt_msg.id)
                     return

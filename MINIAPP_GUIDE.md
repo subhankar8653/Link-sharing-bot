@@ -139,3 +139,13 @@ Link aate hi FSub screen / welcome / "Watch Video Ad" wale purane messages delet
 ## FSub counts
 Request OFF channel: private link se **Joined (link)** dikhta hai. Request ON: Joined + Requests (pending).
 Agar Telegram se number na mile toh bracket mein wajah (jaise get:BotMethodInvalid) likhi aati hai.
+
+# v11
+- **Mini App success screen** par ab link ka **Open channel** button bhi aata hai (chat mein bhi link jata hai). FSub baaki ho toh
+  "join the required channels in the chat" dikhta hai.
+- **Premium**: "Your link is ready" message mein alag "Buy Premium" button nahi; text ka **Premium** shabd link hai (t.me/<bot>?start=premium -> plans).
+- **Ads Tutorial**: `/settings` -> Mini App Menu -> **Ads Tutorial** -> Set Video. Set hone par "Watch Video Ad" ke neeche
+  **How to watch ads** button aata hai; set nahi toh button nahi.
+- **Auto Delete (sab bot messages)**: `/settings` -> **Auto Delete** (Off / 2m / 5m / 10m / 30m / 1h / 6h, default 10 min).
+  Bot ka har private-chat message (send_message/photo/video/animation/document) delete queue (MongoDB) mein jata hai, restart ke baad bhi delete hota hai.
+  Exempt: broadcast (copy), group/channel messages, admin ki withdrawal request. Kisi message ko rakhna ho: `keep=True`.

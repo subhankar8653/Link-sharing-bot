@@ -13,6 +13,7 @@ from pyrogram.errors import (
 from pyrogram import raw
 from config import *
 from plugins import web_server
+import autodel
 import pyrogram.utils
 from aiohttp import web
 
@@ -178,12 +179,55 @@ class Bot(Client):
         )
         self.LOGGER = LOGGER
 
+    # ── Auto delete: bot ka har private-chat message queue mein (keep=True se bachega) ──
+    async def send_message(self, chat_id, *args, keep: bool = False, **kwargs):
+        msg = await super().send_message(chat_id, *args, **kwargs)
+        if not keep:
+            await autodel.register(msg)
+        return msg
+
+    async def send_photo(self, chat_id, *args, keep: bool = False, **kwargs):
+        msg = await super().send_photo(chat_id, *args, **kwargs)
+        if not keep:
+            await autodel.register(msg)
+        return msg
+
+    async def send_video(self, chat_id, *args, keep: bool = False, **kwargs):
+        msg = await super().send_video(chat_id, *args, **kwargs)
+        if not keep:
+            await autodel.register(msg)
+        return msg
+
+    async def send_animation(self, chat_id, *args, keep: bool = False, **kwargs):
+        msg = await super().send_animation(chat_id, *args, **kwargs)
+        if not keep:
+            await autodel.register(msg)
+        return msg
+
+    async def send_document(self, chat_id, *args, keep: bool = False, **kwargs):
+        msg = await super().send_document(chat_id, *args, **kwargs)
+        if not keep:
+            await autodel.register(msg)
+        return msg
+
+    async def send_media_group(self, chat_id, *args, keep: bool = False, **kwargs):
+        msgs = await super().send_media_group(chat_id, *args, **kwargs)
+        if not keep:
+            await autodel.register(msgs)
+        return msgs
+
     async def start(self, *args, **kwargs):
         await super().start()
         usr_bot_me = await self.get_me()
         self.uptime = datetime.now()
         self.username = usr_bot_me.username
         logger = self.LOGGER(__name__)
+
+        # Saare bot messages ka auto-delete loop (/settings -> Auto Delete)
+        try:
+            autodel.start(self)
+        except Exception as e:
+            logger.error(f"autodel start failed: {e}")
 
         # FSub auto-remove / request-target / link-rotation maintenance loop
         try:

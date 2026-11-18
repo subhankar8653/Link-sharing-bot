@@ -225,7 +225,8 @@ def _menu_kb(s: dict) -> InlineKeyboardMarkup:
          InlineKeyboardButton("⏳ Min Watch", callback_data="mini_wait")],
         [InlineKeyboardButton("🔀 Link Flow", callback_data="mini_flow"),
          InlineKeyboardButton("📊 Stats", callback_data="mini_stats")],
-        [InlineKeyboardButton("🌐 Set URL", callback_data="mini_url")],
+        [InlineKeyboardButton("🌐 Set URL", callback_data="mini_url"),
+         InlineKeyboardButton("🎓 Ads Tutorial", callback_data="mini_tut")],
         [InlineKeyboardButton("back", callback_data="settings_main")],
     ])
 
@@ -497,6 +498,57 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
             cq.data = "mini_flow"
             await mini_callbacks(client, cq)
 
+        # ── Ads tutorial (user ko "How to watch ads" button) ───────────
+        elif cmd == "mini_tut":
+            cfg = await _get_bot_config()
+            t = cfg.get("miniapp_tutorial")
+            rows = [[InlineKeyboardButton("Replace Video" if t else "Set Video", callback_data="mini_tutset")]]
+            if t:
+                rows.append([InlineKeyboardButton("Remove", callback_data="mini_tutdel")])
+            rows.append(_back())
+            await cq.message.edit_text(
+                "<b>🎓 Ads Tutorial</b>\n\n"
+                f"Status: <b>{'SET (' + t.get('kind', 'video') + ')' if t else 'Not set'}</b>\n\n"
+                "Set hone par user ke <b>Watch Video Ad</b> button ke neeche <b>How to watch ads</b> button aata hai; "
+                "dabane par ye video bheja jata hai (auto-delete ke saath). Set nahi hai toh button nahi dikhta.",
+                reply_markup=InlineKeyboardMarkup(rows))
+
+        elif cmd == "mini_tutset":
+            await cq.message.edit_text(
+                "<b>🎓 Ads Tutorial</b>\n\nTutorial <b>video</b> (ya GIF / document / photo) bhejo.\n<i>/cancel — cancel</i>",
+                reply_markup=InlineKeyboardMarkup([_back("mini_tut")]))
+            try:
+                resp = await client.listen(chat_id=cq.message.chat.id, timeout=300)
+            except Exception:
+                resp = None
+            if resp:
+                data = None
+                if resp.video:
+                    data = {"file_id": resp.video.file_id, "kind": "video"}
+                elif resp.animation:
+                    data = {"file_id": resp.animation.file_id, "kind": "animation"}
+                elif resp.document:
+                    data = {"file_id": resp.document.file_id, "kind": "document"}
+                elif resp.photo:
+                    data = {"file_id": resp.photo.file_id, "kind": "photo"}
+                try:
+                    await resp.delete()
+                except Exception:
+                    pass
+                if data:
+                    await _set_bot_config("miniapp_tutorial", data)
+                    await cq.answer("✅ Tutorial saved")
+                elif (resp.text or "").strip().lower() != "/cancel":
+                    await cq.message.reply("❌ Video, GIF, document ya photo bhejo.")
+            cq.data = "mini_tut"
+            await mini_callbacks(client, cq)
+
+        elif cmd == "mini_tutdel":
+            await _set_bot_config("miniapp_tutorial", None)
+            await cq.answer("Removed")
+            cq.data = "mini_tut"
+            await mini_callbacks(client, cq)
+
         # ── Stats ─────────────────────────────────────
         elif cmd == "mini_stats":
             st = await Seishiro.get_miniapp_stats()
@@ -669,3 +721,26 @@ async def cmd_set_miniwait(client: Bot, msg: Message):
         return await msg.reply("❌ Max 60 seconds.")
     await _set_bot_config("miniapp_min_seconds", sec)
     await msg.reply(f"✅ Har ad ke liye minimum <b>{sec}s</b> set.")
+
+
+@Bot.on_callback_query(filters.regex(r"^ads_tut$"), group=-1)
+async def cb_ads_tutorial(client: Bot, cq: CallbackQuery):
+    """User: 'How to watch ads' -> tutorial video (admin ne set kiya ho toh)."""
+    cfg = await _get_bot_config()
+    t = cfg.get("miniapp_tutorial")
+    if not t:
+        await cq.answer("Tutorial is not available right now.", show_alert=True)
+        raise StopPropagation
+    caption = ("<b>How to watch the ads</b>\n\n<blockquote>Watch this short guide, then tap "
+               "<b>Watch Video Ad</b>. This message is deleted automatically.</blockquote>")
+    uid = cq.from_user.id
+    try:
+        send = {"video": client.send_video, "animation": client.send_animation,
+                "document": client.send_document, "photo": client.send_photo}.get(t.get("kind", "video"), client.send_video)
+        key = {"video": "video", "animation": "animation", "document": "document", "photo": "photo"}.get(t.get("kind", "video"), "video")
+        await send(uid, **{key: t["file_id"]}, caption=caption)
+        await cq.answer()
+    except Exception as e:
+        logger.warning(f"ads tutorial send failed: {e}")
+        await cq.answer("Could not send the tutorial. Please try again.", show_alert=True)
+    raise StopPropagation
