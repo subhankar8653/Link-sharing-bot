@@ -1,6 +1,9 @@
 {
   "rewrites": [
     { "source": "/miniapp", "destination": "/index.html" },
-    { "source": "/config.js", "destination": "/api/config" }
+    { "source": "/config.js", "destination": "/api/config" },
+    { "source": "/api/sync/:action", "destination": "/api/proxy?path=/api/sync/:action" },
+    { "source": "/api/mini/:action", "destination": "/api/proxy?path=/api/mini/:action" },
+    { "source": "/miniapp/photo", "destination": "/api/proxy?path=/miniapp/photo" }
   ]
 }

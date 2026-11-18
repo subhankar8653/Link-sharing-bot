@@ -259,15 +259,32 @@ async def _fsub_step_caption_async(step_num: int, total: int, user=None) -> str:
 
 
 async def _send_fsub_ui(message, caption: str, markup):
-    """Fsub screen bhejo: custom/default photo ke saath; photo 'none' ho ya fail ho toh sirf text."""
+    """Fsub screen bhejo: custom/default photo ke saath; photo 'none' ho ya fail ho toh sirf text.
+    Message ID save hota hai taaki link aate hi ye screen delete ho jaye."""
     ui  = await Seishiro.get_fsub_ui()
     pic = ui.get("pic") or FSUB_PIC
+    sent = None
     if pic != "none":
         try:
-            return await message.reply_photo(photo=pic, caption=caption, reply_markup=markup)
+            sent = await message.reply_photo(photo=pic, caption=caption, reply_markup=markup)
         except Exception as e:
             logger.warning(f"fsub photo send failed, falling back to text: {e}")
-    return await message.reply_text(caption, reply_markup=markup)
+    if sent is None:
+        sent = await message.reply_text(caption, reply_markup=markup)
+    try:
+        await Seishiro.push_flow_msg(message.from_user.id, sent.chat.id, sent.id)
+    except Exception:
+        pass
+    return sent
+
+
+async def _clear_flow_msgs(client, uid: int) -> None:
+    """Link se pehle ke saare flow messages (FSub screen etc.) delete — naya link message akela aaye."""
+    for chat_id, msg_id in await Seishiro.pop_flow_msgs(uid):
+        try:
+            await client.delete_messages(chat_id, msg_id)
+        except Exception:
+            pass
 
 
 async def _build_next_step(client, channel_order: list, pending_cids: list, total: int, user=None):
@@ -902,6 +919,10 @@ async def _get_persistent_fsub_link(client: Bot, channel_id: int, is_request: bo
 
 async def _send_invite_msg(message: Message, invite_link: str):
     """Direct invite link bhejo (premium user ya shortener off)."""
+    try:
+        await _clear_flow_msgs(message._client, message.from_user.id)
+    except Exception:
+        pass
     wait = await message.reply_text("<b><i>ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ...</i></b>")
     await asyncio.sleep(0.5)
     await wait.delete()
@@ -1108,6 +1129,9 @@ async def complete_miniapp_verification(client: Bot, uid: int, token: str, shown
         except Exception as e:
             logger.error(f"fsub screen after ads failed: {e}", exc_info=True)
         return True, "ok", info
+
+    # Pehle ke FSub/welcome messages hatao, phir link bilkul NAYE message mein
+    await _clear_flow_msgs(client, uid)
 
     # ── Normal-style link message (sirf CLICK HERE button) ──
     link_msg = await client.send_message(

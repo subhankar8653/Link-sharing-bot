@@ -846,20 +846,21 @@ async def settings_callback(client: Bot, callback_query):
                         from plugins.fsub_extra import get_real_stats
                         stats = await get_real_stats(client, channel_id)
                         fsub_list += f"    <code>{channel_id}</code> - {status_text}\n"
+                        _on = stats.get("mode") == "on"
+                        _why = f" - {stats['why']}" if stats.get("why") else ""
                         if stats["source"] == "telegram":
-                            fsub_list += (
-                                f"    👥 Jᴏɪɴᴇᴅ: <b>{stats['joined']}</b> | "
-                                f"📥 Rᴇǫᴜᴇsᴛs: <b>{stats['pending']}</b> (pending)\n\n"
-                            )
-                        elif stats["source"] == "channel":
-                            fsub_list += (
-                                f"    📥 Pᴇɴᴅɪɴɢ Rᴇǫᴜᴇsᴛs: <b>{stats['pending']}</b> (channel)\n\n"
-                            )
+                            if _on:
+                                fsub_list += (
+                                    f"    👥 Jᴏɪɴᴇᴅ: <b>{stats['joined']}</b> | "
+                                    f"📥 Rᴇǫᴜᴇsᴛs: <b>{stats['pending']}</b> (pending)\n\n"
+                                )
+                            else:
+                                fsub_list += f"    👥 Jᴏɪɴᴇᴅ (ʟɪɴᴋ): <b>{stats['joined']}</b>\n\n"
+                        elif stats["source"] == "channel" and _on:
+                            fsub_list += f"    📥 Pᴇɴᴅɪɴɢ Rᴇǫᴜᴇsᴛs: <b>{stats['pending']}</b> (channel{_why})\n\n"
                         else:
                             fsub_list += (
-                                f"    👥 Jᴏɪɴᴇᴅ: <b>~{stats['joined']}</b> | "
-                                f"📥 Rᴇǫᴜᴇsᴛs: <b>~{stats['requests']}</b> (bot counter"
-                                + (f" - {stats['why']}" if stats.get('why') else "") + ")\n\n"
+                                f"    👥 Jᴏɪɴᴇᴅ: <b>~{stats['joined']}</b> (bot counter{_why})\n\n"
                             )
                         
                     except Exception as e:

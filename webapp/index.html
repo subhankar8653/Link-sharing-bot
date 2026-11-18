@@ -257,11 +257,11 @@
     if (!(r.headers.get('content-type') || '').includes('json')) { const er = new Error('notjson'); er.kind = 'notjson'; er.status = r.status; throw er; }
     return r.json();
   }
+  // User ko kabhi URL / technical detail nahi: sirf friendly message + chhota code.
   function faultText(f) {
     if (!f) return '';
-    if (!API && /vercel\.app$/.test(location.hostname)) return 'SYNC_API is not set on Vercel. Add it in Settings > Environment Variables, then Redeploy.';
-    if (f.kind === 'notjson') return 'Server replied HTTP ' + f.status + ' (not the bot API). Check SYNC_API: ' + (API || '(empty)');
-    return 'Could not reach the bot server' + (API ? ' (' + API + ')' : '') + '. Check SYNC_API, and that the Mini App URL set in the bot matches this site.';
+    const code = f.kind === 'notjson' ? 'E2-' + (f.status || 0) : 'E3';
+    return 'The server is temporarily unavailable. Please try again in a little while. (' + code + ')';
   }
 
   // ───────────── Ad providers (gate + earn dono use karte hain) ─────────────
@@ -301,7 +301,9 @@
       incomplete: ['Ads not finished', 'Please try again.'],
       too_fast: ['Please wait a moment', 'Ads must be watched fully before verification. Try again.'],
       invite_error: ['Could not create link', 'Go back to the bot and try again.'],
-      server: ['Server error', 'Please try again in a little while.'], default: ['Something went wrong', 'Please try again.']
+      server: ['Server error', 'Please try again in a little while.'],
+      unavailable: ['Server unavailable', 'The server is temporarily unavailable. Please try again in a little while.'],
+      config: ['Service unavailable', 'This service is not available yet. Please try again later.'], default: ['Something went wrong', 'Please try again.']
     };
     const fail = (c) => { const e = ERR[c] || ERR.default; $('g-err-t').textContent = e[0]; $('g-err-d').textContent = e[1];
       try { tg && tg.disableClosingConfirmation(); } catch (x) {} haptic('error'); show('err'); };
@@ -380,7 +382,7 @@
     auth: 'Open this app from Telegram.', disabled: 'Rewards are paused right now.', cap: 'Daily ad limit reached. Come back tomorrow.',
     cooldown: 'Please wait before the next ad.', no_ads: 'No ads available right now.', too_fast: 'Please watch the ad fully.', invalid: 'Session expired, try again.',
     done: 'Already claimed today.', bad_upi: 'Enter a valid UPI ID (name@bank).', min: 'Amount is below the minimum.', balance: 'Not enough balance.',
-    pending_limit: 'You already have 2 pending requests.', not_joined: 'Join the channel first, then tap Verify.', verify_failed: 'Could not verify right now. Try again shortly.', banned: 'Your account is restricted.', server: 'Server error, try again.', expired: 'Session expired, try again.'
+    pending_limit: 'You already have 2 pending requests.', not_joined: 'Join the channel first, then tap Verify.', verify_failed: 'Could not verify right now. Try again shortly.', banned: 'Your account is restricted.', server: 'Server error, try again.', unavailable: 'The server is temporarily unavailable. Please try again in a little while.', config: 'This service is not available yet. Please try again later.', expired: 'Session expired, try again.'
   };
 
   async function boot() {

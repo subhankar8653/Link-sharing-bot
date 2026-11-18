@@ -1276,6 +1276,26 @@ class Master:
             logging.error(f"pop_fsub_pending error: {e}")
             return False
 
+    # ── Link flow ke beech ke messages (FSub screen, welcome...) — link aate hi delete karne ke liye ──
+
+    async def push_flow_msg(self, user_id: int, chat_id: int, msg_id: int) -> None:
+        try:
+            await self.user_data.update_one(
+                {"_id": int(user_id)},
+                {"$push": {"flow_msgs": {"$each": [[int(chat_id), int(msg_id)]], "$slice": -8}}},
+                upsert=True)
+        except Exception as e:
+            logging.error(f"push_flow_msg error: {e}")
+
+    async def pop_flow_msgs(self, user_id: int) -> list:
+        try:
+            doc = await self.user_data.find_one_and_update(
+                {"_id": int(user_id), "flow_msgs": {"$exists": True}}, {"$unset": {"flow_msgs": ""}})
+            return list(doc.get("flow_msgs", [])) if doc else []
+        except Exception as e:
+            logging.error(f"pop_flow_msgs error: {e}")
+            return []
+
     async def delete_old_tokens(self) -> None:
         """1 ghante se purane tokens delete karo (cleanup)."""
         import datetime
