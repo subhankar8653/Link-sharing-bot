@@ -22,7 +22,7 @@ from config import *
 from database.database import Seishiro
 from plugins.settings import revoke_invite_after_5_minutes
 from plugins.premium import shorten_link, _get_bot_config
-from plugins.miniapp import miniapp_ready, get_miniapp_settings, seconds_until_ist_midnight, get_link_flow, seq_next, seq_index
+from plugins.miniapp import build_steps, miniapp_ready, get_miniapp_settings, seconds_until_ist_midnight, get_link_flow, seq_next, seq_index
 from plugins.fsub_extra import render_fsub_text
 from plugins.sync_app import sync_enabled_and_url, sync_register_from_bot, intro_message
 from helper_func import *
@@ -1123,6 +1123,13 @@ async def complete_miniapp_verification(client: Bot, uid: int, token: str, shown
     # ── Daily goal / ads-free time (hamesha ads-free, premium nahi: FSub flow ke hisaab se lagta hai) ──
     daily_count = await Seishiro.add_miniapp_progress(uid, shown)
     goal_hit    = False
+    # Per-session ads: agla session ads list mein is session ke baad se shuru hoga
+    try:
+        _all = build_steps(ms["ads"])
+        if _all and doc.get("mini_n"):
+            await Seishiro.set_ad_cursor(uid, (int(doc.get("mini_cursor", 0)) + int(doc["mini_n"])) % len(_all))
+    except Exception as e:
+        logger.warning(f"ad cursor advance failed: {e}")
     if flow == "custom":
         # Custom sequence: ek ads-session = ek step. Aakhri step ke baad free time, fir dobara 1st se.
         _seq = ms["seq"]

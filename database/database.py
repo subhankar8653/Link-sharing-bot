@@ -1030,13 +1030,29 @@ class Master:
         except Exception as e:
             logging.error(f"unclaim_verify_token error: {e}")
 
-    async def start_miniapp_session(self, token: str, user_id: int) -> bool:
-        """Mini app khulte hi start time save karo (anti-bypass timing check)."""
+    async def get_ad_cursor(self, user_id: int) -> int:
+        """Per-session ads ka rotating pointer (agla session ads list mein kahan se shuru hoga)."""
+        try:
+            u = await self.user_data.find_one({"_id": int(user_id)}, {"ad_cursor": 1})
+            return max(0, int((u or {}).get("ad_cursor", 0) or 0))
+        except Exception as e:
+            logging.error(f"get_ad_cursor error: {e}")
+            return 0
+
+    async def set_ad_cursor(self, user_id: int, cursor: int) -> None:
+        try:
+            await self.user_data.update_one(
+                {"_id": int(user_id)}, {"$set": {"ad_cursor": max(0, int(cursor))}}, upsert=True)
+        except Exception as e:
+            logging.error(f"set_ad_cursor error: {e}")
+
+    async def start_miniapp_session(self, token: str, user_id: int, cursor: int = 0, n: int = 0) -> bool:
+        """Mini app khulte hi start time save karo (anti-bypass timing check) + is session ke ads ka cursor/count."""
         import datetime
         try:
             await self.database['verify_tokens'].update_one(
                 {"token": token, "user_id": int(user_id)},
-                {"$set": {"mini_started_at": datetime.datetime.now()}},
+                {"$set": {"mini_started_at": datetime.datetime.now(), "mini_cursor": int(cursor), "mini_n": int(n)}},
             )
             return True
         except Exception as e:

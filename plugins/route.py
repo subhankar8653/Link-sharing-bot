@@ -93,7 +93,7 @@ async def miniapp_photo(request):
 
 @routes.post("/api/mini/init")
 async def api_mini_init(request):
-    from plugins.miniapp import get_miniapp_settings, build_steps
+    from plugins.miniapp import get_miniapp_settings, build_steps, pick_session
     from database.database import Seishiro
 
     try:
@@ -106,11 +106,14 @@ async def api_mini_init(request):
         return web.json_response({"ok": False, "error": err})
 
     s = await get_miniapp_settings()
-    steps = build_steps(s["ads"])
-    if not steps:
+    all_steps = build_steps(s["ads"])
+    if not all_steps:
         return web.json_response({"ok": False, "error": "no_ads"})
 
-    await Seishiro.start_miniapp_session(token, uid)
+    # Per-session ads: user ke cursor se shuru karke N ads (agla session wahin se)
+    cursor = await Seishiro.get_ad_cursor(uid)
+    steps, n = pick_session(all_steps, s["per_session"], cursor)
+    await Seishiro.start_miniapp_session(token, uid, cursor, n)
     bot = request.app.get("bot")
     info = await _channel_info(bot, doc["channel_id"]) if bot else {"title": "", "photo": None}
     return web.json_response({
@@ -139,7 +142,7 @@ async def api_mini_complete(request):
         return web.json_response({"ok": False, "error": err})
 
     s = await get_miniapp_settings()
-    total = len(build_steps(s["ads"]))
+    total = int(doc.get("mini_n") or 0) or len(build_steps(s["ads"]))   # is session ke ads (per-session ke hisaab se)
     try:
         shown = int(body.get("shown", 0))
         failed = int(body.get("failed", 0))

@@ -95,6 +95,7 @@ async def get_miniapp_settings() -> dict:
         "fb_daily": max(0, int(cfg.get("miniapp_fb_daily", 3))),   # ads fail hone par "bina ads" raasta: din mein kitni baar (0 = band)
         "seq": [k for k in (cfg.get("link_seq") or ["ads"]) if k in SEQ_LABEL][:SEQ_MAX] or ["ads"],
         "seq_free": max(0, int(cfg.get("verify_premium_seconds", 86400))),   # Free Time (ek hi setting)
+        "per_session": max(0, min(50, int(cfg.get("miniapp_per_session", 0)))),   # 0 = saare ads
         "inapp": False,   # passive in-app ads hata diye (auto-ads uncounted the)
     }
 
@@ -141,6 +142,17 @@ def build_steps(ads: list, place: str = "gate") -> list:
         if a["on"] and a.get("place", "both") in ("both", place):
             steps.extend({"provider": a["provider"], "id": a["id"]} for _ in range(a["times"]))
     return steps
+
+
+def pick_session(steps: list, per_session: int, cursor: int) -> tuple:
+    """Per-session ads: steps (ads list, 'times' ke saath expand) mein cursor se shuru karke per_session ads, wrap-around.
+    per_session 0 = saare ads. Returns (session_steps, n)."""
+    total = len(steps)
+    if total == 0:
+        return [], 0
+    n = total if per_session <= 0 else min(per_session, total)
+    start = max(0, cursor) % total
+    return [steps[(start + k) % total] for k in range(n)], n
 
 
 def first_monetag_zone(ads: list) -> str:
@@ -236,6 +248,7 @@ def _menu_text(s: dict) -> str:
     else:
         ads = "(koi ad nahi — Ads Manage se add karo)"
     steps = len(build_steps(s["ads"]))
+    steps = f"{min(s['per_session'], steps)} / {steps} ads" if s["per_session"] and steps else f"{steps} (sab)"
     goal = f"{s['daily_goal']} ads" if s["daily_goal"] else "OFF"
     if s["flow"] == "custom":
         rule = f"Free time (sequence ke baad): <b>{_dur(s['free_seconds'])}</b> (Daily Goal custom flow mein lagu nahi)"
@@ -262,8 +275,9 @@ def _menu_kb(s: dict) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🔴 Turn OFF" if s["enabled"] else "🟢 Turn ON", callback_data="mini_toggle")],
         [InlineKeyboardButton("📺 Ads Manage", callback_data="mini_ads"),
          InlineKeyboardButton("🎯 Daily Goal", callback_data="mini_goal")],
-        [InlineKeyboardButton("⏱ Free Time", callback_data="mini_free"),
-         InlineKeyboardButton("⏳ Min Watch", callback_data="mini_wait")],
+        [InlineKeyboardButton("📦 Ads / Session", callback_data="mini_per"),
+         InlineKeyboardButton("⏱ Free Time", callback_data="mini_free")],
+        [InlineKeyboardButton("⏳ Min Watch", callback_data="mini_wait")],
         [InlineKeyboardButton("🔀 Link Flow", callback_data="mini_flow"),
          InlineKeyboardButton("📊 Stats", callback_data="mini_stats")],
         [InlineKeyboardButton("🌐 Set URL", callback_data="mini_url"),
@@ -495,6 +509,42 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
             await _set_bot_config("miniapp_daily_goal", max(0, int(parts[1])))
             await cq.answer("✅ Saved")
             cq.data = "mini_goal"
+            await mini_callbacks(client, cq)
+
+        # ── Ads per session ───────────────────────────
+        elif cmd == "mini_per":
+            s_ = await get_miniapp_settings()
+            total = len(build_steps(s_["ads"]))
+            cur = s_["per_session"]
+            rows = _num_buttons("mini_perset", [0, 1, 2, 3, 4, 5], {0: "All"}, per_row=6)
+            rows.append([InlineKeyboardButton("✏️ Custom number", callback_data="mini_percustom")])
+            rows.append(_back())
+            await cq.message.edit_text(
+                "<b>📦 Ads / Session</b>\n\n"
+                f"Abhi: <b>{'All (' + str(total) + ')' if not cur else str(cur)}</b>  |  Total ads list: <b>{total}</b>\n\n"
+                "Ek session (ek baar Watch Video Ad) mein user ko itne ads dikhenge. Ads list ke order mein chalta hai "
+                "aur <b>agla session wahin se shuru hota hai</b>, end par wapas pehle se.\n"
+                "Jaise list Monetag, Gigapub, Adsgram aur 2/session: 1st session Monetag+Gigapub, 2nd Adsgram+Monetag, 3rd Gigapub+Adsgram.\n"
+                "<i>Har ad ka ×times alag step ginta hai — is system ke liye har network ka times 1 rakho. "
+                "Daily Goal = total ads (sessions mila kar).</i>",
+                reply_markup=InlineKeyboardMarkup(rows),
+            )
+
+        elif cmd == "mini_perset":
+            await _set_bot_config("miniapp_per_session", max(0, min(50, int(parts[1]))))
+            await cq.answer("✅ Saved")
+            cq.data = "mini_per"
+            await mini_callbacks(client, cq)
+
+        elif cmd == "mini_percustom":
+            text = await _ask(client, cq, "<b>📦 Ads / Session</b>\n\nEk session mein kitne ads? Number bhejo (1-50). <code>0</code> = sab ads.", "mini_per")
+            n = _parse_int(text, 0, 50) if text else None
+            if n is not None:
+                await _set_bot_config("miniapp_per_session", n)
+                await cq.answer("✅ Saved")
+            elif text:
+                await cq.message.reply("❌ Sirf number bhejo, jaise 2.")
+            cq.data = "mini_per"
             await mini_callbacks(client, cq)
 
         # ── Free time after session ───────────────────
