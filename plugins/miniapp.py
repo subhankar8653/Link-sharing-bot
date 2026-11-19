@@ -58,7 +58,10 @@ FLOW_LABELS = {
     "ads_fsub": "Ads first, then FSub",
     "ads_only": "Only Ads (no FSub)",
     "fsub_only": "Only FSub (no Ads)",
+    "custom": "Custom (har open ka alag step)",
 }
+SEQ_MAX = 12
+SEQ_LABEL = {"ads": "Ads", "fsub": "FSub"}
 MAX_TIMES = 10
 
 
@@ -89,8 +92,36 @@ async def get_miniapp_settings() -> dict:
         "goal_reward_seconds": int(cfg.get("miniapp_goal_reward", 86400)),  # goal poora -> itni der ads-free
         "flow": cfg.get("link_flow", "fsub_ads") if cfg.get("link_flow", "fsub_ads") in FLOW_LABELS else "fsub_ads",
         "fb_daily": max(0, int(cfg.get("miniapp_fb_daily", 3))),   # ads fail hone par "bina ads" raasta: din mein kitni baar (0 = band)
+        "seq": [k for k in (cfg.get("link_seq") or ["ads"]) if k in SEQ_LABEL][:SEQ_MAX] or ["ads"],
+        "seq_free": max(0, int(cfg.get("link_seq_free", 86400))),
         "inapp": False,   # passive in-app ads hata diye (auto-ads uncounted the)
     }
+
+
+def seq_next(seq: list, pos: int, fsub_ok: bool) -> tuple:
+    """Custom sequence mein user ka agla step. Returns (step, index): step = "ads" | "fsub" | "free".
+    Jo user FSub pehle se join hai uske liye FSub step skip hota hai (baaki steps ek open aage khisak jaate hain)."""
+    i = max(0, pos)
+    while i < len(seq):
+        if seq[i] == "fsub" and fsub_ok:
+            i += 1
+            continue
+        return seq[i], i
+    return "free", i
+
+
+def seq_index(seq: list, kind: str, pos: int) -> int:
+    """pos ke baad pehla `kind` step ka index (skip hue FSub steps ke upar se). Na mile toh len(seq)-1."""
+    for i in range(max(0, pos), len(seq)):
+        if seq[i] == kind:
+            return i
+    return max(0, len(seq) - 1)
+
+
+def seq_text(seq: list, free_seconds: int) -> str:
+    lines = [f"{i}. <b>{SEQ_LABEL[k]}</b>" for i, k in enumerate(seq, 1)]
+    lines.append(f"{len(seq) + 1}+ → <b>Free</b> ({_dur(free_seconds)}), uske baad dobara 1 se")
+    return "\n".join(lines)
 
 
 async def get_link_flow() -> str:
@@ -215,6 +246,8 @@ def _menu_text(s: dict) -> str:
         f"• Daily Goal: <b>{goal}</b>   • Min watch: <b>{s['min_seconds']}s</b>\n"
         f"• {rule}\n"
         f"• Link flow: <b>{FLOW_LABELS[s['flow']]}</b>\n"
+        + (f"• Sequence: <b>{' → '.join(SEQ_LABEL[k] for k in s['seq'])} → Free {_dur(s['seq_free'])}</b>\n" if s["flow"] == "custom" else "")
+        +
         f"• Ad fallback: <b>{(str(s['fb_daily']) + '/day') if s['fb_daily'] else 'OFF'}</b>\n"
         f"• URL: <code>{url}</code>\n\n"
         f"<b>Ads (order mein):</b>\n{ads}"
@@ -485,6 +518,8 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
             s = await get_miniapp_settings()
             rows = [[InlineKeyboardButton(("✅ " if s["flow"] == k else "") + lbl, callback_data=f"mini_flowset:{k}")]
                     for k, lbl in FLOW_LABELS.items()]
+            if s["flow"] == "custom":
+                rows.append([InlineKeyboardButton("🧩 Edit Sequence", callback_data="mini_seq")])
             rows.append(_back())
             await cq.message.edit_text(
                 "<b>🔀 Link Flow</b>\n\n"
@@ -492,7 +527,8 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
                 "<b>FSub first, then Ads:</b> pehle FSub join, uske baad ads (FSub ke turant baad ka link seedha milta hai).\n"
                 "<b>Ads first, then FSub:</b> pehle ads; daily goal poora hone par FSub, phir ads-free time.\n"
                 "<b>Only Ads:</b> sirf ads, FSub nahi.\n"
-                "<b>Only FSub:</b> sirf FSub, ads nahi.\n\n"
+                "<b>Only FSub:</b> sirf FSub, ads nahi.\n"
+                "<b>Custom:</b> har open (1st, 2nd, 3rd...) ke liye khud Ads/FSub set karo, phir free time.\n\n"
                 "<i>Ads-free time mein bhi naya FSub channel add hone par FSub dikhta hai.</i>",
                 reply_markup=InlineKeyboardMarkup(rows),
             )
@@ -501,8 +537,60 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
             if parts[1] in FLOW_LABELS:
                 await _set_bot_config("link_flow", parts[1])
                 await cq.answer("✅ " + FLOW_LABELS[parts[1]])
-            cq.data = "mini_flow"
+            cq.data = "mini_seq" if parts[1] == "custom" else "mini_flow"
             await mini_callbacks(client, cq)
+
+        # ── Custom sequence editor ─────────────────────
+        elif cmd in ("mini_seq", "mini_seqtog", "mini_seqadd", "mini_seqdel", "mini_seqfree", "mini_seqfreeset"):
+            cfg = await _get_bot_config()
+            seq = [k for k in (cfg.get("link_seq") or ["ads"]) if k in SEQ_LABEL][:SEQ_MAX] or ["ads"]
+            if cmd == "mini_seqtog" and len(parts) > 1 and parts[1].isdigit() and int(parts[1]) < len(seq):
+                i = int(parts[1]); seq[i] = "fsub" if seq[i] == "ads" else "ads"
+                await _set_bot_config("link_seq", seq)
+            elif cmd == "mini_seqadd" and len(parts) > 1 and parts[1] in SEQ_LABEL:
+                if len(seq) >= SEQ_MAX:
+                    await cq.answer(f"Max {SEQ_MAX} steps", show_alert=True)
+                else:
+                    seq.append(parts[1]); await _set_bot_config("link_seq", seq)
+            elif cmd == "mini_seqdel":
+                if len(seq) <= 1:
+                    await cq.answer("Kam se kam 1 step chahiye", show_alert=True)
+                else:
+                    seq.pop(); await _set_bot_config("link_seq", seq)
+            elif cmd == "mini_seqfreeset" and len(parts) > 1 and parts[1].isdigit():
+                await _set_bot_config("link_seq_free", int(parts[1]))
+                await cq.answer("✅ Saved")
+            free = max(0, int(cfg.get("link_seq_free", 86400))) if cmd != "mini_seqfreeset" else int(parts[1])
+
+            if cmd in ("mini_seqfree", "mini_seqfreeset"):
+                vals = [0, 1800, 3600, 10800, 21600, 43200, 86400, 172800]
+                labels = {0: "None", 1800: "30m", 3600: "1h", 10800: "3h", 21600: "6h", 43200: "12h", 86400: "24h", 172800: "48h"}
+                rows = _num_buttons("mini_seqfreeset", vals, labels)
+                rows.append(_back("mini_seq"))
+                await cq.message.edit_text(
+                    "<b>⏱ Free Time</b>\n\n"
+                    f"Abhi: <b>{_dur(free)}</b>\n\n"
+                    "Sequence ke saare steps poore hone ke baad user itni der tak seedha link paayega "
+                    "(ads + FSub dono nahi). Time khatam hote hi sequence dobara 1st open se shuru.\n"
+                    "<b>None</b> = free time nahi, turant dobara 1st se.",
+                    reply_markup=InlineKeyboardMarkup(rows),
+                )
+            else:
+                rows = [[InlineKeyboardButton(f"Open {i + 1}: {SEQ_LABEL[k]}  (tap = badlo)", callback_data=f"mini_seqtog:{i}")]
+                        for i, k in enumerate(seq)]
+                rows.append([InlineKeyboardButton("➕ Ads", callback_data="mini_seqadd:ads"),
+                             InlineKeyboardButton("➕ FSub", callback_data="mini_seqadd:fsub"),
+                             InlineKeyboardButton("➖ Last", callback_data="mini_seqdel")])
+                rows.append([InlineKeyboardButton(f"⏱ Free Time: {_dur(free)}", callback_data="mini_seqfree")])
+                rows.append(_back("mini_flow"))
+                await cq.message.edit_text(
+                    "<b>🧩 Custom Sequence</b>\n\n"
+                    "User jab channel link kholta hai (har <i>open</i>), us open par kya aayega:\n\n"
+                    f"{seq_text(seq, free)}\n\n"
+                    "<i>Jo user FSub pehle se join hai, uska FSub step skip ho jaata hai aur agle steps "
+                    "ek open pehle aa jaate hain (jaise Ads, FSub, Ads, Ads → joined user ke liye Ads, Ads, Ads, phir Free).</i>",
+                    reply_markup=InlineKeyboardMarkup(rows),
+                )
 
         # ── Ads tutorial (user ko "How to watch ads" button) ───────────
         elif cmd == "mini_tut":

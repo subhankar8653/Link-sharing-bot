@@ -468,7 +468,23 @@
   async function boot() {
     $('app').classList.remove('hidden');
     $('v-home').innerHTML = '<div class="skel" style="height:170px"></div><div class="skel" style="height:90px"></div><div class="skel" style="height:200px"></div>';
-    if (!initData) { $('v-home').innerHTML = '<div class="sec"><h3>Open from Telegram</h3><p class="d">This app works inside Telegram. Open it from the bot.</p></div>'; return; }
+    if (!initData) {
+      // Browser (Telegram ke bahar) mein khola gaya — reviewers/visitors ko app ka intro dikhao
+      const nav = document.querySelector('.nav'); if (nav) nav.style.display = 'none';
+      const bu = String(window.BOT_USERNAME || '').replace(/^@/, '');
+      $('v-home').innerHTML =
+        '<div class="sec"><h3>Senpai Sync</h3><p class="d">A Telegram Mini App for daily rewards.</p>' +
+        '<p class="d" style="margin-bottom:0">Sign in once a day inside Telegram to earn Senpai Sync Points (SP). Complete simple channel tasks, invite friends, follow the leaderboard and track your balance in the wallet.</p></div>' +
+        '<div class="sec"><h3>How it works</h3>' +
+        '<details class="faq" open><summary>Daily check-in</summary><p>Open the app from the bot once a day and claim your points. Your streak adds a small bonus.</p></details>' +
+        '<details class="faq"><summary>Tasks and invites</summary><p>Join partner channels or invite friends to earn extra SP.</p></details>' +
+        '<details class="faq"><summary>Video ads</summary><p>Watching a short video ad is optional and gives bonus SP. Everything else works without ads.</p></details>' +
+        '<details class="faq"><summary>Privacy</summary><p>Only your Telegram ID, display name, points and activity history are stored. No phone number and no password.</p></details></div>' +
+        '<div class="sec"><h3>Open in Telegram</h3><p class="d">This Mini App runs inside Telegram and needs your Telegram account to sign you in.</p>' +
+        (bu ? '<a class="btn" style="display:block;text-align:center;text-decoration:none" href="https://t.me/' + esc(bu) + '">Open @' + esc(bu) + '</a>' : '<p class="d" style="margin-bottom:0">Open the bot in Telegram and tap <b>Open Senpai Sync</b>.</p>') +
+        '</div>';
+      return;
+    }
     let res = null, fault = null;
     try { res = await post('/api/sync/me', { start_param: (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || '' }); } catch (e) { fault = e; }
     if (!res || !res.ok) {

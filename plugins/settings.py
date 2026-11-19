@@ -242,56 +242,18 @@ async def settings_callback(client: Bot, callback_query):
             )
         
         elif cb_data == "start":
-            user_id = callback_query.from_user.id
-            # Check if user is owner or admin in database
-            is_admin = (user_id == OWNER_ID) or await Seishiro.is_admin(user_id)
-
-            if is_admin:
-                # Show Settings button for admins/owner
-                inline_buttons = InlineKeyboardMarkup(
-                    [
-                        [
-                            InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data="about"),
-                            InlineKeyboardButton("Hᴇʟᴘ •", callback_data="help")
-                        ],
-                        [
-                            InlineKeyboardButton("Sᴇᴛᴛɪɴɢs", callback_data="settings_main")
-                        ]
-                    ]
-                )
-            else:
-                # Hide Settings for normal users
-                inline_buttons = InlineKeyboardMarkup(
-                    [
-                        [
-                            InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data="about"),
-                            InlineKeyboardButton("Hᴇʟᴘ •", callback_data="help")
-                        ]
-                    ]
-                )
-                
+            from plugins.sync_app import intro_message
+            text, markup, _ = await intro_message(callback_query.from_user)
             try:
-                await callback_query.edit_message_media(
-                    InputMediaPhoto(START_PIC, START_MSG.format(
-                        first=callback_query.from_user.first_name,
-                        last=callback_query.from_user.last_name or "",
-                        username=f"@{callback_query.from_user.username}" if callback_query.from_user.username else "None",
-                        mention=callback_query.from_user.mention,
-                        id=callback_query.from_user.id)),
-                    reply_markup=inline_buttons
-                )
+                if callback_query.message.photo:
+                    await callback_query.message.delete()
+                    await client.send_message(callback_query.message.chat.id, text, reply_markup=markup,
+                                              parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+                else:
+                    await callback_query.edit_message_text(text, reply_markup=markup, parse_mode=ParseMode.HTML,
+                                                           disable_web_page_preview=True)
             except Exception as e:
-                print(f"Error sending start/home photo: {e}")
-                await callback_query.edit_message_text(
-                    START_MSG.format(
-                        first=callback_query.from_user.first_name,
-                        last=callback_query.from_user.last_name or "",
-                        username=f"@{callback_query.from_user.username}" if callback_query.from_user.username else "None",
-                        mention=callback_query.from_user.mention,
-                        id=callback_query.from_user.id),
-                    reply_markup=inline_buttons,
-                    parse_mode=ParseMode.HTML
-                )
+                logger.warning(f"start/home render failed: {e}")
 
         # Ban Menu
         elif cb_data == "ban_menu":

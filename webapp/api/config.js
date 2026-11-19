@@ -6,5 +6,7 @@ module.exports = (req, res) => {
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
   const mode = ['home', 'gate'].includes(process.env.SYNC_MODE) ? process.env.SYNC_MODE : 'both';
-  res.end('window.SYNC_API = ""; window.SYNC_MODE = ' + JSON.stringify(mode) + ';');
+  //   BOT_USERNAME (Environment Variable, optional) = bot ka username (bina @) -> browser landing page par "Open in Telegram" button
+  const bot = String(process.env.BOT_USERNAME || '').replace(/^@/, '').replace(/[^A-Za-z0-9_]/g, '');
+  res.end('window.SYNC_API = ""; window.SYNC_MODE = ' + JSON.stringify(mode) + '; window.BOT_USERNAME = ' + JSON.stringify(bot) + ';');
 };

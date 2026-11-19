@@ -22,9 +22,9 @@ from config import *
 from database.database import Seishiro
 from plugins.settings import revoke_invite_after_5_minutes
 from plugins.premium import shorten_link, _get_bot_config
-from plugins.miniapp import miniapp_ready, get_miniapp_settings, seconds_until_ist_midnight, get_link_flow
+from plugins.miniapp import miniapp_ready, get_miniapp_settings, seconds_until_ist_midnight, get_link_flow, seq_next, seq_index
 from plugins.fsub_extra import render_fsub_text
-from plugins.sync_app import sync_enabled_and_url, sync_register_from_bot
+from plugins.sync_app import sync_enabled_and_url, sync_register_from_bot, intro_message
 from helper_func import *
 from plugins.tutorial import send_fsub_tutorial_if_not_joined, send_linkshortner_tutorial_if_not_verified
 
@@ -586,6 +586,20 @@ def check_fsub(func):
         except Exception:
             _link_param = ""
         _flow = await get_link_flow() if _link_param else ""
+        if _flow == "custom":
+            # Custom sequence: is open par FSub step hai (aur user join nahi) toh FSub screen, warna FSub entry par nahi
+            try:
+                if await Seishiro.has_ads_free(uid) or await Seishiro.has_ads_bypass(uid):
+                    return await func(client, message, *args, **kwargs)
+                _ms = await get_miniapp_settings()
+                _step, _ = seq_next(_ms["seq"], await Seishiro.get_link_pos(uid), await _user_fsub_ok(client, uid))
+            except Exception as e:
+                logger.warning(f"custom flow peek failed: {e}")
+                _step = "ads"
+            if _step == "fsub":
+                _flow = "fsub_ads"          # neeche wala FSub screen + fsub_pending wala raasta
+            else:
+                return await func(client, message, *args, **kwargs)
         if _flow in ("ads_fsub", "ads_only"):
             # Entry par FSub nahi: "ads_only" mein kabhi nahi, "ads_fsub" mein ads ke baad (neeche link branch / Mini App complete)
             return await func(client, message, *args, **kwargs)
@@ -1109,7 +1123,14 @@ async def complete_miniapp_verification(client: Bot, uid: int, token: str, shown
     # ── Daily goal / ads-free time (hamesha ads-free, premium nahi: FSub flow ke hisaab se lagta hai) ──
     daily_count = await Seishiro.add_miniapp_progress(uid, shown)
     goal_hit    = False
-    if goal > 0:
+    if flow == "custom":
+        # Custom sequence: ek ads-session = ek step. Aakhri step ke baad free time, fir dobara 1st se.
+        _seq = ms["seq"]
+        _np  = seq_index(_seq, "ads", await Seishiro.get_link_pos(uid)) + 1
+        if _np >= len(_seq):
+            await Seishiro.set_ads_free(uid, ms["seq_free"]); _np = 0
+        await Seishiro.set_link_pos(uid, _np)
+    elif goal > 0:
         if daily_count >= goal:
             goal_hit = True
             await Seishiro.set_ads_free(uid, ms["goal_reward_seconds"])
@@ -1372,6 +1393,33 @@ async def start_command(client: Bot, message: Message):
                 if not direct and flow == "fsub_ads" and await Seishiro.pop_fsub_pending(uid):
                     direct = True                                      # FSub abhi complete hua -> seedha link
 
+                # ── Custom sequence (miniapp.py -> Link Flow -> Custom) ──
+                if not direct and flow == "custom":
+                    _ms   = await get_miniapp_settings()
+                    _seq  = _ms["seq"]
+                    _pos  = await Seishiro.get_link_pos(uid)
+                    if await Seishiro.has_ads_free(uid):               # free time chal raha hai
+                        direct = True
+                    elif await Seishiro.pop_fsub_pending(uid):         # FSub step abhi complete hua -> seedha link
+                        _np = seq_index(_seq, "fsub", _pos) + 1
+                        direct = True
+                        if _np >= len(_seq):
+                            await Seishiro.set_ads_free(uid, _ms["seq_free"]); _np = 0
+                        await Seishiro.set_link_pos(uid, _np)
+                    else:
+                        _step, _i = seq_next(_seq, _pos, await _user_fsub_ok(client, uid))
+                        if _step == "free":                            # baaki saare steps skip hue (FSub already joined)
+                            await Seishiro.set_ads_free(uid, _ms["seq_free"])
+                            await Seishiro.set_link_pos(uid, 0)
+                            direct = True
+                        elif _step == "fsub":                          # wrapper ne screen nahi dikhayi (edge case)
+                            if not await _fsub_gate(client, message):
+                                await Seishiro.set_fsub_pending(uid)
+                                return
+                            await Seishiro.set_link_pos(uid, _i + 1 if _i + 1 < len(_seq) else 0)
+                            direct = True
+                        # _step == "ads" -> neeche Mini App (Watch Video Ad)
+
                 # ── Premium / ads-free / flow ke hisaab se → direct link ──
                 if direct:
                     inv = await _get_fresh_invite_link(client, channel_id, is_request)
@@ -1471,36 +1519,12 @@ async def start_command(client: Bot, message: Message):
 
         # ── Normal /start ──────────────────────────────────────────────
         else:
-            is_adm = await _is_admin(uid)
             # Senpai Sync ON ho toh bot start par login + Mini App ka button
             sync_url = await sync_enabled_and_url()
             if sync_url:
                 await sync_register_from_bot(message.from_user)
-            btns   = [
-                *([[InlineKeyboardButton("Open Senpai Sync", web_app=WebAppInfo(url=f"{sync_url}/miniapp"))]] if sync_url else []),
-                [
-                    InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data="about"),
-                    InlineKeyboardButton("Hᴇʟᴘ •",  callback_data="help")
-                ],
-                *([[InlineKeyboardButton("⚙️ Sᴇᴛᴛɪɴɢs", callback_data="settings_main")]] if is_adm else []),
-                [InlineKeyboardButton("💎 Pʀᴇᴍɪᴜᴍ", callback_data="prem_plans")],
-            ]
-
-            caption = START_MSG.format(
-                first=message.from_user.first_name,
-                last=message.from_user.last_name or "",
-                username="@" + message.from_user.username if message.from_user.username else "N/A",
-                mention=message.from_user.mention,
-                id=uid
-            )
-            try:
-                await message.reply_photo(
-                    photo=START_PIC, caption=caption,
-                    reply_markup=InlineKeyboardMarkup(btns)
-                )
-            except Exception as e:
-                logger.warning(f"Photo failed: {e}")
-                await message.reply_text(caption, reply_markup=InlineKeyboardMarkup(btns))
+            text, markup, _ = await intro_message(message.from_user)
+            await message.reply_text(text, reply_markup=markup, disable_web_page_preview=True)
 
     except Exception as e:
         logger.error(f"FATAL start_command: {e}", exc_info=True)

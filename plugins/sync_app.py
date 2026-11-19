@@ -71,6 +71,23 @@ async def sync_enabled_and_url() -> str:
     return url if (st["enabled"] and url.startswith("https://")) else ""
 
 
+INTRO_TEXT = (
+    "<b>Welcome to Senpai Sync, {mention}!</b>\n\n"
+    "<blockquote>Senpai Sync is a daily rewards bot. Sign in once every day to earn Senpai Sync Points (SP), "
+    "complete simple channel tasks, invite friends and track your balance in your wallet. "
+    "Watching a short video ad is optional.</blockquote>\n\n"
+    "Tap <b>Open Senpai Sync</b> below to claim today's points."
+)
+
+
+async def intro_message(user):
+    """Plain /start ka welcome: sirf text + 'Open Senpai Sync' button (photo / About / Help / Premium nahi)."""
+    from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+    url = await sync_enabled_and_url()
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("Open Senpai Sync", web_app=WebAppInfo(url=f"{url}/miniapp"))]]) if url else None
+    return INTRO_TEXT.format(mention=user.mention), markup, bool(url)
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # HELPERS
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

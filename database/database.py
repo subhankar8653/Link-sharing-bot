@@ -1256,6 +1256,23 @@ class Master:
         except Exception as e:
             logging.error(f"reset_miniapp_progress error: {e}")
 
+    # ── Link flow "Custom": user ab sequence ke kaunse step par hai (0 = pehla open) ──
+
+    async def get_link_pos(self, user_id: int) -> int:
+        try:
+            u = await self.user_data.find_one({"_id": int(user_id)}, {"link_pos": 1})
+            return max(0, int((u or {}).get("link_pos", 0) or 0))
+        except Exception as e:
+            logging.error(f"get_link_pos error: {e}")
+            return 0
+
+    async def set_link_pos(self, user_id: int, pos: int) -> None:
+        try:
+            await self.user_data.update_one(
+                {"_id": int(user_id)}, {"$set": {"link_pos": max(0, int(pos))}}, upsert=True)
+        except Exception as e:
+            logging.error(f"set_link_pos error: {e}")
+
     # ── Link flow "FSub pehle, phir Ads": user ne FSub screen dekhi thi -> wapas aane par seedha link ──
 
     async def set_fsub_pending(self, user_id: int) -> None:
