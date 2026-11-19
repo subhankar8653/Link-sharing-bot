@@ -22,6 +22,7 @@ COMMANDS (shortcut):
 """
 
 import hashlib
+import re
 import hmac
 import json
 import logging
@@ -89,11 +90,11 @@ async def get_miniapp_settings() -> dict:
         "min_seconds": int(cfg.get("miniapp_min_seconds", DEFAULT_MIN_SECONDS)),
         "daily_goal": int(cfg.get("miniapp_daily_goal", 0)),          # 0 = off
         "free_seconds": int(cfg.get("verify_premium_seconds", 86400)),  # sirf jab Daily Goal OFF ho
-        "goal_reward_seconds": int(cfg.get("miniapp_goal_reward", 86400)),  # goal poora -> itni der ads-free
+        "goal_reward_seconds": max(0, int(cfg.get("verify_premium_seconds", 86400))),  # goal poora -> Free Time (ek hi setting)
         "flow": cfg.get("link_flow", "fsub_ads") if cfg.get("link_flow", "fsub_ads") in FLOW_LABELS else "fsub_ads",
         "fb_daily": max(0, int(cfg.get("miniapp_fb_daily", 3))),   # ads fail hone par "bina ads" raasta: din mein kitni baar (0 = band)
         "seq": [k for k in (cfg.get("link_seq") or ["ads"]) if k in SEQ_LABEL][:SEQ_MAX] or ["ads"],
-        "seq_free": max(0, int(cfg.get("link_seq_free", 86400))),
+        "seq_free": max(0, int(cfg.get("verify_premium_seconds", 86400))),   # Free Time (ek hi setting)
         "inapp": False,   # passive in-app ads hata diye (auto-ads uncounted the)
     }
 
@@ -236,7 +237,9 @@ def _menu_text(s: dict) -> str:
         ads = "(koi ad nahi — Ads Manage se add karo)"
     steps = len(build_steps(s["ads"]))
     goal = f"{s['daily_goal']} ads" if s["daily_goal"] else "OFF"
-    if s["daily_goal"]:
+    if s["flow"] == "custom":
+        rule = f"Free time (sequence ke baad): <b>{_dur(s['free_seconds'])}</b> (Daily Goal custom flow mein lagu nahi)"
+    elif s["daily_goal"]:
         rule = f"Goal ON: {s['daily_goal']} ads dekhne par <b>{_dur(s['goal_reward_seconds'])}</b> ads-free (FSub lagega)"
     else:
         rule = f"Goal OFF: har session ke baad <b>{_dur(s['free_seconds'])}</b> free"
@@ -277,6 +280,23 @@ async def _show_menu(msg):
 
 def _back(to="mini_menu"):
     return [InlineKeyboardButton("back", callback_data=to)]
+
+
+def _parse_int(text: str, lo: int, hi: int):
+    t = (text or "").strip()
+    return max(lo, min(hi, int(t))) if t.isdigit() else None
+
+
+def _parse_duration(text: str):
+    """'30m' / '6h' / '2d' / '90' (= 90 minute) -> seconds. 0/none/off = 0. Galat ho toh None."""
+    t = (text or "").strip().lower().replace(" ", "")
+    if t in ("0", "none", "off"):
+        return 0
+    m = re.fullmatch(r"(\d+)([mhd]?)", t)
+    if not m:
+        return None
+    n, u = int(m.group(1)), (m.group(2) or "m")
+    return min(n * {"m": 60, "h": 3600, "d": 86400}[u], 365 * 86400)
 
 
 def _num_buttons(prefix: str, values: list, labels: dict | None = None, per_row: int = 4):
@@ -444,26 +464,30 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
 
         # ── Daily goal ────────────────────────────────
         elif cmd == "mini_goal":
-            s = await get_miniapp_settings()
-            cur = f"{s['daily_goal']} ads" if s["daily_goal"] else "OFF"
+            s_ = await get_miniapp_settings()
+            cur = f"{s_['daily_goal']} ads" if s_["daily_goal"] else "OFF"
             rows = _num_buttons("mini_goalset", [0, 5, 10, 15, 20, 30, 50, 100], {0: "OFF"})
-            rows.append([InlineKeyboardButton("Reward (ads-free time):", callback_data="mini_noop")])
-            rows += _num_buttons("mini_rwset", [21600, 43200, 86400, 172800, 259200],
-                                 {21600: "6h", 43200: "12h", 86400: "24h", 172800: "48h", 259200: "72h"}, per_row=5)
+            rows.append([InlineKeyboardButton("✏️ Custom number", callback_data="mini_goalcustom")])
             rows.append(_back())
             await cq.message.edit_text(
                 "<b>🎯 Daily Goal</b>\n\n"
-                f"Goal: <b>{cur}</b>  |  Reward: <b>{_dur(s['goal_reward_seconds'])}</b>\n\n"
+                f"Goal: <b>{cur}</b>  |  Reward: <b>{_dur(s_['free_seconds'])}</b> (⏱ Free Time wali setting)\n\n"
                 "User jab total itne ads dekh le (har session mein jitne ads, utne count hote hain; "
-                "jaise 2 ads/session aur goal 10 = 5 baar link) toh <b>Reward time</b> tak koi ads nahi aayenge. "
+                "jaise 2 ads/session aur goal 10 = 5 baar link) toh <b>Free Time</b> tak koi ads nahi aayenge. "
                 "<b>FSub phir bhi lagega</b>.\n"
-                "Goal ON hone par session ke baad ka <i>Free Time</i> lagu nahi hota.",
+                "Goal ON hone par session ke baad ka alag free time nahi milta.\n"
+                "<i>Custom link flow mein Daily Goal lagu nahi hota.</i>",
                 reply_markup=InlineKeyboardMarkup(rows),
             )
 
-        elif cmd == "mini_rwset":
-            await _set_bot_config("miniapp_goal_reward", max(3600, int(parts[1])))
-            await cq.answer("✅ Saved")
+        elif cmd == "mini_goalcustom":
+            text = await _ask(client, cq, "<b>🎯 Daily Goal</b>\n\nKitne ads ka goal? Number bhejo (1-1000). <code>0</code> = OFF.", "mini_goal")
+            n = _parse_int(text, 0, 1000) if text else None
+            if n is not None:
+                await _set_bot_config("miniapp_daily_goal", n)
+                await cq.answer("✅ Saved")
+            elif text:
+                await cq.message.reply("❌ Sirf number bhejo, jaise 25.")
             cq.data = "mini_goal"
             await mini_callbacks(client, cq)
 
@@ -476,18 +500,32 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
         # ── Free time after session ───────────────────
         elif cmd == "mini_free":
             s = await get_miniapp_settings()
-            vals = [0, 1800, 3600, 10800, 21600, 43200, 86400]
-            labels = {0: "None", 1800: "30m", 3600: "1h", 10800: "3h", 21600: "6h", 43200: "12h", 86400: "24h"}
+            vals = [0, 1800, 3600, 10800, 21600, 43200, 86400, 172800]
+            labels = {0: "None", 1800: "30m", 3600: "1h", 10800: "3h", 21600: "6h", 43200: "12h", 86400: "24h", 172800: "48h"}
             rows = _num_buttons("mini_freeset", vals, labels)
+            rows.append([InlineKeyboardButton("✏️ Custom time", callback_data="mini_freecustom")])
             rows.append(_back())
             await cq.message.edit_text(
                 "<b>⏱ Free Time</b>\n\n"
                 f"Abhi: <b>{_dur(s['free_seconds'])}</b>\n\n"
-                "Ek session (saare ads) complete karne ke baad user kitni der tak "
-                "direct links paayega (FSub bhi skip).\n<b>None</b> = har link ke liye ads dekhne padenge.\n"
-                "<i>Sirf tab lagu hota hai jab Daily Goal OFF ho.</i>",
+                "<b>Ye ek hi Free Time sab jagah lagta hai:</b> session ke baad free time, Daily Goal ka reward, "
+                "aur Custom sequence poora hone ke baad free time. Is dauran seedha link milta hai.\n"
+                "<b>None</b> = free time nahi (har baar ads/steps).\n"
+                "<i>FSub: Daily Goal flow mein free time ke dauran bhi FSub lagta hai; Custom flow mein nahi.</i>",
                 reply_markup=InlineKeyboardMarkup(rows),
             )
+
+        elif cmd == "mini_freecustom":
+            text = await _ask(client, cq, "<b>⏱ Free Time</b>\n\nTime bhejo: <code>30m</code>, <code>6h</code>, <code>2d</code> "
+                              "(sirf number = minute). <code>0</code> = None.", "mini_free")
+            sec = _parse_duration(text) if text else None
+            if sec is not None:
+                await _set_bot_config("verify_premium_seconds", sec)
+                await cq.answer("✅ Saved")
+            elif text:
+                await cq.message.reply("❌ Format galat. Jaise: 30m, 6h, 2d")
+            cq.data = "mini_free"
+            await mini_callbacks(client, cq)
 
         elif cmd == "mini_freeset":
             await _set_bot_config("verify_premium_seconds", max(0, int(parts[1])))
@@ -541,7 +579,7 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
             await mini_callbacks(client, cq)
 
         # ── Custom sequence editor ─────────────────────
-        elif cmd in ("mini_seq", "mini_seqtog", "mini_seqadd", "mini_seqdel", "mini_seqfree", "mini_seqfreeset"):
+        elif cmd in ("mini_seq", "mini_seqtog", "mini_seqadd", "mini_seqdel"):
             cfg = await _get_bot_config()
             seq = [k for k in (cfg.get("link_seq") or ["ads"]) if k in SEQ_LABEL][:SEQ_MAX] or ["ads"]
             if cmd == "mini_seqtog" and len(parts) > 1 and parts[1].isdigit() and int(parts[1]) < len(seq):
@@ -557,54 +595,39 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
                     await cq.answer("Kam se kam 1 step chahiye", show_alert=True)
                 else:
                     seq.pop(); await _set_bot_config("link_seq", seq)
-            elif cmd == "mini_seqfreeset" and len(parts) > 1 and parts[1].isdigit():
-                await _set_bot_config("link_seq_free", int(parts[1]))
-                await cq.answer("✅ Saved")
-            free = max(0, int(cfg.get("link_seq_free", 86400))) if cmd != "mini_seqfreeset" else int(parts[1])
-
-            if cmd in ("mini_seqfree", "mini_seqfreeset"):
-                vals = [0, 1800, 3600, 10800, 21600, 43200, 86400, 172800]
-                labels = {0: "None", 1800: "30m", 3600: "1h", 10800: "3h", 21600: "6h", 43200: "12h", 86400: "24h", 172800: "48h"}
-                rows = _num_buttons("mini_seqfreeset", vals, labels)
-                rows.append(_back("mini_seq"))
-                await cq.message.edit_text(
-                    "<b>⏱ Free Time</b>\n\n"
-                    f"Abhi: <b>{_dur(free)}</b>\n\n"
-                    "Sequence ke saare steps poore hone ke baad user itni der tak seedha link paayega "
-                    "(ads + FSub dono nahi). Time khatam hote hi sequence dobara 1st open se shuru.\n"
-                    "<b>None</b> = free time nahi, turant dobara 1st se.",
-                    reply_markup=InlineKeyboardMarkup(rows),
-                )
-            else:
-                rows = [[InlineKeyboardButton(f"Open {i + 1}: {SEQ_LABEL[k]}  (tap = badlo)", callback_data=f"mini_seqtog:{i}")]
-                        for i, k in enumerate(seq)]
-                rows.append([InlineKeyboardButton("➕ Ads", callback_data="mini_seqadd:ads"),
-                             InlineKeyboardButton("➕ FSub", callback_data="mini_seqadd:fsub"),
-                             InlineKeyboardButton("➖ Last", callback_data="mini_seqdel")])
-                rows.append([InlineKeyboardButton(f"⏱ Free Time: {_dur(free)}", callback_data="mini_seqfree")])
-                rows.append(_back("mini_flow"))
-                await cq.message.edit_text(
-                    "<b>🧩 Custom Sequence</b>\n\n"
-                    "User jab channel link kholta hai (har <i>open</i>), us open par kya aayega:\n\n"
-                    f"{seq_text(seq, free)}\n\n"
-                    "<i>Jo user FSub pehle se join hai, uska FSub step skip ho jaata hai aur agle steps "
-                    "ek open pehle aa jaate hain (jaise Ads, FSub, Ads, Ads → joined user ke liye Ads, Ads, Ads, phir Free).</i>",
-                    reply_markup=InlineKeyboardMarkup(rows),
-                )
+            free = max(0, int(cfg.get("verify_premium_seconds", 86400)))
+            rows = [[InlineKeyboardButton(f"Open {i + 1}: {SEQ_LABEL[k]}  (tap = badlo)", callback_data=f"mini_seqtog:{i}")]
+                    for i, k in enumerate(seq)]
+            rows.append([InlineKeyboardButton("➕ Ads", callback_data="mini_seqadd:ads"),
+                         InlineKeyboardButton("➕ FSub", callback_data="mini_seqadd:fsub"),
+                         InlineKeyboardButton("➖ Last", callback_data="mini_seqdel")])
+            rows.append([InlineKeyboardButton(f"⏱ Free Time: {_dur(free)}", callback_data="mini_free")])
+            rows.append(_back("mini_flow"))
+            await cq.message.edit_text(
+                "<b>🧩 Custom Sequence</b>\n\n"
+                "User jab channel link kholta hai (har <i>open</i>), us open par kya aayega:\n\n"
+                f"{seq_text(seq, free)}\n\n"
+                "<i>Jo user FSub pehle se join hai, uska FSub step skip ho jaata hai aur agle steps "
+                "ek open pehle aa jaate hain (jaise Ads, FSub, Ads, Ads → joined user ke liye Ads, Ads, Ads, phir Free).\n"
+                "Free Time ki setting sab jagah ek hi hai (⏱ button).</i>",
+                reply_markup=InlineKeyboardMarkup(rows),
+            )
 
         # ── Ads tutorial (user ko "How to watch ads" button) ───────────
         elif cmd == "mini_tut":
             cfg = await _get_bot_config()
             t = cfg.get("miniapp_tutorial")
-            rows = [[InlineKeyboardButton("Replace Video" if t else "Set Video", callback_data="mini_tutset")]]
+            rows = [[InlineKeyboardButton("Replace Video" if t and t.get("kind") != "link" else "Set Video", callback_data="mini_tutset"),
+                     InlineKeyboardButton("🔗 Set Link", callback_data="mini_tutlink")]]
             if t:
                 rows.append([InlineKeyboardButton("Remove", callback_data="mini_tutdel")])
             rows.append(_back())
             await cq.message.edit_text(
                 "<b>🎓 Ads Tutorial</b>\n\n"
-                f"Status: <b>{'SET (' + t.get('kind', 'video') + ')' if t else 'Not set'}</b>\n\n"
-                "Set hone par user ke <b>Watch Video Ad</b> button ke neeche <b>How to watch ads</b> button aata hai; "
-                "dabane par ye video bheja jata hai (auto-delete ke saath). Set nahi hai toh button nahi dikhta.",
+                f"Status: <b>{('LINK — ' + t.get('url', '')) if t and t.get('kind') == 'link' else ('SET (' + t.get('kind', 'video') + ')' if t else 'Not set')}</b>\n\n"
+                "Set hone par user ke <b>Watch Video Ad</b> button ke neeche <b>How to watch ads</b> button aata hai. "
+                "<b>Video</b> set ho toh wo bheja jata hai (auto-delete ke saath); <b>Link</b> set ho toh button seedha us link "
+                "(channel / post) ko kholta hai. Set nahi hai toh button nahi dikhta.",
                 reply_markup=InlineKeyboardMarkup(rows))
 
         elif cmd == "mini_tutset":
@@ -637,6 +660,19 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
             cq.data = "mini_tut"
             await mini_callbacks(client, cq)
 
+        elif cmd == "mini_tutlink":
+            text = await _ask(client, cq, "<b>🎓 Ads Tutorial</b>\n\nTutorial wale channel / post ka link bhejo "
+                              "(jaise <code>https://t.me/channel/12</code> ya <code>@channel</code>).", "mini_tut")
+            if text:
+                url = normalize_tut_link(text)
+                if url:
+                    await _set_bot_config("miniapp_tutorial", {"kind": "link", "url": url})
+                    await cq.answer("✅ Link saved")
+                else:
+                    await cq.message.reply("❌ Valid link bhejo (https://... ya @channel).")
+            cq.data = "mini_tut"
+            await mini_callbacks(client, cq)
+
         elif cmd == "mini_tutdel":
             await _set_bot_config("miniapp_tutorial", None)
             await cq.answer("Removed")
@@ -659,7 +695,8 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
             s = await get_miniapp_settings()
             cur = s["fb_daily"]
             rows = [[InlineKeyboardButton(("✅ " if cur == v else "") + ("Off" if v == 0 else f"{v}/day"),
-                                          callback_data=f"mini_fbset:{v}") for v in (0, 1, 2, 3, 5)], _back()]
+                                          callback_data=f"mini_fbset:{v}") for v in (0, 1, 2, 3, 5)],
+                    [InlineKeyboardButton("✏️ Custom number", callback_data="mini_fbcustom")], _back()]
             await cq.message.edit_text(
                 "<b>🛟 Ad Fallback</b>\n\n"
                 f"Abhi: <b>{'OFF' if not cur else str(cur) + ' baar / din'}</b>\n\n"
@@ -668,8 +705,20 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
                 "Ek user din mein itni baar hi use kar sakta hai. Off = user ko error dikhta hai.",
                 reply_markup=InlineKeyboardMarkup(rows))
 
+        elif cmd == "mini_fbcustom":
+            text = await _ask(client, cq, "<b>🛟 Ad Fallback</b>\n\nEk user din mein kitni baar \"Continue without ads\" use kar sake? "
+                              "Number bhejo (0-100). <code>0</code> = Off.", "mini_fb")
+            n = _parse_int(text, 0, 100) if text else None
+            if n is not None:
+                await _set_bot_config("miniapp_fb_daily", n)
+                await cq.answer("✅ Saved")
+            elif text:
+                await cq.message.reply("❌ Sirf number bhejo, jaise 7.")
+            cq.data = "mini_fb"
+            await mini_callbacks(client, cq)
+
         elif cmd == "mini_fbset":
-            await _set_bot_config("miniapp_fb_daily", max(0, min(20, int(parts[1]))))
+            await _set_bot_config("miniapp_fb_daily", max(0, min(100, int(parts[1]))))
             await cq.answer("✅ Saved")
             cq.data = "mini_fb"
             await mini_callbacks(client, cq)
@@ -851,12 +900,31 @@ async def cmd_set_miniwait(client: Bot, msg: Message):
     await msg.reply(f"✅ Har ad ke liye minimum <b>{sec}s</b> set.")
 
 
+def normalize_tut_link(text: str) -> str:
+    """'@channel' / 't.me/x' / 'https://...' -> https URL. Galat ho toh ''."""
+    t = (text or "").strip().split()[0] if (text or "").strip() else ""
+    if t.startswith("@") and re.fullmatch(r"@[A-Za-z0-9_]{4,}", t):
+        return "https://t.me/" + t[1:]
+    if re.match(r"^(t\.me|telegram\.me)/", t):
+        t = "https://" + t
+    return t if re.match(r"^https://[^\s/]+\.[^\s/]+", t) else ""
+
+
 async def send_ads_tutorial(client, uid: int) -> bool:
     """Admin ka set kiya tutorial user ko bhejo. False agar set nahi / send fail."""
     cfg = await _get_bot_config()
     t = cfg.get("miniapp_tutorial")
     if not t:
         return False
+    if t.get("kind") == "link":
+        try:
+            await client.send_message(uid, "<b>How to watch the ads</b>\n\n<blockquote>Open the guide below, then come back and tap "
+                                      "<b>Watch Video Ad</b>.</blockquote>",
+                                      reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Open tutorial", url=t["url"])]]))
+            return True
+        except Exception as e:
+            logger.warning(f"ads tutorial link send failed: {e}")
+            return False
     caption = ("<b>How to watch the ads</b>\n\n<blockquote>Watch this short guide, then tap "
                "<b>Watch Video Ad</b>. This message is deleted automatically.</blockquote>")
     kind = t.get("kind", "video")

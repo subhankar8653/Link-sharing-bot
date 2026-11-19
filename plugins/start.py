@@ -1446,7 +1446,9 @@ async def start_command(client: Bot, message: Message):
                     web_url = f"{ms['url']}/miniapp?t={token}"
                     _tut = (await _get_bot_config()).get("miniapp_tutorial")
                     _rows = [[InlineKeyboardButton("Watch Video Ad", web_app=WebAppInfo(url=web_url))]]
-                    if _tut:
+                    if _tut and _tut.get("kind") == "link" and _tut.get("url"):
+                        _rows.append([InlineKeyboardButton("How to watch ads", url=_tut["url"])])
+                    elif _tut:
                         _rows.append([InlineKeyboardButton("How to watch ads", callback_data="ads_tut")])
                     prompt_msg = await message.reply_text(
                         "<b>Your link is ready</b>\n\n"
