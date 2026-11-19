@@ -72,6 +72,7 @@ def _norm_ad(a: dict) -> dict:
         "id": str(a.get("id", "")),
         "times": max(1, min(MAX_TIMES, int(a.get("times", 1)))),
         "on": bool(a.get("on", True)),
+        "place": a.get("place", "both") if a.get("place", "both") in ("both", "gate", "earn") else "both",
     }
 
 
@@ -87,6 +88,7 @@ async def get_miniapp_settings() -> dict:
         "free_seconds": int(cfg.get("verify_premium_seconds", 86400)),  # sirf jab Daily Goal OFF ho
         "goal_reward_seconds": int(cfg.get("miniapp_goal_reward", 86400)),  # goal poora -> itni der ads-free
         "flow": cfg.get("link_flow", "fsub_ads") if cfg.get("link_flow", "fsub_ads") in FLOW_LABELS else "fsub_ads",
+        "fb_daily": max(0, int(cfg.get("miniapp_fb_daily", 3))),   # ads fail hone par "bina ads" raasta: din mein kitni baar (0 = band)
         "inapp": False,   # passive in-app ads hata diye (auto-ads uncounted the)
     }
 
@@ -99,11 +101,12 @@ async def _save_ads(ads: list) -> None:
     await _set_bot_config("miniapp_ads", ads)
 
 
-def build_steps(ads: list) -> list:
-    """ON wale ads ko unke 'times' ke hisaab se expand karo, order same rahega."""
+def build_steps(ads: list, place: str = "gate") -> list:
+    """ON wale ads ko 'times' ke hisaab se expand karo. place: "gate" (link unlock) ya "earn" (Senpai Sync Earn tab).
+    Ad ka place "both" ho toh dono jagah chalta hai."""
     steps = []
     for a in ads:
-        if a["on"]:
+        if a["on"] and a.get("place", "both") in ("both", place):
             steps.extend({"provider": a["provider"], "id": a["id"]} for _ in range(a["times"]))
     return steps
 
@@ -186,7 +189,8 @@ def _dur(seconds: int) -> str:
 
 def _ad_line(i: int, a: dict) -> str:
     st = "✅" if a["on"] else "⏸"
-    return f"{st} {i}. <b>{a['provider']}</b> ×{a['times']} — <code>{a['id']}</code>"
+    tag = {"gate": " [gate]", "earn": " [earn]"}.get(a.get("place", "both"), "")
+    return f"{st} {i}. <b>{a['provider']}</b> ×{a['times']}{tag} — <code>{a['id']}</code>"
 
 
 def _menu_text(s: dict) -> str:
@@ -211,6 +215,7 @@ def _menu_text(s: dict) -> str:
         f"• Daily Goal: <b>{goal}</b>   • Min watch: <b>{s['min_seconds']}s</b>\n"
         f"• {rule}\n"
         f"• Link flow: <b>{FLOW_LABELS[s['flow']]}</b>\n"
+        f"• Ad fallback: <b>{(str(s['fb_daily']) + '/day') if s['fb_daily'] else 'OFF'}</b>\n"
         f"• URL: <code>{url}</code>\n\n"
         f"<b>Ads (order mein):</b>\n{ads}"
     )
@@ -227,6 +232,7 @@ def _menu_kb(s: dict) -> InlineKeyboardMarkup:
          InlineKeyboardButton("📊 Stats", callback_data="mini_stats")],
         [InlineKeyboardButton("🌐 Set URL", callback_data="mini_url"),
          InlineKeyboardButton("🎓 Ads Tutorial", callback_data="mini_tut")],
+        [InlineKeyboardButton("🛟 Ad Fallback", callback_data="mini_fb")],
         [InlineKeyboardButton("back", callback_data="settings_main")],
     ])
 
@@ -549,6 +555,37 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
             cq.data = "mini_tut"
             await mini_callbacks(client, cq)
 
+        elif cmd == "mini_adplace":
+            i = int(parts[1])
+            s = await get_miniapp_settings(); ads = s["ads"]
+            if 0 <= i < len(ads):
+                order = ["both", "gate", "earn"]
+                ads[i]["place"] = order[(order.index(ads[i]["place"]) + 1) % 3]
+                await _save_ads(ads)
+                if s["enabled"] and not build_steps(ads):
+                    await cq.answer("⚠️ Link gate ke liye koi ad nahi bacha — Mini App OFF kar diya", show_alert=True)
+                    await _set_bot_config("miniapp_enabled", False)
+            await _show_ad(cq, i)
+
+        elif cmd == "mini_fb":
+            s = await get_miniapp_settings()
+            cur = s["fb_daily"]
+            rows = [[InlineKeyboardButton(("✅ " if cur == v else "") + ("Off" if v == 0 else f"{v}/day"),
+                                          callback_data=f"mini_fbset:{v}") for v in (0, 1, 2, 3, 5)], _back()]
+            await cq.message.edit_text(
+                "<b>🛟 Ad Fallback</b>\n\n"
+                f"Abhi: <b>{'OFF' if not cur else str(cur) + ' baar / din'}</b>\n\n"
+                "Kisi user ke ads load na hon (AdBlock, VPN, black screen) toh wo <b>Continue without ads</b> dabata hai. "
+                "Bot use <b>FSub</b> (channels join) karwata hai aur phir link deta hai. Ads-free time ya daily goal nahi milta.\n"
+                "Ek user din mein itni baar hi use kar sakta hai. Off = user ko error dikhta hai.",
+                reply_markup=InlineKeyboardMarkup(rows))
+
+        elif cmd == "mini_fbset":
+            await _set_bot_config("miniapp_fb_daily", max(0, min(20, int(parts[1]))))
+            await cq.answer("✅ Saved")
+            cq.data = "mini_fb"
+            await mini_callbacks(client, cq)
+
         # ── Stats ─────────────────────────────────────
         elif cmd == "mini_stats":
             st = await Seishiro.get_miniapp_stats()
@@ -613,6 +650,8 @@ async def _show_ad(cq: CallbackQuery, i: int):
          InlineKeyboardButton(f"Times: {a['times']}", callback_data="mini_noop"),
          InlineKeyboardButton("➕", callback_data=f"mini_adt:{i}:1")],
         [InlineKeyboardButton("⏸ Turn OFF" if a["on"] else "▶️ Turn ON", callback_data=f"mini_adon:{i}")],
+        [InlineKeyboardButton("📍 Place: " + {"both": "Gate + Earn", "gate": "Link gate only", "earn": "Earn tab only"}[a["place"]],
+                              callback_data=f"mini_adplace:{i}")],
         [InlineKeyboardButton("⬆️ Up", callback_data=f"mini_admv:{i}:up"),
          InlineKeyboardButton("⬇️ Down", callback_data=f"mini_admv:{i}:down")],
     ]
@@ -625,7 +664,8 @@ async def _show_ad(cq: CallbackQuery, i: int):
         f"• Network: <b>{PROVIDER_LABEL.get(a['provider'], a['provider'])}</b>\n"
         f"• ID: <code>{a['id']}</code>\n"
         f"• Status: <b>{'ON' if a['on'] else 'OFF'}</b>\n"
-        f"• Har session mein: <b>{a['times']} baar</b>",
+        f"• Har session mein: <b>{a['times']} baar</b>\n"
+        f"• Place: <b>{ {'both': 'Gate + Earn', 'gate': 'Link gate only', 'earn': 'Earn tab only'}[a['place']] }</b>",
         reply_markup=InlineKeyboardMarkup(rows),
     )
 
@@ -723,24 +763,32 @@ async def cmd_set_miniwait(client: Bot, msg: Message):
     await msg.reply(f"✅ Har ad ke liye minimum <b>{sec}s</b> set.")
 
 
-@Bot.on_callback_query(filters.regex(r"^ads_tut$"), group=-1)
-async def cb_ads_tutorial(client: Bot, cq: CallbackQuery):
-    """User: 'How to watch ads' -> tutorial video (admin ne set kiya ho toh)."""
+async def send_ads_tutorial(client, uid: int) -> bool:
+    """Admin ka set kiya tutorial user ko bhejo. False agar set nahi / send fail."""
     cfg = await _get_bot_config()
     t = cfg.get("miniapp_tutorial")
     if not t:
-        await cq.answer("Tutorial is not available right now.", show_alert=True)
-        raise StopPropagation
+        return False
     caption = ("<b>How to watch the ads</b>\n\n<blockquote>Watch this short guide, then tap "
                "<b>Watch Video Ad</b>. This message is deleted automatically.</blockquote>")
-    uid = cq.from_user.id
+    kind = t.get("kind", "video")
+    send = {"video": client.send_video, "animation": client.send_animation,
+            "document": client.send_document, "photo": client.send_photo}.get(kind, client.send_video)
+    key = kind if kind in ("video", "animation", "document", "photo") else "video"
     try:
-        send = {"video": client.send_video, "animation": client.send_animation,
-                "document": client.send_document, "photo": client.send_photo}.get(t.get("kind", "video"), client.send_video)
-        key = {"video": "video", "animation": "animation", "document": "document", "photo": "photo"}.get(t.get("kind", "video"), "video")
         await send(uid, **{key: t["file_id"]}, caption=caption)
-        await cq.answer()
+        return True
     except Exception as e:
         logger.warning(f"ads tutorial send failed: {e}")
-        await cq.answer("Could not send the tutorial. Please try again.", show_alert=True)
+        return False
+
+
+@Bot.on_callback_query(filters.regex(r"^ads_tut$"), group=-1)
+async def cb_ads_tutorial(client: Bot, cq: CallbackQuery):
+    """User: 'How to watch ads' -> tutorial video (admin ne set kiya ho toh)."""
+    ok = await send_ads_tutorial(client, cq.from_user.id)
+    if ok:
+        await cq.answer()
+    else:
+        await cq.answer("Tutorial is not available right now.", show_alert=True)
     raise StopPropagation

@@ -1296,6 +1296,43 @@ class Master:
             logging.error(f"pop_flow_msgs error: {e}")
             return []
 
+    # ── Ad fallback: ads fail hone par FSub se link (din mein limited baar) ──
+
+    async def fallback_use(self, user_id: int, limit: int) -> bool:
+        """Aaj ke quota se 1 use karo. False agar limit khatam."""
+        try:
+            uid, today = int(user_id), self._ist_date()
+            await self.user_data.update_one({"_id": uid}, {"$setOnInsert": {"fb_count": 0, "fb_day": ""}}, upsert=True)
+            await self.user_data.update_one({"_id": uid, "fb_day": {"$ne": today}}, {"$set": {"fb_day": today, "fb_count": 0}})
+            r = await self.user_data.update_one({"_id": uid, "fb_count": {"$lt": int(limit)}}, {"$inc": {"fb_count": 1}})
+            return r.modified_count > 0
+        except Exception as e:
+            logging.error(f"fallback_use error: {e}")
+            return False
+
+    async def set_ads_bypass(self, user_id: int, seconds: int = 1800) -> None:
+        try:
+            await self.user_data.update_one(
+                {"_id": int(user_id)},
+                {"$set": {"ads_bypass_until": datetime.now() + timedelta(seconds=int(seconds))}}, upsert=True)
+        except Exception as e:
+            logging.error(f"set_ads_bypass error: {e}")
+
+    async def has_ads_bypass(self, user_id: int) -> bool:
+        try:
+            u = await self.user_data.find_one({"_id": int(user_id)})
+            until = u.get("ads_bypass_until") if u else None
+            return isinstance(until, datetime) and datetime.now() <= until
+        except Exception as e:
+            logging.error(f"has_ads_bypass error: {e}")
+            return False
+
+    async def pop_ads_bypass(self, user_id: int) -> None:
+        try:
+            await self.user_data.update_one({"_id": int(user_id)}, {"$unset": {"ads_bypass_until": ""}})
+        except Exception as e:
+            logging.error(f"pop_ads_bypass error: {e}")
+
     async def delete_old_tokens(self) -> None:
         """1 ghante se purane tokens delete karo (cleanup)."""
         import datetime

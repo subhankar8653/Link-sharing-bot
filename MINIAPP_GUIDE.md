@@ -149,3 +149,19 @@ Agar Telegram se number na mile toh bracket mein wajah (jaise get:BotMethodInval
 - **Auto Delete (sab bot messages)**: `/settings` -> **Auto Delete** (Off / 2m / 5m / 10m / 30m / 1h / 6h, default 10 min).
   Bot ka har private-chat message (send_message/photo/video/animation/document) delete queue (MongoDB) mein jata hai, restart ke baad bhi delete hota hai.
   Exempt: broadcast (copy), group/channel messages, admin ki withdrawal request. Kisi message ko rakhna ho: `keep=True`.
+
+# v12
+## Adsgram: ek hi URL se
+Alag project zaroori nahi. Ek hi Vercel URL chalta hai (`SYNC_MODE` default `both`). Adsgram form: Web app url = wahi Vercel URL,
+Telegram direct link = BotFather `/newapp` mein wahi URL daalke `https://t.me/<BotUsername>/<shortname>`, Bot ID = token ka ':' se pehle ka number.
+**Ad placement:** `/settings` -> Mini App Menu -> Ads Manage -> ad -> **Place**: Gate + Earn / Link gate only / Earn tab only.
+Monetag ko "Link gate only" aur Adsgram ko "Earn tab only" rakho: Adsgram ke ads sirf Senpai Sync (Earn tab) mein chalenge, link-unlock gate mein kabhi nahi.
+Adsgram ko app ke baare mein sach likho (isi app mein link-unlock step bhi hai, jisme dusre network ke ads hain).
+
+## Ad Fallback (ads load na hon)
+`/settings` -> Mini App Menu -> **Ad Fallback** (Off / 1 / 2 / 3 / 5 per day). AdBlock / VPN / black screen par page "Continue without ads" deta hai:
+bot FSub karwata hai aur phir link (ads-free time ya daily goal nahi milta). Ad 75 sec mein na chale toh fail maan liya jata hai;
+12 sec baad "Ad not loading?" link dikhta hai.
+
+## Mini App
+Success screen par channel ki photo + naam + Open channel. Tutorial set ho toh page par "Need help? Watch the tutorial" (video chat mein jata hai).

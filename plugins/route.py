@@ -119,6 +119,8 @@ async def api_mini_init(request):
         "min_seconds": s["min_seconds"],
         "uid": uid,
         "channel": {"title": info["title"], "has_photo": bool(info["photo"])},
+        "fallback": s["fb_daily"] > 0,
+        "tutorial": bool((await _get_cfg()).get("miniapp_tutorial")),
     })
 
 
@@ -172,6 +174,51 @@ async def api_mini_complete(request):
         return web.json_response({"ok": False, "error": "server"})
 
     return web.json_response({"ok": ok, "error": None if ok else reason, "info": info})
+
+
+async def _get_cfg() -> dict:
+    from plugins.premium import _get_bot_config
+    return await _get_bot_config()
+
+
+@routes.post("/api/mini/fallback")
+async def api_mini_fallback(request):
+    """Ads load nahi hue: bina ads FSub-> link (limited)."""
+    from plugins.start import complete_via_fallback
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad_request"}, status=400)
+    uid, token, doc, err = await _auth(body)
+    if err:
+        return web.json_response({"ok": False, "error": err})
+    started = doc.get("mini_started_at")
+    if not started or (datetime.datetime.now() - started).total_seconds() < 8:
+        return web.json_response({"ok": False, "error": "too_fast"})   # session khulte hi turant skip nahi
+    bot = request.app.get("bot")
+    if bot is None:
+        return web.json_response({"ok": False, "error": "server"})
+    try:
+        ok, reason, info = await complete_via_fallback(bot, uid, token)
+    except Exception as e:
+        logger.error(f"miniapp fallback error: {e}", exc_info=True)
+        return web.json_response({"ok": False, "error": "server"})
+    return web.json_response({"ok": ok, "error": None if ok else reason, "info": info})
+
+
+@routes.post("/api/mini/tutorial")
+async def api_mini_tutorial(request):
+    from plugins.miniapp import send_ads_tutorial
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad_request"}, status=400)
+    uid, token, doc, err = await _auth(body)
+    if err:
+        return web.json_response({"ok": False, "error": err})
+    bot = request.app.get("bot")
+    ok = bool(bot) and await send_ads_tutorial(bot, uid)
+    return web.json_response({"ok": ok, "error": None if ok else "no_tutorial"})
 
 
 @routes.get("/config.js")

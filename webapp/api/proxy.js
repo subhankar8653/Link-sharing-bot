@@ -2,7 +2,7 @@
 // Railway URL sirf Vercel Environment Variable SYNC_API mein rehta hai (server-side).
 const ALLOW = [
   /^\/api\/sync\/[a-z_]{2,24}$/,
-  /^\/api\/mini\/(init|complete)$/,
+  /^\/api\/mini\/(init|complete|fallback|tutorial)$/,
   /^\/miniapp\/photo$/,
 ];
 

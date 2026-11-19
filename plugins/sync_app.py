@@ -203,7 +203,7 @@ async def act_ad_start(tg: dict, body: dict, bot) -> dict:
     left = _cooldown_left(u, st)
     if left:
         return {"ok": False, "error": "cooldown", "left": left}
-    steps = build_steps((await get_miniapp_settings())["ads"])
+    steps = build_steps((await get_miniapp_settings())["ads"], "earn")
     if not steps:
         return {"ok": False, "error": "no_ads"}
     ad = random.choice(steps)

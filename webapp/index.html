@@ -158,6 +158,8 @@
   .proof .mid { flex:1; min-width:0; font-size:13.5px; font-weight:650; } .proof .mid small { display:block; margin-top:2px; font-size:11.5px; color:var(--muted); font-weight:500; }
   .proof .amt { font-weight:800; font-size:14px; color:var(--ok); }
   .sumline { display:flex; gap:10px; margin-bottom:12px; } .sumline div { flex:1; background:var(--panel-2); border:1px solid var(--line); border-radius:13px; padding:10px 12px; } .sumline b { display:block; font-size:17px; } .sumline span { font-size:11.5px; color:var(--muted); }
+  .linkbtn { background:none; border:0; color:var(--accent-2); font-size:12.5px; font-weight:600; margin-top:10px; padding:6px 8px; cursor:pointer; }
+  .linkbtn.muted { color:var(--muted); font-weight:500; }
   .nav button { font-size:10.5px; padding:9px 2px 7px; } .nav button svg { width:19px; height:19px; }
   @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none !important; transition:none !important; } }
 </style>
@@ -198,14 +200,28 @@
     <p class="sub" id="g-sub"></p>
     <div class="steps" id="g-steps"></div>
     <button class="btn" id="g-btn"></button>
+    <button class="linkbtn hidden" id="g-trouble">Ad not loading? Continue without ads</button>
     <div class="msg" id="g-msg"></div>
     <div class="foot"><svg><use href="#i-shield"/></svg>Secure verification</div>
+    <button class="linkbtn muted hidden" id="g-help">Need help? Watch the tutorial</button>
   </div>
   <div class="screen" id="g-done">
-    <div class="big ok"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
-    <h1 id="g-done-t">Access unlocked</h1><p class="sub" id="g-done-d">Your link is ready. It has also been sent to the chat.</p>
+    <div class="eyebrow" id="g-done-e">Access unlocked</div>
+    <div class="avatar-wrap" style="width:104px;height:104px">
+      <svg class="ring" viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" cx="60" cy="60" r="52" style="stroke:#3ddc97;stroke-dashoffset:0;filter:none"/></svg>
+      <div class="avatar" id="g-done-avatar"></div><div class="badge done"><svg><use href="#i-check"/></svg></div>
+    </div>
+    <h1 id="g-done-t">Your link</h1><p class="sub" id="g-done-d">Your link is ready. It has also been sent to the chat.</p>
     <button class="btn" id="g-open" style="margin-bottom:10px">Open channel</button>
     <button class="btn alt" id="g-back">Back to chat</button>
+  </div>
+  <div class="screen" id="g-fb">
+    <div class="big bad"><svg><use href="#i-alert"/></svg></div>
+    <h1>Ads are not loading</h1>
+    <p class="sub">This can happen with AdBlock, a VPN, a private DNS or a weak connection. You can try again, or continue without ads: you will be asked to join the required channels and then receive your link.</p>
+    <button class="btn" id="g-fb-retry" style="margin-bottom:10px">Try ads again</button>
+    <button class="btn alt" id="g-fb-go">Continue without ads</button>
+    <div class="msg" id="g-fb-msg"></div>
   </div>
   <div class="screen" id="g-err">
     <div class="big bad"><svg><use href="#i-alert"/></svg></div>
@@ -292,7 +308,7 @@
   /* ════════════════════════ GATE (link unlock) ════════════════════════ */
   function startGate() {
     $('gate').classList.remove('hidden');
-    const show = (n) => ['load', 'main', 'done', 'err'].forEach((x) => $('g-' + x).classList.toggle('on', x === n));
+    const show = (n) => ['load', 'main', 'done', 'fb', 'err'].forEach((x) => $('g-' + x).classList.toggle('on', x === n));
     const ERR = {
       auth: ['Open from Telegram', 'This page only works inside the bot as a Telegram Mini App.'],
       invalid: ['Link not valid', 'Go back to the bot and open the channel link again.'],
@@ -303,6 +319,8 @@
       incomplete: ['Ads not finished', 'Please try again.'],
       too_fast: ['Please wait a moment', 'Ads must be watched fully before verification. Try again.'],
       invite_error: ['Could not create link', 'Go back to the bot and try again.'],
+      fb_limit: ['Limit reached', 'You have used the no-ads option too many times today. Please try again tomorrow.'],
+      fb_disabled: ['Not available', 'Please try the ads again.'],
       server: ['Server error', 'Please try again in a little while.'],
       unavailable: ['Server unavailable', 'The server is temporarily unavailable. Please try again in a little while.'],
       config: ['Service unavailable', 'This service is not available yet. Please try again later.'], default: ['Something went wrong', 'Please try again.']
@@ -316,14 +334,15 @@
     const setMsg = (t, c) => { const m = $('g-msg'); m.textContent = t || ''; m.className = 'msg' + (c ? ' ' + c : ''); };
     const setBtn = (h, d) => { const b = $('g-btn'); b.innerHTML = h; b.disabled = !!d; };
     const nextLabel = () => icon('i-play') + '<span>Watch ad ' + (idx + 1) + ' of ' + steps.length + '</span>';
-    function avatar(ch) {
-      const box = $('g-avatar'); box.innerHTML = '';
+    let chInfo = null;
+    function avatarInto(box, ch, fs) {
+      box.innerHTML = '';
       const name = (ch && ch.title) || '';
-      const ini = document.createElement('div'); ini.className = 'initial'; ini.style.fontSize = '40px'; ini.textContent = (name.trim()[0] || 'C').toUpperCase();
+      const ini = document.createElement('div'); ini.className = 'initial'; ini.style.fontSize = fs + 'px'; ini.textContent = (name.trim()[0] || 'C').toUpperCase();
       box.appendChild(ini);
       if (ch && ch.has_photo) { const img = new Image(); img.alt = ''; img.onload = () => { box.innerHTML = ''; box.appendChild(img); }; img.src = API + '/miniapp/photo?t=' + encodeURIComponent(token); }
-      $('g-title').textContent = name || 'Your link';
     }
+    function avatar(ch) { chInfo = ch; avatarInto($('g-avatar'), ch, 40); $('g-title').textContent = (ch && ch.title) || 'Your link'; }
     function render() {
       const el = $('g-steps'); el.innerHTML = '';
       steps.forEach((_, i) => {
@@ -336,38 +355,82 @@
       });
       const d = shown + failed; $('g-ring').style.strokeDashoffset = String(CIRC * (1 - (steps.length ? d / steps.length : 0)));
     }
-    async function finish() {
-      setBtn('<div class="spin"></div><span>Verifying</span>', true); setMsg('');
-      let res; try { res = await gapi('/api/mini/complete', { shown: shown, failed: failed }); } catch (e) { return fail('server'); }
-      if (!res.ok && res.error === 'too_fast') { await new Promise((r) => setTimeout(r, 4000)); try { res = await gapi('/api/mini/complete', { shown: shown, failed: failed }); } catch (e) { return fail('server'); } }
-      if (!res.ok) return fail(res.error);
+    let FALLBACK = false, troubleT = null;
+    const clearTrouble = () => { clearTimeout(troubleT); troubleT = null; };
+    const showTrouble = () => { if (FALLBACK) $('g-trouble').classList.remove('hidden'); };
+    function showDone(info) {
+      info = info || {};
       try { tg && tg.disableClosingConfirmation(); } catch (e) {}
-      $('g-badge').className = 'badge done'; $('g-badge').innerHTML = icon('i-unlock', '');
-      const info = res.info || {};
+      clearTrouble();
       const link = info.invite_link || '';
+      const name = (chInfo && chInfo.title) || '';
+      avatarInto($('g-done-avatar'), chInfo, 36);
+      $('g-done-t').textContent = name || 'Your link';
       if (link) {
+        $('g-done-e').textContent = 'Access unlocked';
+        $('g-done-d').textContent = 'Your link is ready. It has also been sent to the chat.';
         $('g-open').classList.remove('hidden');
         $('g-open').onclick = () => { tap(); try { if (tg && tg.openTelegramLink && /^https:\/\/t\.me\//.test(link)) tg.openTelegramLink(link); else window.open(link, '_blank'); } catch (e) { window.open(link, '_blank'); } };
       } else {
         // FSub baaki hai: link abhi nahi, pehle chat mein channels join karne hain
         $('g-open').classList.add('hidden');
-        $('g-done-t').textContent = 'Ads completed';
-        $('g-done-d').textContent = 'One more step: join the required channels in the chat to receive your link.';
+        $('g-done-e').textContent = info.fallback ? 'One more step' : 'Ads completed';
+        $('g-done-d').textContent = 'Join the required channels in the chat to receive your link.';
       }
       $('g-back').onclick = closeApp;
       show('done'); haptic('success');
-      // Link button dikhana hai toh window khud band nahi hogi
-      if (!link) setTimeout(closeApp, 3500);
+      if (!link) setTimeout(closeApp, 4000);
     }
+    async function finish() {
+      clearTrouble();
+      setBtn('<div class="spin"></div><span>Verifying</span>', true); setMsg('');
+      let res; try { res = await gapi('/api/mini/complete', { shown: shown, failed: failed }); } catch (e) { return fail('server'); }
+      if (!res.ok && res.error === 'too_fast') { await new Promise((r) => setTimeout(r, 4000)); try { res = await gapi('/api/mini/complete', { shown: shown, failed: failed }); } catch (e) { return fail('server'); } }
+      if (!res.ok) return fail(res.error);
+      $('g-badge').className = 'badge done'; $('g-badge').innerHTML = icon('i-unlock', '');
+      showDone(res.info);
+    }
+    // Ads fail hue / black screen: bina ads FSub -> link (server limit ke saath)
+    async function doFallback() {
+      const msg = $('g-fb-msg'); msg.textContent = '';
+      $('g-fb-go').disabled = true; $('g-fb-go').innerHTML = '<div class="spin"></div><span>Please wait</span>';
+      let res; try { res = await gapi('/api/mini/fallback', { failed: Math.max(1, failed) }); } catch (e) { return fail('server'); }
+      if (!res.ok && res.error === 'too_fast') { await new Promise((r) => setTimeout(r, 6000)); try { res = await gapi('/api/mini/fallback', { failed: Math.max(1, failed) }); } catch (e) { return fail('server'); } }
+      if (!res.ok) return fail(res.error);
+      showDone(res.info);
+    }
+    function offerFallback() {
+      clearTrouble(); busy = false;
+      $('g-fb-go').disabled = false; $('g-fb-go').textContent = 'Continue without ads';
+      show('fb');
+    }
+    function resetAds() {
+      idx = 0; shown = 0; failed = 0; busy = false; status = steps.map(() => null);
+      $('g-trouble').classList.add('hidden'); setMsg(''); render(); setBtn(nextLabel(), false); show('main');
+    }
+    $('g-fb-retry').onclick = resetAds;
+    $('g-fb-go').onclick = doFallback;
+    $('g-trouble').onclick = offerFallback;
+    $('g-help').onclick = async () => {
+      tap(); let r; try { r = await gapi('/api/mini/tutorial'); } catch (e) { r = null; }
+      setMsg(r && r.ok ? 'Tutorial sent to your chat. Close this window to watch it, then open the link again.' : 'Tutorial is not available right now.', r && r.ok ? 'good' : 'bad');
+    };
+    const AD_TIMEOUT = 75000;   // black screen / SDK atak jaye toh is ad ko fail maan ke aage badho
     async function play() {
       if (busy) return; busy = true; tap();
       setBtn('<div class="spin"></div><span>Loading ad</span>', true); setMsg('');
-      const ad = steps[idx]; const fn = PROVIDERS[ad.provider]; const result = fn ? await fn(ad.id) : 'failed';
+      clearTrouble(); troubleT = setTimeout(showTrouble, 12000);
+      const ad = steps[idx]; const fn = PROVIDERS[ad.provider];
+      const result = fn ? await Promise.race([fn(ad.id), new Promise((r) => setTimeout(() => r('failed'), AD_TIMEOUT))]) : 'failed';
+      clearTrouble();
       if (result === 'ok') { status[idx] = 'ok'; shown++; idx++; haptic('success'); }
-      else if (result === 'failed') { status[idx] = 'skip'; failed++; idx++; setMsg('That ad was not available, moving on.'); }
+      else if (result === 'failed') { status[idx] = 'skip'; failed++; idx++; setMsg('That ad was not available, moving on.'); showTrouble(); }
       else { setMsg('Please watch the ad to the end to continue.', 'bad'); haptic('warning'); }
       busy = false; render();
-      if (idx >= steps.length) { if (shown < 1) return fail('no_ad_shown'); return finish(); }
+      if (idx >= steps.length) {
+        if (shown < 1) return FALLBACK ? offerFallback() : fail('no_ad_shown');
+        return finish();
+      }
       setBtn(result === 'skipped' ? icon('i-play') + '<span>Try again</span>' : nextLabel(), false);
     }
     $('g-btn').onclick = play;
@@ -376,9 +439,10 @@
       let res; try { res = await gapi('/api/mini/init'); } catch (e) { return fail('server'); }
       if (!res.ok) return fail(res.error);
       steps = res.steps || []; if (!steps.length) return fail('no_ads');
-      USER_ID = res.uid || ''; status = steps.map(() => null);
+      USER_ID = res.uid || ''; status = steps.map(() => null); FALLBACK = !!res.fallback;
       try { tg && tg.enableClosingConfirmation(); } catch (e) {}
       avatar(res.channel);
+      if (res.tutorial) $('g-help').classList.remove('hidden');
       $('g-sub').textContent = 'Watch ' + (steps.length === 1 ? 'one short ad' : steps.length + ' short ads') + '. Your link is sent to the chat as soon as you finish.';
       render(); setBtn(nextLabel(), false); show('main');
     })();

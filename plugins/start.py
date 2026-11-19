@@ -1166,6 +1166,71 @@ async def complete_miniapp_verification(client: Bot, uid: int, token: str, shown
     return True, "ok", info
 
 
+async def complete_via_fallback(client: Bot, uid: int, token: str) -> tuple[bool, str, dict]:
+    """
+    Ads load nahi hue / black screen: user "Continue without ads" dabata hai.
+    FSub pass hai toh seedha link, warna FSub screen (Joined ke baad seedha link, ads nahi).
+    Din mein limited baar (Ad Fallback setting); ads-free time / daily goal nahi milta.
+    """
+    ms = await get_miniapp_settings()
+    limit = ms["fb_daily"]
+    if limit <= 0:
+        return False, "fb_disabled", {}
+    if not await Seishiro.fallback_use(uid, limit):
+        return False, "fb_limit", {}
+    doc = await Seishiro.claim_verify_token(token, uid)
+    if not doc:
+        return False, "invalid_or_used", {}
+
+    channel_id = doc["channel_id"]
+    is_request = doc.get("is_request", False)
+    b64        = doc.get("b64", "")
+    fsub_ok    = await _user_fsub_ok(client, uid)
+
+    invite_link = None
+    if fsub_ok:
+        await _resolve_peer_safe(client, channel_id)
+        invite_link = await _get_fresh_invite_link(client, channel_id, is_request)
+        if not invite_link:
+            await Seishiro.unclaim_verify_token(token)
+            return False, "invite_error", {}
+    else:
+        await Seishiro.set_ads_bypass(uid, 1800)       # Joined ke baad link: ads dobara nahi
+
+    logger.info(f"MiniApp fallback: user={uid}, channel={channel_id}, fsub_ok={fsub_ok}")
+
+    try:
+        if doc.get("prompt_msg_id"):
+            await client.delete_messages(doc.get("prompt_chat_id", uid), doc["prompt_msg_id"])
+    except Exception as e:
+        logger.warning(f"prompt msg delete failed: {e}")
+
+    if not fsub_ok:
+        try:
+            user = await client.get_users(uid)
+            payload = ("req_" + b64) if is_request else b64
+            await not_joined(client, _UserMsg(client, user, payload))
+        except Exception as e:
+            logger.error(f"fsub screen after fallback failed: {e}", exc_info=True)
+        return True, "ok", {"fsub_required": True, "fallback": True}
+
+    await _clear_flow_msgs(client, uid)
+    link_msg = await client.send_message(
+        uid,
+        "<b><blockquote expandable>ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ! ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ᴛᴏ ᴘʀᴏᴄᴇᴇᴅ</blockquote></b>",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=invite_link)]])
+    )
+    asyncio.create_task(delete_after_delay(link_msg, 300))
+    if is_request and b64:
+        try:
+            await Seishiro.save_user_request_link(
+                uid, channel_id, b64,
+                link_msg_id=link_msg.id, link_chat_id=link_msg.chat.id, invite_link=invite_link)
+        except Exception as e:
+            logger.warning(f"save_user_request_link failed: {e}")
+    return True, "ok", {"invite_link": invite_link, "fallback": True}
+
+
 # ═══════════════════════════════════════════
 # /start COMMAND
 # ═══════════════════════════════════════════
@@ -1294,6 +1359,12 @@ async def start_command(client: Bot, message: Message):
                 flow     = await get_link_flow()
                 _premium = await Seishiro.has_premium_access(uid)
                 direct   = _premium or flow == "fsub_only"            # fsub_only: ads kabhi nahi
+                if not direct and await Seishiro.has_ads_bypass(uid):
+                    # "Continue without ads" (ads fail hue the): FSub pass karo -> seedha link
+                    if not await _fsub_gate(client, message):
+                        return
+                    await Seishiro.pop_ads_bypass(uid)
+                    direct = True
                 if not direct and await Seishiro.has_ads_free(uid):   # ads-free time chal raha hai
                     if flow == "ads_fsub" and not await _fsub_gate(client, message):
                         return                                         # FSub screen dikha di
