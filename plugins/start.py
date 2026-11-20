@@ -1040,9 +1040,13 @@ async def _handle_alt_token(client: Bot, message: Message, uid: int, token: str)
         if reason == "invite_error":
             return await message.reply_text("<b><blockquote expandable>Invite link error. Please try again in a moment.</blockquote></b>")
         return await message.reply_text("<b><blockquote expandable>⚠️ This link was already used.</blockquote></b>")
-    if doc.get("alt_short"):                              # shortener paar kiya → poora din free
-        alt = await get_alt_settings()
-        await Seishiro.set_ads_free(uid, alt["free_seconds"])
+    # Rotation: agla alt session agle smart link se (aakhir ke baad wapas pehle se)
+    try:
+        _alt = await get_alt_settings()
+        if _alt["links"] and int(doc.get("alt_idx", -1)) >= 0:
+            await Seishiro.set_alt_cursor(uid, (int(doc["alt_idx"]) + 1) % len(_alt["links"]))
+    except Exception as e:
+        logger.warning(f"alt cursor advance failed: {e}")
     logger.info(f"Alt method verified: user={uid}, shortener={bool(doc.get('alt_short'))}")
 
 

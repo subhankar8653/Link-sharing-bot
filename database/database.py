@@ -991,14 +991,30 @@ class Master:
         except Exception as e:
             logging.error(f"set_alt_session error: {e}")
 
-    async def stamp_alt_start(self, token: str) -> None:
-        """/go page khulte hi time save (anti-bypass: bina page kholay ya jaldi bot par aaye toh link nahi)."""
+    async def stamp_alt_start(self, token: str, idx: int = -1) -> None:
+        """/go page par Continue dabate hi time + kaunsa smart link dikhaya (idx) save (anti-bypass + rotation)."""
         import datetime
         try:
             await self.database['verify_tokens'].update_one(
-                {"token": token}, {"$set": {"alt_started_at": datetime.datetime.now()}})
+                {"token": token}, {"$set": {"alt_started_at": datetime.datetime.now(), "alt_idx": int(idx)}})
         except Exception as e:
             logging.error(f"stamp_alt_start error: {e}")
+
+    async def get_alt_cursor(self, user_id: int) -> int:
+        """Alternative method ke smart links ka rotating pointer (agla session kaunsa link)."""
+        try:
+            u = await self.user_data.find_one({"_id": int(user_id)}, {"alt_cursor": 1})
+            return max(0, int((u or {}).get("alt_cursor", 0) or 0))
+        except Exception as e:
+            logging.error(f"get_alt_cursor error: {e}")
+            return 0
+
+    async def set_alt_cursor(self, user_id: int, cursor: int) -> None:
+        try:
+            await self.user_data.update_one(
+                {"_id": int(user_id)}, {"$set": {"alt_cursor": max(0, int(cursor))}}, upsert=True)
+        except Exception as e:
+            logging.error(f"set_alt_cursor error: {e}")
 
     async def get_verify_token(self, token: str) -> dict:
         """Token ka data fetch karo."""

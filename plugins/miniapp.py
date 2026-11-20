@@ -168,22 +168,32 @@ async def miniapp_ready() -> bool:
     return bool(s["enabled"] and s["url"].startswith("https://") and build_steps(s["ads"]))
 
 
+ALT_MAX_LINKS = 10
+
+
 async def get_alt_settings() -> dict:
-    """Alternative method (Mini App na khule toh browser page: smart link ad + shortener)."""
+    """Alternative method (Mini App na khule toh browser page: smart link ad + shortener).
+    Reward / daily goal / free time / link flow sab Mini App ki settings se hi chalte hain."""
     cfg = await _get_bot_config()
+    links = cfg.get("alt_smartlinks")
+    if not isinstance(links, list):
+        links = []
+    old = str(cfg.get("alt_smartlink", "") or "")          # purana single smart link
+    if not links and old:
+        links = [old]
+    links = [l for l in links if isinstance(l, str) and l.startswith("https://")][:ALT_MAX_LINKS]
     return {
         "enabled": bool(cfg.get("alt_enabled", True)),
-        "smart": str(cfg.get("alt_smartlink", "") or ""),
+        "links": links,
         "wait": max(3, min(60, int(cfg.get("alt_wait", 5) or 5))),
-        "free_seconds": max(0, int(cfg.get("alt_free_seconds", 86400))),
         "short_on": bool(cfg.get("shortener_enabled") and cfg.get("shortener_api") and cfg.get("shortener_website")),
     }
 
 
 async def alt_ready() -> bool:
-    """Button tabhi dikhega jab ON ho aur kam se kam smart link ya shortener set ho (warna sirf 5s wait = free link ho jaata)."""
+    """Button tabhi dikhega jab ON ho aur kam se kam 1 smart link ya shortener set ho (warna sirf wait = free link ho jaata)."""
     a = await get_alt_settings()
-    return a["enabled"] and bool(a["smart"] or a["short_on"])
+    return a["enabled"] and bool(a["links"] or a["short_on"])
 
 
 def seconds_until_ist_midnight() -> int:
@@ -313,6 +323,14 @@ async def _show_menu(msg):
 
 def _back(to="mini_menu"):
     return [InlineKeyboardButton("back", callback_data=to)]
+
+
+def _link_host(url: str) -> str:
+    m = re.match(r"^https://([^/\s?#]+)([^\s]*)", url or "")
+    if not m:
+        return (url or "")[:30]
+    tail = m.group(2)[:14]
+    return m.group(1)[:26] + (tail if tail not in ("", "/") else "")
 
 
 def _parse_int(text: str, lo: int, hi: int):
@@ -531,47 +549,54 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
             await mini_callbacks(client, cq)
 
         # ── Alternative method (Mini App na khule) ─────
-        elif cmd in ("mini_alt", "mini_alttog", "mini_altwaitset", "mini_altfreeset", "mini_altlinkdel"):
+        elif cmd in ("mini_alt", "mini_alttog", "mini_altwaitset", "mini_altdel"):
             if cmd == "mini_alttog":
                 await _set_bot_config("alt_enabled", not (await get_alt_settings())["enabled"])
             elif cmd == "mini_altwaitset" and len(parts) > 1 and parts[1].isdigit():
                 await _set_bot_config("alt_wait", max(3, min(60, int(parts[1]))))
-            elif cmd == "mini_altfreeset" and len(parts) > 1 and parts[1].isdigit():
-                await _set_bot_config("alt_free_seconds", int(parts[1]))
-            elif cmd == "mini_altlinkdel":
-                await _set_bot_config("alt_smartlink", "")
+            elif cmd == "mini_altdel" and len(parts) > 1 and parts[1].isdigit():
+                links = (await get_alt_settings())["links"]
+                if int(parts[1]) < len(links):
+                    links.pop(int(parts[1]))
+                    await _set_bot_config("alt_smartlinks", links)
+                    await _set_bot_config("alt_smartlink", "")
             a = await get_alt_settings()
-            rows = [[InlineKeyboardButton("🔴 Turn OFF" if a["enabled"] else "🟢 Turn ON", callback_data="mini_alttog")],
-                    [InlineKeyboardButton("🔗 Smart Link: " + ("SET" if a["smart"] else "not set"), callback_data="mini_altlink")]]
-            if a["smart"]:
-                rows.append([InlineKeyboardButton("🗑 Remove Smart Link", callback_data="mini_altlinkdel")])
+            rows = [[InlineKeyboardButton("🔴 Turn OFF" if a["enabled"] else "🟢 Turn ON", callback_data="mini_alttog")]]
+            for i, l in enumerate(a["links"]):
+                rows.append([InlineKeyboardButton(f"🗑 {i + 1}. {_link_host(l)}", callback_data=f"mini_altdel:{i}")])
+            if len(a["links"]) < ALT_MAX_LINKS:
+                rows.append([InlineKeyboardButton("➕ Add Smart Link", callback_data="mini_altadd")])
             rows += _num_buttons("mini_altwaitset", [3, 5, 8, 10, 15], {v: f"{v}s" for v in (3, 5, 8, 10, 15)}, per_row=5)
             rows.append([InlineKeyboardButton("✏️ Custom wait", callback_data="mini_altwaitcustom")])
-            rows += _num_buttons("mini_altfreeset", [0, 21600, 43200, 86400, 172800],
-                                 {0: "None", 21600: "6h", 43200: "12h", 86400: "24h", 172800: "48h"}, per_row=5)
-            rows.append([InlineKeyboardButton("✏️ Custom pass reward", callback_data="mini_altfreecustom")])
             rows.append(_back())
+            lines = "\n".join(f"{i + 1}. <code>{_link_host(l)}</code>" for i, l in enumerate(a["links"])) or "<i>koi smart link nahi</i>"
             await cq.message.edit_text(
                 "<b>🔁 Alternative Method</b>\n\n"
-                f"Status: <b>{'ON' if a['enabled'] else 'OFF'}</b>  |  Wait: <b>{a['wait']}s</b>\n"
-                f"Smart Link: <b>{'set' if a['smart'] else 'not set'}</b>  |  Shortener: <b>{'ON' if a['short_on'] else 'OFF'}</b> (/shortener)\n"
-                f"Shortener pass reward: <b>{_dur(a['free_seconds'])}</b> free\n\n"
+                f"Status: <b>{'ON' if a['enabled'] else 'OFF'}</b>  |  Wait: <b>{a['wait']}s</b>  |  Shortener: <b>{'ON' if a['short_on'] else 'OFF'}</b> (/shortener)\n\n"
+                f"<b>Smart Links ({len(a['links'])}/{ALT_MAX_LINKS}):</b>\n{lines}\n\n"
                 "Jinka Mini App nahi khulta unko gate message mein <b>Mini App not opening?</b> button milta hai. "
-                "Us par ek page khulta hai: <b>Continue</b> dabane par Smart Link ad khulta hai, wait ke baad (Shortener ON ho toh shortener se hoke) "
-                "user bot par wapas aata hai aur link apne aap mil jaata hai.\n"
-                "<b>Shortener pass</b> karne wale ko upar wala free time milta hai. Premium users ko ye sab nahi dikhta (direct link).\n"
-                "<i>Smart Link ya Shortener, dono mein se ek set na ho toh button nahi dikhta.</i>",
+                "Page par <b>Continue</b> dabane par ek Smart Link khulta hai, wait ke baad (Shortener ON ho toh shortener se hoke) user bot par aata hai aur link mil jaata hai.\n\n"
+                "<b>Rotation:</b> har alt session mein 1 smart link, Mini App ads ki tarah ek ke baad ek (1, 2, 3 ... phir wapas 1).\n"
+                "<b>Count:</b> ek alt session = Mini App ka 1 ad — Daily Goal, Free Time, Link Flow sab Mini App ki settings se hi chalte hain (alag reward nahi).\n"
+                "<i>Smart Link ya Shortener mein se ek set na ho toh button nahi dikhta. Premium users ko direct link milta hai.</i>",
                 reply_markup=InlineKeyboardMarkup(rows),
             )
 
-        elif cmd == "mini_altlink":
-            text = await _ask(client, cq, "<b>🔗 Smart Link</b>\n\nSmart link / direct link URL bhejo (https://...).", "mini_alt")
+        elif cmd == "mini_altadd":
+            text = await _ask(client, cq, "<b>🔗 Add Smart Link</b>\n\nSmart link / direct link URL bhejo (https://...).", "mini_alt")
             if text:
-                if re.match(r"^https://[^\s]+\.[^\s]+$", text):
-                    await _set_bot_config("alt_smartlink", text)
-                    await cq.answer("✅ Saved")
-                else:
+                links = (await get_alt_settings())["links"]
+                if not re.match(r"^https://[^\s]+\.[^\s]+$", text):
                     await cq.message.reply("❌ Valid https link bhejo.")
+                elif text in links:
+                    await cq.message.reply("⚠️ Ye link pehle se hai.")
+                elif len(links) >= ALT_MAX_LINKS:
+                    await cq.message.reply(f"⚠️ Max {ALT_MAX_LINKS} smart links.")
+                else:
+                    links.append(text)
+                    await _set_bot_config("alt_smartlinks", links)
+                    await _set_bot_config("alt_smartlink", "")
+                    await cq.answer("✅ Added")
             cq.data = "mini_alt"
             await mini_callbacks(client, cq)
 
@@ -583,17 +608,6 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
                 await cq.answer("✅ Saved")
             elif text:
                 await cq.message.reply("❌ Sirf number bhejo, jaise 7.")
-            cq.data = "mini_alt"
-            await mini_callbacks(client, cq)
-
-        elif cmd == "mini_altfreecustom":
-            text = await _ask(client, cq, "<b>⏱ Shortener pass reward</b>\n\nTime bhejo: <code>6h</code>, <code>1d</code>, <code>30m</code>. <code>0</code> = None.", "mini_alt")
-            sec = _parse_duration(text) if text else None
-            if sec is not None:
-                await _set_bot_config("alt_free_seconds", sec)
-                await cq.answer("✅ Saved")
-            elif text:
-                await cq.message.reply("❌ Format galat. Jaise: 6h, 1d")
             cq.data = "mini_alt"
             await mini_callbacks(client, cq)
 

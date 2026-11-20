@@ -54,9 +54,14 @@ async def api_mini_alt(request):
     alt = await get_alt_settings()
     if not alt["enabled"]:
         return web.json_response({"ok": False, "error": "off"})
-    if body.get("go"):                       # Continue dabaya → wait yahin se shuru
-        await Seishiro.stamp_alt_start(token)
-    return web.json_response({"ok": True, "smart": alt["smart"], "next": doc["alt_next"], "wait": int(doc.get("alt_wait") or alt["wait"])})
+    smart = ""
+    if body.get("go"):                       # Continue dabaya → wait yahin se shuru + is session ka smart link (rotation)
+        links, idx = alt["links"], -1
+        if links:
+            idx = (await Seishiro.get_alt_cursor(doc["user_id"])) % len(links)
+            smart = links[idx]
+        await Seishiro.stamp_alt_start(token, idx)
+    return web.json_response({"ok": True, "smart": smart, "next": doc["alt_next"], "wait": int(doc.get("alt_wait") or alt["wait"])})
 
 
 async def _auth(body: dict):
