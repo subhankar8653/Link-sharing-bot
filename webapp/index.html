@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <title>Senpai Sync</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="config.js"></script>
 <style>
   :root {
@@ -251,7 +250,7 @@
 </div>
 <div class="toast" id="toast"></div>
 
-<script>
+<script type="text/plain" id="main-js">
 (function () {
   const tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { tg.ready(); tg.expand(); try { tg.setHeaderColor('#0a0d14'); tg.setBackgroundColor('#0a0d14'); } catch (e) {} try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {} }
@@ -267,19 +266,24 @@
   const closeApp = () => { tg ? tg.close() : window.close(); };
 
   async function post(path, extra) {
-    let r;
-    try {
-      r = await fetch(API + path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({ initData: initData }, extra || {})) });
-    } catch (e) { const er = new Error('network'); er.kind = 'network'; throw er; }
+    let r, last = null;
+    for (let i = 0; i < 2 && !r; i++) {
+      const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 12000);
+      try {
+        r = await fetch(API + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctl.signal,
+          body: JSON.stringify(Object.assign({ initData: initData }, extra || {})) });
+      } catch (e) { last = e; }
+      clearTimeout(tm);
+    }
+    if (!r) { const er = new Error('network'); er.kind = 'network'; throw er; }
     if (!(r.headers.get('content-type') || '').includes('json')) { const er = new Error('notjson'); er.kind = 'notjson'; er.status = r.status; throw er; }
     return r.json();
   }
   // User ko kabhi URL / technical detail nahi: sirf friendly message + chhota code.
   function faultText(f) {
     if (!f) return '';
-    const code = f.kind === 'notjson' ? 'E2-' + (f.status || 0) : 'E3';
-    return 'The server is temporarily unavailable. Please try again in a little while. (' + code + ')';
+    if (f.kind === 'network') return 'Connection problem. Switch between Wi-Fi and mobile data, turn off VPN or Private DNS, then try again. (E3)';
+    return 'The server is temporarily unavailable. Please try again in a little while. (E2-' + (f.status || 0) + ')';
   }
 
   // ───────────── Ad providers (gate + earn dono use karte hain) ─────────────
@@ -489,7 +493,7 @@
     try { res = await post('/api/sync/me', { start_param: (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || '' }); } catch (e) { fault = e; }
     if (!res || !res.ok) {
       const why = fault ? faultText(fault) : (ERR_MSG[res && res.error] || 'Please try again in a little while.');
-      $('v-home').innerHTML = '<div class="sec"><h3>Could not load</h3><p class="d">' + esc(why) + '</p></div>'; return;
+      $('v-home').innerHTML = '<div class="sec"><h3>Could not load</h3><p class="d">' + esc(why) + '</p><button class="btn" id="b-retry">Try again</button></div>'; $('b-retry').onclick = () => location.reload(); return;
     }
     S.me = res.me; S.cfg = res.config; USER_ID = S.me.id;
     document.querySelectorAll('.nav button').forEach((b) => { b.onclick = () => { tap(); go(b.dataset.tab); }; });
@@ -689,6 +693,46 @@
   if (token && MODE !== 'home') startGate();
   else if (MODE === 'gate') { $('app').classList.remove('hidden'); $('v-home').innerHTML = '<div class="sec"><h3>Open from the bot</h3><p class="d">This page unlocks a channel link. Open it from the button in the bot chat.</p></div>'; document.querySelector('.nav').classList.add('hidden'); }
   else boot();
+})();
+</script>
+<script>
+// Telegram SDK (telegram.org) kuch networks par slow/blocked hota hai. Pehle ye page ko blank rakhta tha.
+// Ab: SDK background mein load hota hai; 3.5s mein na aaye (ya fail ho) toh Telegram ke URL-hash se chhota SDK banakar app chala dete hain.
+(function () {
+  var started = false;
+  function shim() {
+    try {
+      var p = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+      var raw = p.get('tgWebAppData') || '';
+      var unsafe = {}; new URLSearchParams(raw).forEach(function (v, k) { unsafe[k] = v; });
+      try { unsafe.user = JSON.parse(unsafe.user); } catch (e) {}
+      var post = function (ev, data) {
+        try {
+          if (window.TelegramWebviewProxy) window.TelegramWebviewProxy.postEvent(ev, JSON.stringify(data || {}));
+          else if (window.parent !== window) window.parent.postMessage(JSON.stringify({ eventType: ev, eventData: data || {} }), '*');
+        } catch (e) {}
+      };
+      var no = function () {};
+      window.Telegram = { WebApp: {
+        initData: raw, initDataUnsafe: unsafe, platform: p.get('tgWebAppPlatform') || 'unknown', version: p.get('tgWebAppVersion') || '6.0',
+        ready: function () { post('web_app_ready'); }, expand: function () { post('web_app_expand'); }, close: function () { post('web_app_close'); },
+        setHeaderColor: no, setBackgroundColor: no, disableVerticalSwipes: no, enableClosingConfirmation: no, disableClosingConfirmation: no,
+        HapticFeedback: { notificationOccurred: no, impactOccurred: no },
+        openTelegramLink: function (u) { post('web_app_open_tg_link', { path_full: String(u).replace(/^https:\/\/t\.me/, '') }); }
+      } };
+    } catch (e) {}
+  }
+  function run() {
+    if (started) return; started = true;
+    if (!(window.Telegram && window.Telegram.WebApp)) shim();
+    var el = document.getElementById('main-js');
+    var sc = document.createElement('script'); sc.textContent = el.textContent; document.body.appendChild(sc);
+  }
+  var sdk = document.createElement('script');
+  sdk.src = 'https://telegram.org/js/telegram-web-app.js';
+  sdk.onload = run; sdk.onerror = run;
+  document.head.appendChild(sdk);
+  setTimeout(run, 3500);
 })();
 </script>
 </body>
