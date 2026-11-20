@@ -27,6 +27,7 @@ USER COMMANDS:
 """
 
 import datetime
+import re
 import logging
 import os
 
@@ -321,9 +322,16 @@ async def cmd_set_contact(client: Bot, msg: Message):
     if not await is_owner_or_admin(msg.from_user.id):
         return await msg.reply("⛔ Sirf admins ke liye!")
     if len(msg.command) < 2:
-        return await msg.reply("<code>/setcontact https://t.me/yourhandle</code>")
-    await _set_bot_config("contact_link", msg.command[1])
-    await msg.reply(f"✅ Contact link set: {msg.command[1]}")
+        return await msg.reply("<code>/setcontact @username</code>  ya  <code>/setcontact https://t.me/username</code>")
+    raw = msg.command[1].strip()
+    if raw.startswith("@"):
+        raw = "https://t.me/" + raw[1:]
+    elif raw.lower().startswith(("t.me/", "telegram.me/")):
+        raw = "https://" + raw
+    if not re.match(r"^https://(t|telegram)\.me/[A-Za-z0-9_]{4,}$", raw):
+        return await msg.reply("❌ Valid username/link bhejo, jaise <code>@Suhani_Og</code>")
+    await _set_bot_config("contact_link", raw)
+    await msg.reply(f"✅ Contact link set: {raw}")
 
 @Bot.on_message(filters.command("setsubimg") & filters.private)
 async def cmd_set_sub_img(client: Bot, msg: Message):
