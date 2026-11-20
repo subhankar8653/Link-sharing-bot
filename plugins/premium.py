@@ -645,8 +645,33 @@ async def cmd_plan(client: Bot, msg: Message):
 # CALLBACKS — group=-1 (settings.py se pehle)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+async def _send_plans(client: Bot, chat_id: int):
+    """Plans menu ko naye message ki tarah bhejo (photo ke saath, na chale toh text)."""
+    caption, kb, ui = await _build_plans_ui()
+    try:
+        await client.send_photo(chat_id, photo=ui["sub_img"], caption=caption, reply_markup=kb)
+    except Exception:
+        await client.send_message(chat_id, caption, reply_markup=kb)
+
+
+def _is_invoice_msg(m) -> bool:
+    """Invoice message ka text/caption edit nahi ho sakta (Pay button chipak jaata hai) → delete + naya bhejna padta hai."""
+    try:
+        return bool(getattr(m, "invoice", None)) or "INVOICE" in str(getattr(m, "media", "")).upper()
+    except Exception:
+        return False
+
+
 @Bot.on_callback_query(filters.regex("^prem_plans$"), group=-1)
 async def cb_plans(client: Bot, cq: CallbackQuery):
+    if _is_invoice_msg(cq.message):
+        # Invoice se "Back to Plans": invoice hatao, plans menu dobara bhejo (dead end nahi)
+        try:
+            await cq.message.delete()
+        except Exception:
+            pass
+        await _send_plans(client, cq.message.chat.id)
+        return await cq.answer()
     caption, kb, ui = await _build_plans_ui()
     try:
         if cq.message.photo:
@@ -688,6 +713,10 @@ async def cb_buy(client: Bot, cq: CallbackQuery):
                 [InlineKeyboardButton("❌ Cancel", callback_data="prem_close")],
             ])
         )
+        try:
+            await cq.message.delete()          # purana plans menu hatao: invoice hi ek message rahe
+        except Exception:
+            pass
         await cq.answer()
     except Exception as e:
         logger.error(f"Invoice error: {e}")
@@ -724,6 +753,10 @@ async def cb_buy_lifetime(client: Bot, cq: CallbackQuery):
                 [InlineKeyboardButton("❌ Cancel", callback_data="prem_close")],
             ])
         )
+        try:
+            await cq.message.delete()
+        except Exception:
+            pass
         await cq.answer()
     except Exception as e:
         logger.error(f"Lifetime invoice error: {e}")
