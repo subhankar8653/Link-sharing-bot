@@ -981,24 +981,20 @@ class Master:
             logging.error(f"create_verify_token error: {e}")
             return False
 
-    async def set_alt_session(self, token: str, next_url: str, shortened: bool, wait: int) -> None:
-        """Alternative method: user ko jahan bhejna hai (shortener URL ya bot deep link) + wait seconds save karo."""
+    async def set_alt_session(self, token: str, next_url: str = "") -> None:
+        """Alternative method shuru: shortener ON ho toh uska URL (/go?r=1 par wapas aata hai), warna khaali."""
         try:
             await self.database['verify_tokens'].update_one(
-                {"token": token},
-                {"$set": {"alt_next": next_url, "alt_short": bool(shortened), "alt_wait": int(wait)}},
-            )
+                {"token": token}, {"$set": {"alt_on": True, "alt_next": next_url or ""}})
         except Exception as e:
             logging.error(f"set_alt_session error: {e}")
 
-    async def stamp_alt_start(self, token: str, idx: int = -1) -> None:
-        """/go page par Continue dabate hi time + kaunsa smart link dikhaya (idx) save (anti-bypass + rotation)."""
-        import datetime
+    async def update_alt_session(self, token: str, fields: dict) -> None:
+        """/go page ke steps ka state (start time, kitne smart links, ads done, shortener time) save karo."""
         try:
-            await self.database['verify_tokens'].update_one(
-                {"token": token}, {"$set": {"alt_started_at": datetime.datetime.now(), "alt_idx": int(idx)}})
+            await self.database['verify_tokens'].update_one({"token": token}, {"$set": dict(fields)})
         except Exception as e:
-            logging.error(f"stamp_alt_start error: {e}")
+            logging.error(f"update_alt_session error: {e}")
 
     async def get_alt_cursor(self, user_id: int) -> int:
         """Alternative method ke smart links ka rotating pointer (agla session kaunsa link)."""

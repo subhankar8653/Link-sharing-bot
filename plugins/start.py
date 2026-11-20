@@ -987,22 +987,22 @@ async def alt_method_cb(client: Bot, cq):
         if not ms["url"].startswith("https://"):
             return await cq.answer("This option is not available right now.", show_alert=True)
 
-        if not doc.get("alt_next"):                      # pehli baar: shortener URL ek hi baar banao
-            bot_link = f"https://t.me/{client.username}?start=alt_{token}"
-            nxt, shortened = bot_link, False
+        if not doc.get("alt_on"):                        # pehli baar: shortener URL ek hi baar banao
+            nxt = ""
             if alt["short_on"]:
-                s = await shorten_link(bot_link)
-                if s and s != bot_link:
-                    nxt, shortened = s, True
-            await Seishiro.set_alt_session(token, nxt, shortened, alt["wait"])
+                ret_url = f"{ms['url']}/go?t={token}&r=1"      # shortener ke baad user isi page par wapas aata hai
+                sh = await shorten_link(ret_url)
+                if sh and sh != ret_url:
+                    nxt = sh
+            await Seishiro.set_alt_session(token, nxt)
 
         await client.send_message(
             uid,
             "<b>Alternative method</b>\n\n"
             "<blockquote>"
             "1. Tap <b>Open Link</b>\n"
-            f"2. On that page tap <b>Continue</b> and wait <b>{alt['wait']} seconds</b>\n"
-            "3. You will be sent back to this chat and your channel link arrives automatically"
+            "2. Open the ads one by one and wait a few seconds for each\n"
+            "3. Your channel link appears on that page (and in this chat)"
             "</blockquote>\n\n"
             f"<a href=\"https://t.me/{client.username}?start=premium\">Premium</a> users skip this step.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Open Link", url=f"{ms['url']}/go?t={token}")]]),
@@ -1014,40 +1014,6 @@ async def alt_method_cb(client: Bot, cq):
         await cq.answer("Something went wrong. Please try again.", show_alert=True)
 
 
-async def _handle_alt_token(client: Bot, message: Message, uid: int, token: str):
-    doc = await Seishiro.get_verify_token(token)
-    if not doc or doc.get("used"):
-        return await message.reply_text(
-            "<b><blockquote expandable>⚠️ This link is invalid or already used.\n\n"
-            "Open the channel link again to get a new one.</blockquote></b>")
-    if doc.get("user_id") and doc["user_id"] != uid:
-        return await message.reply_text("<b><blockquote expandable>⚠️ This link is not for you.</blockquote></b>")
-
-    wait    = int(doc.get("alt_wait") or 5)
-    started = doc.get("alt_started_at")
-    elapsed = (datetime.now() - started).total_seconds() if isinstance(started, datetime) else -1
-    if not doc.get("alt_next") or elapsed < max(0, wait - 1):
-        # /go page khola hi nahi ya wait poora kiye bina aa gaya (bypass) → link nahi
-        ms = await get_miniapp_settings()
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("Open Link", url=f"{ms['url']}/go?t={token}")]]) \
-            if ms["url"].startswith("https://") else None
-        return await message.reply_text(
-            f"<b><blockquote expandable>Please open the link, tap Continue and wait {wait} seconds on that page.</blockquote></b>",
-            reply_markup=markup)
-
-    ok, reason, info = await complete_miniapp_verification(client, uid, token, 1)
-    if not ok:
-        if reason == "invite_error":
-            return await message.reply_text("<b><blockquote expandable>Invite link error. Please try again in a moment.</blockquote></b>")
-        return await message.reply_text("<b><blockquote expandable>⚠️ This link was already used.</blockquote></b>")
-    # Rotation: agla alt session agle smart link se (aakhir ke baad wapas pehle se)
-    try:
-        _alt = await get_alt_settings()
-        if _alt["links"] and int(doc.get("alt_idx", -1)) >= 0:
-            await Seishiro.set_alt_cursor(uid, (int(doc["alt_idx"]) + 1) % len(_alt["links"]))
-    except Exception as e:
-        logger.warning(f"alt cursor advance failed: {e}")
-    logger.info(f"Alt method verified: user={uid}, shortener={bool(doc.get('alt_short'))}")
 
 
 # ═══════════════════════════════════════════
@@ -1389,10 +1355,6 @@ async def start_command(client: Bot, message: Message):
                 # ── Verify token (shortener complete ke baad) ──────────
                 if param.startswith("vfy_"):
                     return await _handle_verify_token(client, message, uid, param[4:])
-
-                # ── Alternative method (Mini App na khule): /go page + smart link / shortener ke baad ──
-                if param.startswith("alt_"):
-                    return await _handle_alt_token(client, message, uid, param[4:])
 
                 # ── Normal encoded channel link ────────────────────────
                 is_request = param.startswith("req_")

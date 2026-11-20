@@ -185,7 +185,6 @@ async def get_alt_settings() -> dict:
     return {
         "enabled": bool(cfg.get("alt_enabled", True)),
         "links": links,
-        "wait": max(3, min(60, int(cfg.get("alt_wait", 5) or 5))),
         "short_on": bool(cfg.get("shortener_enabled") and cfg.get("shortener_api") and cfg.get("shortener_website")),
     }
 
@@ -549,11 +548,9 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
             await mini_callbacks(client, cq)
 
         # ── Alternative method (Mini App na khule) ─────
-        elif cmd in ("mini_alt", "mini_alttog", "mini_altwaitset", "mini_altdel"):
+        elif cmd in ("mini_alt", "mini_alttog", "mini_altdel"):
             if cmd == "mini_alttog":
                 await _set_bot_config("alt_enabled", not (await get_alt_settings())["enabled"])
-            elif cmd == "mini_altwaitset" and len(parts) > 1 and parts[1].isdigit():
-                await _set_bot_config("alt_wait", max(3, min(60, int(parts[1]))))
             elif cmd == "mini_altdel" and len(parts) > 1 and parts[1].isdigit():
                 links = (await get_alt_settings())["links"]
                 if int(parts[1]) < len(links):
@@ -566,18 +563,17 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
                 rows.append([InlineKeyboardButton(f"🗑 {i + 1}. {_link_host(l)}", callback_data=f"mini_altdel:{i}")])
             if len(a["links"]) < ALT_MAX_LINKS:
                 rows.append([InlineKeyboardButton("➕ Add Smart Link", callback_data="mini_altadd")])
-            rows += _num_buttons("mini_altwaitset", [3, 5, 8, 10, 15], {v: f"{v}s" for v in (3, 5, 8, 10, 15)}, per_row=5)
-            rows.append([InlineKeyboardButton("✏️ Custom wait", callback_data="mini_altwaitcustom")])
             rows.append(_back())
             lines = "\n".join(f"{i + 1}. <code>{_link_host(l)}</code>" for i, l in enumerate(a["links"])) or "<i>koi smart link nahi</i>"
             await cq.message.edit_text(
                 "<b>🔁 Alternative Method</b>\n\n"
-                f"Status: <b>{'ON' if a['enabled'] else 'OFF'}</b>  |  Wait: <b>{a['wait']}s</b>  |  Shortener: <b>{'ON' if a['short_on'] else 'OFF'}</b> (/shortener)\n\n"
+                f"Status: <b>{'ON' if a['enabled'] else 'OFF'}</b>  |  Shortener: <b>{'ON' if a['short_on'] else 'OFF'}</b> (/shortener)\n\n"
                 f"<b>Smart Links ({len(a['links'])}/{ALT_MAX_LINKS}):</b>\n{lines}\n\n"
                 "Jinka Mini App nahi khulta unko gate message mein <b>Mini App not opening?</b> button milta hai. "
-                "Page par <b>Continue</b> dabane par ek Smart Link khulta hai, wait ke baad (Shortener ON ho toh shortener se hoke) user bot par aata hai aur link mil jaata hai.\n\n"
-                "<b>Rotation:</b> har alt session mein 1 smart link, Mini App ads ki tarah ek ke baad ek (1, 2, 3 ... phir wapas 1).\n"
-                "<b>Count:</b> ek alt session = Mini App ka 1 ad — Daily Goal, Free Time, Link Flow sab Mini App ki settings se hi chalte hain (alag reward nahi).\n"
+                "Page par Mini App jaisa UI: smart links ek-ek karke <b>Open ad</b> se khulte hain, har ek ke baad Min Watch time ka countdown, "
+                "phir (Shortener ON ho toh ek last step) link usi page par channel ke saath aa jaata hai (bot chat mein bhi).\n\n"
+                "<b>Mini App jaisa hi:</b> ek session mein kitne smart links = Mini App ka <b>Ads/Session</b>, countdown = <b>Min Watch</b>, "
+                "rotation 1, 2, 3 ... phir wapas 1, aur Daily Goal / Free Time / Link Flow sab Mini App ki settings se (alag setting nahi).\n"
                 "<i>Smart Link ya Shortener mein se ek set na ho toh button nahi dikhta. Premium users ko direct link milta hai.</i>",
                 reply_markup=InlineKeyboardMarkup(rows),
             )
@@ -597,17 +593,6 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
                     await _set_bot_config("alt_smartlinks", links)
                     await _set_bot_config("alt_smartlink", "")
                     await cq.answer("✅ Added")
-            cq.data = "mini_alt"
-            await mini_callbacks(client, cq)
-
-        elif cmd == "mini_altwaitcustom":
-            text = await _ask(client, cq, "<b>⏳ Wait</b>\n\nKitne second wait? Number bhejo (3-60).", "mini_alt")
-            n = _parse_int(text, 3, 60) if text else None
-            if n is not None:
-                await _set_bot_config("alt_wait", n)
-                await cq.answer("✅ Saved")
-            elif text:
-                await cq.message.reply("❌ Sirf number bhejo, jaise 7.")
             cq.data = "mini_alt"
             await mini_callbacks(client, cq)
 

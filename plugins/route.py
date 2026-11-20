@@ -40,28 +40,82 @@ async def go_page(request):
 
 @routes.post("/api/mini/alt")
 async def api_mini_alt(request):
-    """/go page: token valid hai? time stamp karo, smart link + next URL do. (Telegram login nahi — token hi secret hai.)"""
-    from plugins.miniapp import get_alt_settings
+    """Alternative method page (/go): Mini App jaisa session.
+    {t, go}   → smart links (Ads/Session + rotation) + countdown seconds
+    {t, done} → saare ads ho gaye: shortener ON ho toh uska URL, warna link
+    {t, ret}  → shortener se wapas aaya: link
+    Token hi secret hai (browser mein Telegram login nahi hota)."""
+    from plugins.miniapp import get_alt_settings, get_miniapp_settings, pick_session
+    from plugins.start import complete_miniapp_verification
     from database.database import Seishiro
     try:
         body = await request.json()
     except Exception:
         return web.json_response({"ok": False, "error": "bad_request"}, status=400)
+
     token = str(body.get("t", ""))[:40]
     doc = await Seishiro.get_verify_token(token) if token else {}
-    if not doc or doc.get("used") or not doc.get("alt_next"):
+    if not doc or doc.get("used") or not doc.get("alt_on"):
         return web.json_response({"ok": False, "error": "invalid"})
     alt = await get_alt_settings()
-    if not alt["enabled"]:
+    bot = request.app.get("bot")
+    if not alt["enabled"] or bot is None:
         return web.json_response({"ok": False, "error": "off"})
-    smart = ""
-    if body.get("go"):                       # Continue dabaya → wait yahin se shuru + is session ka smart link (rotation)
-        links, idx = alt["links"], -1
-        if links:
-            idx = (await Seishiro.get_alt_cursor(doc["user_id"])) % len(links)
-            smart = links[idx]
-        await Seishiro.stamp_alt_start(token, idx)
-    return web.json_response({"ok": True, "smart": smart, "next": doc["alt_next"], "wait": int(doc.get("alt_wait") or alt["wait"])})
+
+    uid   = doc["user_id"]
+    s     = await get_miniapp_settings()
+    min_s = max(3, int(s["min_seconds"]))
+    now   = datetime.datetime.now()
+    links = alt["links"]
+    short = bool(doc.get("alt_next"))
+
+    async def finish():
+        n = int(doc.get("alt_n") or 0)
+        try:
+            ok, reason, info = await complete_miniapp_verification(bot, uid, token, max(1, n))
+        except Exception as e:
+            logger.error(f"alt complete error: {e}", exc_info=True)
+            return web.json_response({"ok": False, "error": "server"})
+        if ok and links and n > 0:              # rotation: agla alt session agle smart link se
+            await Seishiro.set_alt_cursor(uid, (int(doc.get("alt_cursor0") or 0) + n) % len(links))
+        info = dict(info or {})
+        ch = await _channel_info(bot, doc["channel_id"])
+        info["title"] = ch.get("title", "")
+        return web.json_response({"ok": ok, "error": None if ok else reason, "info": info,
+                                  "bot_url": f"https://t.me/{bot.username}"})
+
+    if body.get("go"):
+        if not links and not short:
+            return web.json_response({"ok": False, "error": "off"})
+        cursor = await Seishiro.get_alt_cursor(uid)
+        steps, n = pick_session(links, s["per_session"], cursor) if links else ([], 0)
+        await Seishiro.update_alt_session(token, {"alt_started_at": now, "alt_cursor0": cursor, "alt_n": n,
+                                                  "alt_ads_done": False, "alt_short_at": None})
+        ch = await _channel_info(bot, doc["channel_id"])
+        return web.json_response({"ok": True, "steps": steps, "min_seconds": min_s, "short": short,
+                                  "channel": {"title": ch.get("title", ""), "has_photo": bool(ch.get("photo"))}})
+
+    if body.get("done"):
+        started = doc.get("alt_started_at")
+        n = int(doc.get("alt_n") or 0)
+        if not isinstance(started, datetime.datetime):
+            return web.json_response({"ok": False, "error": "no_session"})
+        if (now - started).total_seconds() < n * min_s - 1:
+            return web.json_response({"ok": False, "error": "too_fast"})
+        if short:                                # last step: shortener
+            await Seishiro.update_alt_session(token, {"alt_ads_done": True, "alt_short_at": now})
+            return web.json_response({"ok": True, "phase": "short", "next": doc["alt_next"]})
+        return await finish()
+
+    if body.get("ret"):                          # shortener se wapas
+        sh_at = doc.get("alt_short_at")
+        if not doc.get("alt_ads_done") or not isinstance(sh_at, datetime.datetime):
+            return web.json_response({"ok": False, "error": "no_session"})
+        if (now - sh_at).total_seconds() < 5:
+            return web.json_response({"ok": False, "error": "too_fast"})
+        return await finish()
+
+    return web.json_response({"ok": False, "error": "bad_request"})
 
 
 async def _auth(body: dict):

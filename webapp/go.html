@@ -6,114 +6,216 @@
 <meta name="color-scheme" content="dark">
 <title>Senpai Sync</title>
 <style>
-  :root { --bg:#0a0d14; --panel:#11151f; --line:rgba(255,255,255,.08); --text:#eef1f8; --muted:#8b94a8; --accent:#4f8cff; --ok:#3ddc97; --bad:#ff6b81; }
+  :root { --bg:#0a0d14; --panel:#11151f; --panel2:#161b28; --line:rgba(255,255,255,.08); --text:#eef1f8; --muted:#8b94a8;
+          --accent:#4f8cff; --ok:#3ddc97; --bad:#ff6b81; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body { margin:0; min-height:100%; background:var(--bg); color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif; -webkit-font-smoothing:antialiased; }
-  body { display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px;
+  body { min-height:100vh; padding:20px 16px 32px; display:flex; justify-content:center;
     background:radial-gradient(700px 420px at 50% -10%,rgba(79,140,255,.20),transparent 62%),var(--bg); }
-  .card { width:100%; max-width:420px; background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:24px 20px; text-align:center; }
-  h1 { font-size:20px; margin:0 0 8px; }
-  p { color:var(--muted); font-size:14px; line-height:1.55; margin:0 0 16px; }
-  ol { text-align:left; color:var(--muted); font-size:14px; line-height:1.6; padding-left:20px; margin:0 0 18px; }
-  .btn { width:100%; border:0; border-radius:14px; padding:14px 16px; font-size:15px; font-weight:650; color:#fff; cursor:pointer;
-    background:linear-gradient(180deg,#5b95ff,#3f78f0); }
-  .btn[disabled] { opacity:.55; cursor:default; }
-  .bar { height:8px; border-radius:99px; background:rgba(255,255,255,.08); overflow:hidden; margin:14px 0 10px; }
+  .wrap { width:100%; max-width:440px; }
+  .head { display:flex; align-items:center; gap:12px; margin:6px 2px 18px; }
+  .av { width:52px; height:52px; border-radius:16px; background:var(--panel2); object-fit:cover; flex:none; border:1px solid var(--line); }
+  .head h1 { font-size:17px; margin:0; line-height:1.25; word-break:break-word; }
+  .head p { margin:2px 0 0; font-size:13px; color:var(--muted); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:16px; margin-bottom:12px; }
+  .step { display:flex; align-items:center; gap:12px; }
+  .num { width:34px; height:34px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:14px; background:var(--panel2); border:1px solid var(--line); color:var(--muted); }
+  .step.done .num { background:rgba(61,220,151,.15); border-color:rgba(61,220,151,.4); color:var(--ok); }
+  .step.active .num { border-color:var(--accent); color:var(--accent); }
+  .step .t { flex:1; min-width:0; }
+  .step .t b { display:block; font-size:15px; }
+  .step .t span { font-size:12.5px; color:var(--muted); }
+  .btn { border:0; border-radius:12px; padding:11px 16px; font-size:14px; font-weight:650; color:#fff; cursor:pointer; text-decoration:none;
+    background:linear-gradient(180deg,#5b95ff,#3f78f0); display:inline-block; text-align:center; }
+  .btn.block { display:block; width:100%; padding:14px 16px; font-size:15px; }
+  .btn[disabled] { opacity:.5; cursor:default; }
+  .btn.ghost { background:var(--panel2); border:1px solid var(--line); color:var(--text); }
+  .bar { height:6px; border-radius:99px; background:rgba(255,255,255,.08); overflow:hidden; margin-top:10px; }
   .bar > i { display:block; height:100%; width:0; background:linear-gradient(90deg,#5b95ff,#7a5cff); transition:width .25s linear; }
-  .big { font-size:34px; font-weight:700; margin:4px 0; }
-  .hidden { display:none !important; }
-  a.lnk { color:var(--accent); font-size:14px; }
+  .center { text-align:center; }
+  .center h2 { font-size:20px; margin:8px 0 6px; }
+  .center p { color:var(--muted); font-size:14px; line-height:1.55; margin:0 0 16px; }
+  .tick { width:64px; height:64px; margin:6px auto 4px; border-radius:50%; background:rgba(61,220,151,.15); color:var(--ok);
+    display:flex; align-items:center; justify-content:center; font-size:32px; }
   .bad { color:var(--bad); }
+  .small { font-size:12.5px; color:var(--muted); margin-top:12px; }
+  a.lnk { color:var(--accent); font-size:13px; }
+  .hidden { display:none !important; }
 </style>
 </head>
 <body>
-<div class="card">
-  <div id="v-load"><p>Loading…</p></div>
-
-  <div id="v-ready" class="hidden">
-    <h1>Almost there</h1>
-    <ol>
-      <li>Tap <b>Continue</b></li>
-      <li>Wait <b id="w0">5</b> seconds on this page</li>
-      <li>You will be sent back to Telegram and your channel link arrives automatically</li>
-    </ol>
-    <button class="btn" id="go">Continue</button>
+<div class="wrap">
+  <div class="head hidden" id="head">
+    <img class="av hidden" id="av" alt="">
+    <div><h1 id="ttl">Senpai Sync</h1><p id="sub">Unlock your channel link</p></div>
   </div>
 
-  <div id="v-wait" class="hidden">
-    <h1>Please wait</h1>
-    <div class="big" id="cnt">5</div>
-    <div class="bar"><i id="fill"></i></div>
-    <p>Keep this page open. You will be redirected to Telegram automatically.</p>
-    <a class="lnk hidden" id="adlnk" target="_blank" rel="noopener">Tap here if the ad did not open</a>
+  <div id="v-load" class="card center"><p style="margin:0">Loading…</p></div>
+
+  <div id="v-steps" class="hidden">
+    <div id="list"></div>
+    <div id="v-short" class="card hidden">
+      <div class="step active"><div class="num">★</div>
+        <div class="t"><b>Last step</b><span>Complete the short link, you will come back here automatically</span></div></div>
+      <button class="btn block" id="shortbtn" style="margin-top:12px">Continue</button>
+    </div>
+    <p class="small center" id="hint">Open each ad and wait for the timer to finish. Your link appears here when all steps are done.</p>
   </div>
 
-  <div id="v-err" class="hidden">
-    <h1 class="bad">Link not valid</h1>
-    <p id="errmsg">This link has expired or was already used. Open the channel link again in the bot to get a new one.</p>
+  <div id="v-fin" class="card center hidden"><p style="margin:0">Getting your link…</p></div>
+
+  <div id="v-ok" class="card center hidden">
+    <div class="tick">✓</div>
+    <h2>Your link is ready</h2>
+    <p id="okmsg">Tap the button to open the channel. We also sent the link to your Telegram chat.</p>
+    <a class="btn block" id="chbtn" rel="noopener">Open channel</a>
+  </div>
+
+  <div id="v-fsub" class="card center hidden">
+    <div class="tick">✓</div>
+    <h2>Ads done</h2>
+    <p>One more step: open Telegram and join the required channels. Your link arrives in the chat right after.</p>
+    <a class="btn block" id="botbtn" rel="noopener">Open Telegram</a>
+  </div>
+
+  <div id="v-err" class="card center hidden">
+    <h2 class="bad">Something went wrong</h2>
+    <p id="errmsg"></p>
+    <button class="btn ghost block" id="retry">Try again</button>
   </div>
 </div>
 
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
-  var t = new URLSearchParams(location.search).get('t') || '';
-  var KEY = 'go_' + t;
-  var cfg = null, timer = null;
+  var q = new URLSearchParams(location.search);
+  var t = q.get('t') || '';
+  var isReturn = q.get('r') === '1';
+  var cfg = null, botUrl = '', finished = false;
 
-  function show(id) { ['v-load', 'v-ready', 'v-wait', 'v-err'].forEach(function (x) { $(x).classList.toggle('hidden', x !== id); }); }
-  function fail(msg) { if (msg) $('errmsg').textContent = msg; show('v-err'); }
-  async function post(extra) {
-    var r = await fetch('/api/mini/alt', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ t: t }, extra || {})) });
-    return r.json();
+  var ERR = {
+    invalid: 'This link has expired or was already used. Open the channel link again in the bot to get a new one.',
+    off: 'This option is not available right now. Please use the Mini App from the bot.',
+    too_fast: 'Please open every ad and wait the full time on each, then try again.',
+    no_session: 'The session was not started. Please try again.',
+    invite_error: 'Could not create the invite link. Please try again in a moment.',
+    server: 'Server problem. Please try again in a moment.',
+    net: 'Connection problem. Check your internet and try again.'
+  };
+
+  function show(id) {
+    ['v-load', 'v-steps', 'v-fin', 'v-ok', 'v-fsub', 'v-err'].forEach(function (x) { $(x).classList.toggle('hidden', x !== id); });
   }
-  function goNext() {
-    if (cfg && /^https:\/\//.test(cfg.next || '')) location.href = cfg.next; else fail();
+  function fail(code) {
+    $('errmsg').textContent = ERR[code] || ERR.server;
+    var dead = (code === 'invalid' || code === 'off');
+    $('retry').classList.toggle('hidden', dead);
+    show('v-err');
   }
-  function tick(startMs) {
-    show('v-wait');
-    clearInterval(timer);
-    var total = cfg.wait * 1000;
-    function step() {
-      var left = total - (Date.now() - startMs);
-      $('cnt').textContent = Math.max(0, Math.ceil(left / 1000));
-      $('fill').style.width = Math.min(100, ((total - left) / total) * 100) + '%';
-      if (left <= 0) { clearInterval(timer); try { sessionStorage.removeItem(KEY); } catch (e) {} goNext(); }
+  async function api(extra) {
+    var ctl = new AbortController(); var tm = setTimeout(function () { ctl.abort(); }, 15000);
+    try {
+      var r = await fetch('/api/mini/alt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctl.signal,
+        body: JSON.stringify(Object.assign({ t: t }, extra || {})) });
+      return await r.json();
+    } finally { clearTimeout(tm); }
+  }
+  function header(ch) {
+    if (!ch) return;
+    $('head').classList.remove('hidden');
+    if (ch.title) $('ttl').textContent = ch.title;
+    if (ch.has_photo) { var a = $('av'); a.src = '/miniapp/photo?t=' + encodeURIComponent(t); a.classList.remove('hidden'); a.onerror = function () { a.classList.add('hidden'); }; }
+  }
+  function safeUrl(u) { return /^https:\/\//.test(u || ''); }
+
+  // ── Final: link dikhao ──
+  function success(res) {
+    var info = res.info || {};
+    botUrl = res.bot_url || '';
+    header({ title: info.title || '', has_photo: false });
+    if (info.fsub_required) { if (safeUrl(botUrl)) $('botbtn').href = botUrl; show('v-fsub'); return; }
+    if (safeUrl(info.invite_link)) { $('chbtn').href = info.invite_link; show('v-ok'); }
+    else { $('okmsg').textContent = 'Your channel link was sent to your Telegram chat.'; $('chbtn').classList.add('hidden'); show('v-ok'); }
+  }
+  async function finishAfterAds() {
+    if (finished) return; finished = true;
+    show('v-fin');
+    var res;
+    try { res = await api({ done: true }); } catch (e) { finished = false; return fail('net'); }
+    if (!res || !res.ok) { finished = false; return fail(res && res.error); }
+    if (res.phase === 'short') {
+      // Shortener ON: last step button
+      show('v-steps'); $('list').classList.add('hidden'); $('hint').classList.add('hidden');
+      $('v-short').classList.remove('hidden');
+      $('shortbtn').onclick = function () { if (safeUrl(res.next)) location.href = res.next; else fail('server'); };
+      return;
     }
-    step(); timer = setInterval(step, 250);
-    document.addEventListener('visibilitychange', function () { if (!document.hidden) step(); });
+    success(res);
+  }
+
+  // ── Steps (Mini App jaisa) ──
+  function build(steps, minS) {
+    var list = $('list'); list.innerHTML = '';
+    var done = 0, rows = [];
+    steps.forEach(function (url, i) {
+      var el = document.createElement('div'); el.className = 'card step';
+      el.innerHTML = '<div class="num"></div><div class="t"><b></b><span></span><div class="bar hidden"><i></i></div></div><div class="act"></div>';
+      el.querySelector('.num').textContent = String(i + 1);
+      el.querySelector('b').textContent = 'Ad ' + (i + 1) + ' of ' + steps.length;
+      list.appendChild(el);
+      rows.push({ el: el, url: url, ok: false });
+    });
+    function paint() {
+      var cur = rows.findIndex(function (r) { return !r.ok; });
+      rows.forEach(function (r, i) {
+        r.el.classList.toggle('done', r.ok);
+        r.el.classList.toggle('active', i === cur);
+        var sp = r.el.querySelector('span'), act = r.el.querySelector('.act');
+        if (r.ok) { r.el.querySelector('.num').textContent = '✓'; sp.textContent = 'Done'; act.innerHTML = ''; }
+        else if (i === cur && !r.running) {
+          sp.textContent = 'Open the ad and wait ' + minS + ' seconds';
+          act.innerHTML = ''; var b = document.createElement('button'); b.className = 'btn'; b.textContent = 'Open ad';
+          b.onclick = function () { start(r); }; act.appendChild(b);
+        } else if (!r.running) { sp.textContent = 'Locked'; act.innerHTML = ''; }
+      });
+      if (cur === -1) finishAfterAds();
+    }
+    function start(r) {
+      r.running = true;
+      var w = null;
+      try { w = window.open(r.url, '_blank'); } catch (e) {}
+      var sp = r.el.querySelector('span'), act = r.el.querySelector('.act'), bar = r.el.querySelector('.bar'), fill = bar.firstChild;
+      bar.classList.remove('hidden');
+      act.innerHTML = '';
+      if (!w) { var a = document.createElement('a'); a.className = 'lnk'; a.target = '_blank'; a.rel = 'noopener'; a.href = r.url; a.textContent = 'Tap here if the ad did not open'; act.appendChild(a); }
+      var t0 = Date.now(), total = minS * 1000;
+      var iv = setInterval(function () {
+        var left = total - (Date.now() - t0);
+        sp.textContent = 'Wait ' + Math.max(0, Math.ceil(left / 1000)) + 's…';
+        fill.style.width = Math.min(100, ((total - left) / total) * 100) + '%';
+        if (left <= 0) { clearInterval(iv); r.running = false; r.ok = true; bar.classList.add('hidden'); paint(); }
+      }, 250);
+    }
+    paint();
   }
 
   async function init() {
-    if (!t) return fail();
+    if (!t) return fail('invalid');
     var res;
-    try { res = await post(); } catch (e) { return fail('Connection problem. Please check your internet and reload this page.'); }
-    if (!res || !res.ok) return fail();
-    cfg = res; $('w0').textContent = res.wait;
-    var started = 0;
-    try { started = parseInt(sessionStorage.getItem(KEY) || '0', 10); } catch (e) {}
-    if (started && Date.now() - started < 10 * 60 * 1000) return tick(started);   // ad se wapas aaye (same tab)
-    show('v-ready');
+    try {
+      res = await api(isReturn ? { ret: true } : { go: true });
+    } catch (e) { return fail('net'); }
+    if (!res || !res.ok) return fail(res && res.error);
+    if (isReturn) return success(res);                // shortener se wapas: seedha link
+    cfg = res; header(res.channel);
+    show('v-steps');
+    if (!res.steps || !res.steps.length) return finishAfterAds();   // sirf shortener
+    build(res.steps, res.min_seconds);
   }
 
-  $('go').onclick = async function () {
-    $('go').disabled = true;
-    var res;
-    try { res = await post({ go: true }); } catch (e) { $('go').disabled = false; return fail('Connection problem. Please reload this page.'); }
-    if (!res || !res.ok) return fail();
-    cfg = res;
-    var now = Date.now();
-    try { sessionStorage.setItem(KEY, String(now)); } catch (e) {}
-    if (/^https:\/\//.test(res.smart || '')) {
-      var w = null;
-      try { w = window.open(res.smart, '_blank'); } catch (e) {}
-      if (!w) { var a = $('adlnk'); a.href = res.smart; a.classList.remove('hidden'); }
-    }
-    tick(now);
-  };
-
+  $('retry').onclick = function () { location.href = location.pathname + '?t=' + encodeURIComponent(t); };
   init();
 })();
 </script>
