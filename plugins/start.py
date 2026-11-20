@@ -22,7 +22,7 @@ from config import *
 from database.database import Seishiro
 from plugins.settings import revoke_invite_after_5_minutes
 from plugins.premium import shorten_link, _get_bot_config
-from plugins.miniapp import build_steps, miniapp_ready, get_miniapp_settings, seconds_until_ist_midnight, get_link_flow, seq_next, seq_index
+from plugins.miniapp import alt_ready, get_alt_settings, build_steps, miniapp_ready, get_miniapp_settings, seconds_until_ist_midnight, get_link_flow, seq_next, seq_index
 from plugins.fsub_extra import render_fsub_text
 from plugins.sync_app import sync_enabled_and_url, sync_register_from_bot, intro_message
 from helper_func import *
@@ -968,6 +968,85 @@ async def delete_after_delay(msg, delay: int):
 
 
 # ═══════════════════════════════════════════
+# ALTERNATIVE METHOD  (Mini App na khulne wale users ke liye)
+# gate message ka "Mini App not opening?" button → /go page (smart link ad + wait)
+# → (shortener ON ho toh shortener) → bot par alt_<token> → link + (shortener pass kiya toh free time)
+# ═══════════════════════════════════════════
+
+@Bot.on_callback_query(filters.regex(r"^alt_[\w-]{6,40}$"), group=-1)
+async def alt_method_cb(client: Bot, cq):
+    try:
+        uid, token = cq.from_user.id, cq.data[4:]
+        doc = await Seishiro.get_verify_token(token)
+        if not doc or doc.get("used") or doc.get("user_id") != uid:
+            return await cq.answer("This link has expired. Please open the channel link again.", show_alert=True)
+        if not await alt_ready():
+            return await cq.answer("This option is not available right now.", show_alert=True)
+
+        ms, alt = await get_miniapp_settings(), await get_alt_settings()
+        if not ms["url"].startswith("https://"):
+            return await cq.answer("This option is not available right now.", show_alert=True)
+
+        if not doc.get("alt_next"):                      # pehli baar: shortener URL ek hi baar banao
+            bot_link = f"https://t.me/{client.username}?start=alt_{token}"
+            nxt, shortened = bot_link, False
+            if alt["short_on"]:
+                s = await shorten_link(bot_link)
+                if s and s != bot_link:
+                    nxt, shortened = s, True
+            await Seishiro.set_alt_session(token, nxt, shortened, alt["wait"])
+
+        await client.send_message(
+            uid,
+            "<b>Alternative method</b>\n\n"
+            "<blockquote>"
+            "1. Tap <b>Open Link</b>\n"
+            f"2. On that page tap <b>Continue</b> and wait <b>{alt['wait']} seconds</b>\n"
+            "3. You will be sent back to this chat and your channel link arrives automatically"
+            "</blockquote>\n\n"
+            f"<a href=\"https://t.me/{client.username}?start=premium\">Premium</a> users skip this step.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Open Link", url=f"{ms['url']}/go?t={token}")]]),
+            disable_web_page_preview=True,
+        )
+        await cq.answer()
+    except Exception as e:
+        logger.error(f"alt method cb error: {e}", exc_info=True)
+        await cq.answer("Something went wrong. Please try again.", show_alert=True)
+
+
+async def _handle_alt_token(client: Bot, message: Message, uid: int, token: str):
+    doc = await Seishiro.get_verify_token(token)
+    if not doc or doc.get("used"):
+        return await message.reply_text(
+            "<b><blockquote expandable>⚠️ This link is invalid or already used.\n\n"
+            "Open the channel link again to get a new one.</blockquote></b>")
+    if doc.get("user_id") and doc["user_id"] != uid:
+        return await message.reply_text("<b><blockquote expandable>⚠️ This link is not for you.</blockquote></b>")
+
+    wait    = int(doc.get("alt_wait") or 5)
+    started = doc.get("alt_started_at")
+    elapsed = (datetime.now() - started).total_seconds() if isinstance(started, datetime) else -1
+    if not doc.get("alt_next") or elapsed < max(0, wait - 1):
+        # /go page khola hi nahi ya wait poora kiye bina aa gaya (bypass) → link nahi
+        ms = await get_miniapp_settings()
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("Open Link", url=f"{ms['url']}/go?t={token}")]]) \
+            if ms["url"].startswith("https://") else None
+        return await message.reply_text(
+            f"<b><blockquote expandable>Please open the link, tap Continue and wait {wait} seconds on that page.</blockquote></b>",
+            reply_markup=markup)
+
+    ok, reason, info = await complete_miniapp_verification(client, uid, token, 1)
+    if not ok:
+        if reason == "invite_error":
+            return await message.reply_text("<b><blockquote expandable>Invite link error. Please try again in a moment.</blockquote></b>")
+        return await message.reply_text("<b><blockquote expandable>⚠️ This link was already used.</blockquote></b>")
+    if doc.get("alt_short"):                              # shortener paar kiya → poora din free
+        alt = await get_alt_settings()
+        await Seishiro.set_ads_free(uid, alt["free_seconds"])
+    logger.info(f"Alt method verified: user={uid}, shortener={bool(doc.get('alt_short'))}")
+
+
+# ═══════════════════════════════════════════
 # VERIFY TOKEN HANDLER
 # User shortener complete karke vfy_<token> ke
 # saath bot pe aata hai
@@ -1307,6 +1386,10 @@ async def start_command(client: Bot, message: Message):
                 if param.startswith("vfy_"):
                     return await _handle_verify_token(client, message, uid, param[4:])
 
+                # ── Alternative method (Mini App na khule): /go page + smart link / shortener ke baad ──
+                if param.startswith("alt_"):
+                    return await _handle_alt_token(client, message, uid, param[4:])
+
                 # ── Normal encoded channel link ────────────────────────
                 is_request = param.startswith("req_")
                 b64        = param[4:] if is_request else param
@@ -1457,6 +1540,8 @@ async def start_command(client: Bot, message: Message):
                         _rows.append([InlineKeyboardButton("How to watch ads", url=_tut["url"])])
                     elif _tut:
                         _rows.append([InlineKeyboardButton("How to watch ads", callback_data="ads_tut")])
+                    if await alt_ready():
+                        _rows.append([InlineKeyboardButton("Mini App not opening?", callback_data=f"alt_{token}")])
                     prompt_msg = await message.reply_text(
                         "<b>Your link is ready</b>\n\n"
                         "<blockquote>Tap <b>Watch Video Ad</b>, finish the short ads in the Mini App "

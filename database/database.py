@@ -981,6 +981,25 @@ class Master:
             logging.error(f"create_verify_token error: {e}")
             return False
 
+    async def set_alt_session(self, token: str, next_url: str, shortened: bool, wait: int) -> None:
+        """Alternative method: user ko jahan bhejna hai (shortener URL ya bot deep link) + wait seconds save karo."""
+        try:
+            await self.database['verify_tokens'].update_one(
+                {"token": token},
+                {"$set": {"alt_next": next_url, "alt_short": bool(shortened), "alt_wait": int(wait)}},
+            )
+        except Exception as e:
+            logging.error(f"set_alt_session error: {e}")
+
+    async def stamp_alt_start(self, token: str) -> None:
+        """/go page khulte hi time save (anti-bypass: bina page kholay ya jaldi bot par aaye toh link nahi)."""
+        import datetime
+        try:
+            await self.database['verify_tokens'].update_one(
+                {"token": token}, {"$set": {"alt_started_at": datetime.datetime.now()}})
+        except Exception as e:
+            logging.error(f"stamp_alt_start error: {e}")
+
     async def get_verify_token(self, token: str) -> dict:
         """Token ka data fetch karo."""
         try:

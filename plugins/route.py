@@ -30,6 +30,35 @@ async def miniapp_page(request):
     )
 
 
+@routes.get("/go", allow_head=True)
+async def go_page(request):
+    return web.FileResponse(
+        os.path.join(WEBAPP_DIR, "go.html"),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@routes.post("/api/mini/alt")
+async def api_mini_alt(request):
+    """/go page: token valid hai? time stamp karo, smart link + next URL do. (Telegram login nahi — token hi secret hai.)"""
+    from plugins.miniapp import get_alt_settings
+    from database.database import Seishiro
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad_request"}, status=400)
+    token = str(body.get("t", ""))[:40]
+    doc = await Seishiro.get_verify_token(token) if token else {}
+    if not doc or doc.get("used") or not doc.get("alt_next"):
+        return web.json_response({"ok": False, "error": "invalid"})
+    alt = await get_alt_settings()
+    if not alt["enabled"]:
+        return web.json_response({"ok": False, "error": "off"})
+    if body.get("go"):                       # Continue dabaya → wait yahin se shuru
+        await Seishiro.stamp_alt_start(token)
+    return web.json_response({"ok": True, "smart": alt["smart"], "next": doc["alt_next"], "wait": int(doc.get("alt_wait") or alt["wait"])})
+
+
 async def _auth(body: dict):
     """initData + token verify. Returns (user_id, token, doc, error_code)."""
     from plugins.miniapp import validate_init_data
