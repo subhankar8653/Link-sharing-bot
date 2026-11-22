@@ -478,7 +478,7 @@ async def cmd_add_premium(client: Bot, msg: Message):
         user_id = int(parts[1])
     except ValueError:
         return await msg.reply("❌ Invalid user ID!")
-    dur_txt  = "Lifetime ♾" if is_life else f"{dur_txt}"
+    dur_txt  = "Lifetime ♾" if is_life else f"{parts[2]} {parts[3]}"
     seconds  = LIFETIME_SECONDS if is_life else await get_seconds(parts[2] + parts[3])
     if seconds <= 0:
         return await msg.reply("❌ Invalid time. Use: <code>1 day / 1 month</code>")

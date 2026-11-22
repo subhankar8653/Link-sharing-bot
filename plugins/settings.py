@@ -178,7 +178,7 @@ async def settings_callback(client: Bot, callback_query):
             btn = [
                 [InlineKeyboardButton("Aᴅᴅ Cʜᴀɴɴᴇʟ", callback_data="add_channel"), InlineKeyboardButton("Dᴇʟᴇᴛᴇ Cʜᴀɴɴᴇʟ", callback_data="delete_channel")],
                 [InlineKeyboardButton("Nᴏʀᴍᴀʟ Lɪɴᴋs", callback_data="channel_links"), InlineKeyboardButton("Rᴇǫᴜᴇsᴛ Lɪɴᴋs", callback_data="request_links")],
-                [InlineKeyboardButton("Lɪsᴛ Cʜᴀɴɴᴇʟs", callback_data="list_channels")],
+                [InlineKeyboardButton("Lɪsᴛ Cʜᴀɴɴᴇʟs", callback_data="list_channels"), InlineKeyboardButton("🅱️ B Lɪɴᴋs", callback_data="bl_list_0")],
                 [InlineKeyboardButton(auto_accept_label, callback_data="toggle_auto_accept")],
                 [InlineKeyboardButton("back", callback_data="settings_main")]]
             await callback_query.message.edit_text("<blockquote><b><i>Iɴ ᴛʜɪs ʏᴏᴜ ᴄᴀɴ ᴄʜᴀɴɢᴇ ᴀɴᴅ ᴠɪᴇᴡ ʏᴏᴜʀs ᴄʜᴀɴɴᴇʟs...!!</i></b></blockquote>", reply_markup=InlineKeyboardMarkup(btn))
@@ -196,7 +196,7 @@ async def settings_callback(client: Bot, callback_query):
             btn = [
                 [InlineKeyboardButton("Aᴅᴅ Cʜᴀɴɴᴇʟ", callback_data="add_channel"), InlineKeyboardButton("Dᴇʟᴇᴛᴇ Cʜᴀɴɴᴇʟ", callback_data="delete_channel")],
                 [InlineKeyboardButton("Nᴏʀᴍᴀʟ Lɪɴᴋs", callback_data="channel_links"), InlineKeyboardButton("Rᴇǫᴜᴇsᴛ Lɪɴᴋs", callback_data="request_links")],
-                [InlineKeyboardButton("Lɪsᴛ Cʜᴀɴɴᴇʟs", callback_data="list_channels")],
+                [InlineKeyboardButton("Lɪsᴛ Cʜᴀɴɴᴇʟs", callback_data="list_channels"), InlineKeyboardButton("🅱️ B Lɪɴᴋs", callback_data="bl_list_0")],
                 [InlineKeyboardButton(auto_accept_label, callback_data="toggle_auto_accept")],
                 [InlineKeyboardButton("back", callback_data="settings_main")]]
             await callback_query.message.edit_text("<blockquote><b><i>Iɴ ᴛʜɪs ʏᴏᴜ ᴄᴀɴ ᴄʜᴀɴɢᴇ ᴀɴᴅ ᴠɪᴇᴡ ʏᴏᴜʀs ᴄʜᴀɴɴᴇʟs...!!</i></b></blockquote>", reply_markup=InlineKeyboardMarkup(btn))
@@ -1481,14 +1481,22 @@ async def gen_link_cmd(client: Bot, message: Message):
         await Seishiro.save_encoded_link2(channel_id, base64_request)
         request_link = f"https://t.me/{client.username}?start=req_{base64_request}"
 
+        # B type links (alag ads / FSub / shortener setting — /blink)
+        b_link = f"https://t.me/{client.username}?start=b_{base64_invite}"
+        b_request_link = f"https://t.me/{client.username}?start=breq_{base64_request}"
+
         reply_text = (
             f"<b><u>ʟɪɴᴋs ɢᴇɴᴇʀᴀᴛᴇᴅ:</u></b>\n\n"
             f"<b>ᴄʜᴀɴɴᴇʟ:</b> {chat.title}\n"
             f"<code>{channel_id}</code>\n\n"
             f"<b>ɴᴏʀᴍᴀʟ ʟɪɴᴋ:</b>\n<code>{normal_link}</code>\n\n"
-            f"<b>ʀᴇǫᴜᴇsᴛ ʟɪɴᴋ:</b>\n<code>{request_link}</code>"
+            f"<b>ʀᴇǫᴜᴇsᴛ ʟɪɴᴋ:</b>\n<code>{request_link}</code>\n\n"
+            f"<b>🅱️ ʙ ʟɪɴᴋ:</b>\n<code>{b_link}</code>\n\n"
+            f"<b>🅱️ ʙ ʀᴇǫᴜᴇsᴛ ʟɪɴᴋ:</b>\n<code>{b_request_link}</code>"
         )
-        await message.reply(reply_text)
+        await message.reply(reply_text, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⚙️ B Link Settings", callback_data=f"bl_ch_{channel_id}")]
+        ]))
 
     except ValueError:
         await message.reply(

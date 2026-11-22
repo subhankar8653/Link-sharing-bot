@@ -208,7 +208,8 @@ async def api_mini_init(request):
 
     # Per-session ads: user ke cursor se shuru karke N ads (agla session wahin se)
     cursor = await Seishiro.get_ad_cursor(uid)
-    steps, n = pick_session(all_steps, s["per_session"], cursor)
+    is_b = bool(doc.get("btype"))                      # B link: channel ki apni ads count
+    steps, n = pick_session(all_steps, int(doc.get("b_ads") or 0) if is_b else s["per_session"], cursor)
     await Seishiro.start_miniapp_session(token, uid, cursor, n)
     bot = request.app.get("bot")
     info = await _channel_info(bot, doc["channel_id"]) if bot else {"title": "", "photo": None}
@@ -218,7 +219,7 @@ async def api_mini_init(request):
         "min_seconds": s["min_seconds"],
         "uid": uid,
         "channel": {"title": info["title"], "has_photo": bool(info["photo"])},
-        "fallback": s["fb_daily"] > 0,
+        "fallback": (s["fb_daily"] > 0) and not is_b,      # B link pe "continue without ads" nahi
         "tutorial": bool((await _get_cfg()).get("miniapp_tutorial")),
     })
 
@@ -291,6 +292,8 @@ async def api_mini_fallback(request):
     uid, token, doc, err = await _auth(body)
     if err:
         return web.json_response({"ok": False, "error": err})
+    if doc.get("btype"):
+        return web.json_response({"ok": False, "error": "fb_disabled"})
     started = doc.get("mini_started_at")
     if not started or (datetime.datetime.now() - started).total_seconds() < 8:
         return web.json_response({"ok": False, "error": "too_fast"})   # session khulte hi turant skip nahi

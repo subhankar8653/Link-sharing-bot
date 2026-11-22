@@ -499,12 +499,12 @@ async def fsub_stepcheck_cb(client: Bot, cq: CallbackQuery):
 # FORCE SUBSCRIBE DECORATOR
 # ═══════════════════════════════════════════
 
-async def _user_fsub_ok(client, uid):
+async def _user_fsub_ok(client, uid, ignore_premium: bool = False):
     channels = await Seishiro.get_fsub_channels()
     if not channels or uid == OWNER_ID:
         return True
-    # Premium users FSub bypass karte hain
-    if await Seishiro.has_premium_access(uid):
+    # Premium users FSub bypass karte hain (B links: sirf asli premium — ignore_premium=True se temp premium nahi chalta)
+    if not ignore_premium and await Seishiro.has_premium_access(uid):
         logger.info(f"User {uid} premium — FSub bypassed")
         return True
 
@@ -585,6 +585,9 @@ def check_fsub(func):
                 _link_param = _cmd2[1]
         except Exception:
             _link_param = ""
+        # B links (b_ / breq_): FSub apni per-channel setting se blink.handle_blink ke andar handle hota hai
+        if _link_param.startswith(("b_", "breq_")):
+            return await func(client, message, *args, **kwargs)
         _flow = await get_link_flow() if _link_param else ""
         if _flow == "custom":
             # Custom sequence: is open par FSub step hai (aur user join nahi) toh FSub screen, warna FSub entry par nahi
@@ -1057,6 +1060,11 @@ async def _handle_verify_token(client: Bot, message: Message, uid: int, token: s
             "</blockquote></b>"
         )
 
+    # B link ka shortener token: temp premium NAHI, seedha link (blink.py)
+    if doc.get("btype"):
+        from plugins.blink import complete_blink_verify
+        return await complete_blink_verify(client, message, uid, doc, token)
+
     channel_id = doc["channel_id"]
     is_request = doc.get("is_request", False)
 
@@ -1147,10 +1155,14 @@ async def complete_miniapp_verification(client: Bot, uid: int, token: str, shown
     if not doc:
         return False, "invalid_or_used", {}
 
+    shown      = max(1, shown)
+    if doc.get("btype"):                                     # B link: alag flow (blink.py)
+        from plugins.blink import complete_blink_ads
+        return await complete_blink_ads(client, uid, doc, shown)
+
     channel_id = doc["channel_id"]
     is_request = doc.get("is_request", False)
     b64        = doc.get("b64", "")
-    shown      = max(1, shown)
 
     ms    = await get_miniapp_settings()
     flow  = ms["flow"]
@@ -1355,6 +1367,11 @@ async def start_command(client: Bot, message: Message):
                 # ── Verify token (shortener complete ke baad) ──────────
                 if param.startswith("vfy_"):
                     return await _handle_verify_token(client, message, uid, param[4:])
+
+                # ── B type link (alag ads / FSub / shortener setting) ──
+                if param.startswith(("b_", "breq_")):
+                    from plugins.blink import handle_blink
+                    return await handle_blink(client, message, uid, param)
 
                 # ── Normal encoded channel link ────────────────────────
                 is_request = param.startswith("req_")
