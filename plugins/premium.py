@@ -95,6 +95,33 @@ async def get_shortener_settings() -> dict:
         "bypass_premium": cfg.get("shortener_bypass_premium", True),
     }
 
+async def get_shortener_free_seconds() -> int:
+    """Shortener complete karne ke baad kitna free time (Mini App ke Free Time se ALAG setting).
+    Set nahi hai toh purani verify time (verify_premium_seconds) wahi chalegi — kuch toot'ta nahi."""
+    cfg = await _get_bot_config()
+    v = cfg.get("shortener_free_seconds")
+    if v is None:
+        v = cfg.get("verify_premium_seconds", 86400)
+    try:
+        return max(0, int(v or 0))
+    except Exception:
+        return 0
+
+
+def fmt_free_time(seconds: int) -> str:
+    """3600 -> '1h', 5400 -> '1h 30m', 172800 -> '2d', 0 -> 'None'."""
+    if seconds <= 0:
+        return "None"
+    d, rem = divmod(int(seconds), 86400)
+    h, rem = divmod(rem, 3600)
+    m = rem // 60
+    parts = []
+    if d: parts.append(f"{d}d")
+    if h: parts.append(f"{h}h")
+    if m: parts.append(f"{m}m")
+    return " ".join(parts) or "1m"
+
+
 async def get_premium_ui() -> dict:
     cfg = await _get_bot_config()
     return {
@@ -242,30 +269,116 @@ async def _build_plans_ui():
 # SHORTENER MANAGEMENT (Admin)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-@Bot.on_message(filters.command("shortener") & filters.private)
-async def cmd_shortener_status(client: Bot, msg: Message):
-    if not await is_owner_or_admin(msg.from_user.id):
-        return await msg.reply("⛔ Sirf admins ke liye!")
+async def _shortener_panel():
     s      = await get_shortener_settings()
     status = "✅ ON" if s["enabled"] else "❌ OFF"
     api    = s["api"][:8] + "..." if s["api"] else "Not set"
     site   = s["website"] or "Not set"
-    await msg.reply(
+    free   = await get_shortener_free_seconds()
+    text = (
         f"<b>🔗 Shortener Settings</b>\n\n"
         f"• Status: <b>{status}</b>\n"
         f"• API Key: <code>{api}</code>\n"
         f"• Website: <code>{site}</code>\n"
-        f"• Premium Bypass: {'✅' if s['bypass_premium'] else '❌'}\n\n"
+        f"• Premium Bypass: {'✅' if s['bypass_premium'] else '❌'}\n"
+        f"• ⏱ Free Time: <b>{fmt_free_time(free)}</b>\n\n"
+        f"<i>Free Time = shortener complete karne ke baad itne time tak direct links. "
+        f"Ye Mini App ke Free Time se alag hai (wo /miniapp mein set hota hai).</i>\n\n"
         f"<code>/setshortener API_KEY website.com</code>\n"
-        f"<code>/removeshortener</code> | <code>/toggleshortener</code>",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(
-                "🔴 Turn OFF" if s["enabled"] else "🟢 Turn ON",
-                callback_data="toggle_shortener"
-            )],
-            [InlineKeyboardButton("🗑 Remove", callback_data="confirm_remove_shortener")],
-        ])
+        f"<code>/removeshortener</code> | <code>/toggleshortener</code> | <code>/setverifytime 6 hour</code>"
     )
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            "🔴 Turn OFF" if s["enabled"] else "🟢 Turn ON",
+            callback_data="toggle_shortener"
+        )],
+        [InlineKeyboardButton(f"⏱ Free Time: {fmt_free_time(free)}", callback_data="shfree")],
+        [InlineKeyboardButton("🗑 Remove", callback_data="confirm_remove_shortener")],
+    ])
+    return text, kb
+
+
+@Bot.on_message(filters.command("shortener") & filters.private)
+async def cmd_shortener_status(client: Bot, msg: Message):
+    if not await is_owner_or_admin(msg.from_user.id):
+        return await msg.reply("⛔ Sirf admins ke liye!")
+    text, kb = await _shortener_panel()
+    await msg.reply(text, reply_markup=kb)
+
+
+# ── Shortener Free Time (Mini App ke Free Time se alag) ──────────────
+SHFREE_PRESETS = [1800, 3600, 10800, 21600, 43200, 86400, 172800, 259200]
+
+
+async def _shfree_show(cq: CallbackQuery):
+    cur = await get_shortener_free_seconds()
+    rows, row = [], []
+    for sec in SHFREE_PRESETS:
+        row.append(InlineKeyboardButton(("• " if sec == cur else "") + fmt_free_time(sec),
+                                        callback_data=f"shfreeset:{sec}"))
+        if len(row) == 4:
+            rows.append(row); row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton("✏️ Custom time", callback_data="shfreecustom"),
+                 InlineKeyboardButton(("• " if cur == 0 else "") + "None", callback_data="shfreeset:0")])
+    rows.append([InlineKeyboardButton("back", callback_data="shpanel")])
+    await cq.message.edit_text(
+        "<b>⏱ Shortener Free Time</b>\n\n"
+        f"Abhi: <b>{fmt_free_time(cur)}</b>\n\n"
+        "User shortener link complete kare toh itne time tak use direct links milenge (ads/FSub nahi).\n"
+        "<b>None</b> = free time nahi (har baar shortener).\n"
+        "<i>Ye sirf Shortener ka time hai. Mini App ka Free Time alag hai: /miniapp → Free Time.</i>",
+        reply_markup=InlineKeyboardMarkup(rows),
+    )
+
+
+@Bot.on_callback_query(filters.regex(r"^(shpanel|shfree|shfreecustom|shfreeset:\d+)$"), group=-1)
+async def cb_shortener_free(client: Bot, cq: CallbackQuery):
+    from pyrogram import StopPropagation
+    if not await is_owner_or_admin(cq.from_user.id):
+        await cq.answer("⛔ Permission denied!", show_alert=True)
+        raise StopPropagation
+    d = cq.data
+    try:
+        if d == "shpanel":
+            text, kb = await _shortener_panel()
+            await cq.message.edit_text(text, reply_markup=kb)
+        elif d == "shfree":
+            await _shfree_show(cq)
+        elif d.startswith("shfreeset:"):
+            await _set_bot_config("shortener_free_seconds", max(0, int(d.split(":")[1])))
+            await cq.answer("✅ Saved")
+            await _shfree_show(cq)
+        elif d == "shfreecustom":
+            from plugins.miniapp import _parse_duration
+            await cq.message.edit_text(
+                "<b>⏱ Shortener Free Time</b>\n\nTime bhejo: <code>30m</code>, <code>6h</code>, <code>2d</code> "
+                "(sirf number = minute). <code>0</code> = None.\n\n<i>/cancel — cancel karne ke liye</i>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("back", callback_data="shfree")]]))
+            try:
+                resp = await client.listen(chat_id=cq.message.chat.id, timeout=300)
+            except Exception:
+                resp = None
+            text = ""
+            if resp is not None:
+                try:
+                    await resp.delete()
+                except Exception:
+                    pass
+                text = (resp.text or "").strip()
+            sec = _parse_duration(text) if text and text.lower() != "/cancel" else None
+            if sec is not None:
+                await _set_bot_config("shortener_free_seconds", sec)
+                await cq.answer("✅ Saved")
+            elif text and text.lower() != "/cancel":
+                await cq.message.reply("❌ Format galat. Jaise: 30m, 6h, 2d")
+            await _shfree_show(cq)
+    except Exception as e:
+        if "MESSAGE_NOT_MODIFIED" not in str(e):
+            logger.error(f"shortener free cb error ({d}): {e}", exc_info=True)
+    raise StopPropagation
+
 
 @Bot.on_message(filters.command("setshortener") & filters.private)
 async def cmd_set_shortener(client: Bot, msg: Message):
@@ -363,6 +476,8 @@ async def cmd_set_sub_img(client: Bot, msg: Message):
 @Bot.on_message(filters.command("setverifytime") & filters.private)
 async def cmd_set_verify_time(client: Bot, msg: Message):
     """
+    Shortener Free Time (shortener complete karne ke baad kitna time free).
+    Mini App ka Free Time alag hai — /miniapp → Free Time.
     /setverifytime 12 hour
     /setverifytime 24 hour
     /setverifytime 6 hour
@@ -371,24 +486,22 @@ async def cmd_set_verify_time(client: Bot, msg: Message):
         return await msg.reply("⛔ Sirf admins ke liye!")
     parts = msg.command
     if len(parts) < 3:
-        cur     = await _get_bot_config()
-        cur_sec = cur.get("verify_premium_seconds", 86400)
-        cur_hr  = cur_sec // 3600
+        cur_sec = await get_shortener_free_seconds()
         return await msg.reply(
-            f"<b>⏰ Current Verify Time: <code>{cur_hr}h</code></b>\n\n"
+            f"<b>⏰ Shortener Free Time: <code>{fmt_free_time(cur_sec)}</code></b>\n\n"
             f"<code>/setverifytime 6 hour</code>\n"
             f"<code>/setverifytime 12 hour</code>\n"
             f"<code>/setverifytime 24 hour</code>\n"
-            f"<code>/setverifytime 1 day</code>"
+            f"<code>/setverifytime 1 day</code>\n\n"
+            f"<i>Buttons se bhi set kar sakte ho: /shortener → Free Time. "
+            f"Mini App ka Free Time alag hai (/miniapp).</i>"
         )
     time_str = parts[1] + parts[2]
     seconds  = await get_seconds(time_str)
     if seconds <= 0:
         return await msg.reply("❌ Invalid time! Use: <code>6 hour / 12 hour / 1 day</code>")
-    await _set_bot_config("verify_premium_seconds", seconds)
-    h = seconds // 3600
-    m = (seconds % 3600) // 60
-    await msg.reply(f"✅ Verify time set: <b>{h}h {m}m</b>")
+    await _set_bot_config("shortener_free_seconds", seconds)
+    await msg.reply(f"✅ Shortener Free Time set: <b>{fmt_free_time(seconds)}</b>")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

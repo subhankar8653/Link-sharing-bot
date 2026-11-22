@@ -10,7 +10,7 @@ from pyrogram.errors import InviteHashExpired, InviteRequestSent
 from database.database import Seishiro
 from config import *
 from helper_func import *
-from modectx import banner as _mode_banner
+from modectx import banner as _mode_banner, is_b as _is_b_mode
 from pyrogram.enums import ParseMode, ChatMemberStatus
 
 PAGE_SIZE = 6
@@ -127,6 +127,7 @@ async def settings_command(client: Client, message: Message):
             [InlineKeyboardButton("🎬 Mɪɴɪ Aᴘᴘ Mᴇɴᴜ", callback_data="mini_menu"),
              InlineKeyboardButton("Sᴇɴᴘᴀɪ Sʏɴᴄ", callback_data="sync_menu")],
             [InlineKeyboardButton("🗑 Aᴜᴛᴏ Dᴇʟᴇᴛᴇ", callback_data="autodel_menu")],
+            *([[InlineKeyboardButton("🔗 Sʜᴏʀᴛ Lɪɴᴋ", callback_data="cl_menu")]] if _is_b_mode() else []),
             [InlineKeyboardButton("Vɪᴇᴡ sᴛᴀᴛᴜs", callback_data="status")],
             [InlineKeyboardButton("• Cʟᴏsᴇ •", callback_data="close")]
         ])
@@ -157,6 +158,7 @@ async def settings_callback(client: Bot, callback_query):
                 [InlineKeyboardButton("🎬 Mɪɴɪ Aᴘᴘ Mᴇɴᴜ", callback_data="mini_menu"),
                  InlineKeyboardButton("Sᴇɴᴘᴀɪ Sʏɴᴄ", callback_data="sync_menu")],
                 [InlineKeyboardButton("🗑 Aᴜᴛᴏ Dᴇʟᴇᴛᴇ", callback_data="autodel_menu")],
+                *([[InlineKeyboardButton("🔗 Sʜᴏʀᴛ Lɪɴᴋ", callback_data="cl_menu")]] if _is_b_mode() else []),
                 [InlineKeyboardButton("Vɪᴇᴡ sᴛᴀᴛᴜs", callback_data="view_status")],
                 [InlineKeyboardButton("• Cʟᴏsᴇ •", callback_data="close")]
             ])

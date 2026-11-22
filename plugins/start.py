@@ -21,7 +21,8 @@ from datetime import datetime, timedelta
 from config import *
 from database.database import Seishiro
 from plugins.settings import revoke_invite_after_5_minutes
-from plugins.premium import shorten_link, _get_bot_config
+from plugins.premium import shorten_link, _get_bot_config, get_shortener_free_seconds, fmt_free_time
+from plugins import custom_link as CL
 from plugins.miniapp import alt_ready, get_alt_settings, build_steps, miniapp_ready, get_miniapp_settings, seconds_until_ist_midnight, get_link_flow, seq_next, seq_index
 from plugins.fsub_extra import render_fsub_text
 from plugins.sync_app import sync_enabled_and_url, sync_register_from_bot, intro_message
@@ -847,6 +848,8 @@ async def not_joined(client: Client, message: Message):
 
 async def _resolve_peer_safe(client: Bot, channel_id: int) -> bool:
     """Peer resolve karo — PeerIdInvalid pe deep resolve, FloodWait pe retry."""
+    if CL.is_custom_id(channel_id):          # Short Link (private link): koi channel resolve nahi hota
+        return True
     try:
         await _safe_get_chat(client, channel_id)
         return True
@@ -861,6 +864,9 @@ async def _get_fresh_invite_link(client: Bot, channel_id: int, is_request: bool)
     Fresh invite link banao aur DB mein save karo.
     4 minute ke andar purana link reuse hoga.
     """
+    if CL.is_custom_id(channel_id):          # Short Link: admin ka diya hua link seedha wahi
+        _cd = await CL.get_custom(channel_id)
+        return _cd["url"] if _cd else None
     async with channel_locks[channel_id]:
         old = await Seishiro.get_current_invite_link(channel_id)
         if old:
@@ -975,7 +981,10 @@ async def delete_after_delay(msg, delay: int):
 # ═══════════════════════════════════════════
 
 @Bot.on_callback_query(filters.regex(r"^alt_[\w-]{6,40}$"), group=-1)
-async def alt_method_cb(client: Bot, cq):
+async def alt_method_cb(client: Client, cq):
+    """"Mini App not opening?" → seedha SHORTENER link (koi /go ads page nahi).
+    User shortener paar kare → bot par vfy_<token> → link + Shortener Free Time
+    (Mini App ke free time se alag setting)."""
     try:
         uid, token = cq.from_user.id, cq.data[4:]
         doc = await Seishiro.get_verify_token(token)
@@ -984,31 +993,35 @@ async def alt_method_cb(client: Bot, cq):
         if not await alt_ready():
             return await cq.answer("This option is not available right now.", show_alert=True)
 
-        ms, alt = await get_miniapp_settings(), await get_alt_settings()
-        if not ms["url"].startswith("https://"):
-            return await cq.answer("This option is not available right now.", show_alert=True)
+        short_url = doc.get("alt_short_url") or ""
+        if not short_url:                                 # pehli baar: shortener URL ek hi baar banao
+            bot_link = f"https://t.me/{client.username}?start=vfy_{token}"
+            sh = await shorten_link(bot_link)
+            if not sh or sh == bot_link:
+                return await cq.answer("This option is not available right now.", show_alert=True)
+            short_url = sh
+            await Seishiro.update_alt_session(token, {
+                "alt_short_url": short_url, "alt_vfy": True, "alt_short_at": datetime.now()})
 
-        if not doc.get("alt_on"):                        # pehli baar: shortener URL ek hi baar banao
-            nxt = ""
-            if alt["short_on"]:
-                ret_url = f"{ms['url']}/go?t={token}&r=1"      # shortener ke baad user isi page par wapas aata hai
-                sh = await shorten_link(ret_url)
-                if sh and sh != ret_url:
-                    nxt = sh
-            await Seishiro.set_alt_session(token, nxt)
+        free = await get_shortener_free_seconds()
+        if free > 0:
+            body = (f"Complete the link below and you will get <b>{fmt_free_time(free)}</b> of free time "
+                    f"(direct links, no ads).")
+        else:
+            body = "Complete the link below and your channel link will arrive in this chat."
 
-        await client.send_message(
+        sent = await client.send_message(
             uid,
             "<b>Alternative method</b>\n\n"
-            "<blockquote>"
-            "1. Tap <b>Open Link</b>\n"
-            "2. Open the ads one by one and wait a few seconds for each\n"
-            "3. Your channel link appears on that page (and in this chat)"
-            "</blockquote>\n\n"
+            f"<blockquote>{body}</blockquote>\n\n"
             f"<a href=\"https://t.me/{client.username}?start=premium\">Premium</a> users skip this step.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Open Link", url=f"{ms['url']}/go?t={token}")]]),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Open Link", url=short_url)]]),
             disable_web_page_preview=True,
         )
+        try:
+            await Seishiro.update_alt_session(token, {"alt_msg_id": sent.id, "alt_msg_chat": sent.chat.id})
+        except Exception:
+            pass
         await cq.answer()
     except Exception as e:
         logger.error(f"alt method cb error: {e}", exc_info=True)
@@ -1058,16 +1071,23 @@ async def _handle_verify_token(client: Bot, message: Message, uid: int, token: s
             "</blockquote></b>"
         )
 
+    # Alternative method (Mini App not opening?) ka token: shortener bina dekhe turant vfy link na khule
+    _sat = doc.get("alt_short_at")
+    if doc.get("alt_vfy") and isinstance(_sat, datetime) and (datetime.now() - _sat).total_seconds() < 12:
+        return await message.reply_text(
+            "<b><blockquote expandable>⚠️ Pehle short link poora complete karo, "
+            "phir link milega.</blockquote></b>"
+        )
+
     channel_id = doc["channel_id"]
     is_request = doc.get("is_request", False)
 
-    # Temp premium duration
-    cfg     = await _get_bot_config()
-    seconds = cfg.get("verify_premium_seconds", 86400)  # default 24h
+    # Shortener Free Time (Mini App ke Free Time se ALAG setting)
+    seconds = await get_shortener_free_seconds()
 
-    # Temp premium do
-    await Seishiro.add_premium(uid, seconds, temp=True)
-    logger.info(f"Temp premium: user={uid}, seconds={seconds}, channel={channel_id}")
+    # Free time do (kabhi lambi premium ko chhota nahi karta)
+    await _extend_free(uid, seconds)
+    logger.info(f"Shortener free time: user={uid}, seconds={seconds}, channel={channel_id}")
 
     # Peer resolve
     await _resolve_peer_safe(client, channel_id)
@@ -1085,17 +1105,27 @@ async def _handle_verify_token(client: Bot, message: Message, uid: int, token: s
     # Token use mark karo
     await Seishiro.mark_token_used(token)
 
-    hours = seconds // 3600
-    mins  = (seconds % 3600) // 60
-    dur   = f"{hours}h" if mins == 0 else f"{hours}h {mins}m"
+    # Gate / alternative method ke purane messages hata do
+    for _cid_key, _mid_key in (("prompt_chat_id", "prompt_msg_id"), ("alt_msg_chat", "alt_msg_id")):
+        try:
+            if doc.get(_mid_key):
+                await client.delete_messages(doc.get(_cid_key, uid), doc[_mid_key])
+        except Exception:
+            pass
+
+    dur = fmt_free_time(seconds)
+    if seconds > 0:
+        _note = (
+            f"⚡ Agle <b>{dur}</b> tak direct links milenge — koi ads nahi, koi FSub nahi!\n"
+            f"Time khatam hone ke baad dobara shortener complete karna padega.\n\n"
+            f"💎 Hamesha ads-free rehne ke liye <b>Premium</b> lo!"
+        )
+    else:
+        _note = "💎 Hamesha ads-free rehne ke liye <b>Premium</b> lo!"
 
     link_msg = await message.reply_text(
         f"✅ <b>Verified! Yeh raha aapka link:</b>\n\n"
-        f"<blockquote>"
-        f"⚡ Agle <b>{dur}</b> tak direct links milenge — koi ads nahi, koi FSub nahi!\n"
-        f"Time khatam hone ke baad dobara shortener complete karna padega.\n\n"
-        f"💎 Hamesha ads-free rehne ke liye <b>Premium</b> lo!"
-        f"</blockquote>",
+        f"<blockquote>{_note}</blockquote>",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=invite_link)],
             [InlineKeyboardButton("💎 Buy Premium", callback_data="prem_plans")],
@@ -1374,64 +1404,74 @@ async def start_command(client: Bot, message: Message):
                         "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>"
                     )
 
-                # ── Channel Alias Check ────────────────────────────────
-                # Agar purana channel ban ho gaya aur alias set hai,
-                # toh silently naye channel pe redirect karo
-                alias_id = await Seishiro.get_channel_alias(channel_id)
-                if alias_id:
-                    logger.info(f"Alias redirect: {channel_id} → {alias_id}")
-                    channel_id = alias_id
-
-                # Channel DB mein save
-                if not await Seishiro.channel_data.find_one({"channel_id": channel_id}):
-                    await Seishiro.save_channel(channel_id)
-
-                # ── Request link save karo for approve notification ────
-                if is_request:
-                    await Seishiro.save_user_request_link(uid, channel_id, b64)
-
-                # Peer resolve
-                try:
-                    chat = await _safe_get_chat(client, channel_id)
-                    logger.info(f"Peer OK: {channel_id} → {chat.title}")
-                except PeerIdInvalid:
-                    if not await _force_resolve_peer(client, channel_id):
+                # ── Short Link (koi bhi Telegram link, bot admin nahi chahiye) ──
+                is_custom = CL.is_custom_id(channel_id)
+                if is_custom:
+                    if not await CL.get_custom(channel_id):
                         return await message.reply_text(
-                            "<b><blockquote expandable>"
-                            "⚠️ Channel resolve nahi hua. Bot ko admin banao aur dobara try karo."
-                            "</blockquote></b>"
+                            "<b><blockquote expandable>Invalid or expired invite link.</blockquote></b>"
                         )
-                except Exception as e:
-                    return await message.reply_text(
-                        f"<b><blockquote expandable>Channel error: {str(e)[:80]}</blockquote></b>"
-                    )
+                    is_request = False
 
-                # Admin check
-                is_admin_ch, can_invite, reason = await check_bot_permissions(client, channel_id)
-                if not is_admin_ch:
-                    return await message.reply_text(
-                        f"<b><blockquote expandable>⚠️ Bot admin nahi hai.\nKaaran: {reason}</blockquote></b>"
-                    )
-                if not can_invite:
-                    return await message.reply_text(
-                        "<b><blockquote expandable>⚠️ Bot ko 'Invite Users' permission chahiye.</blockquote></b>"
-                    )
+                if not is_custom:
+                    # ── Channel Alias Check ────────────────────────────────
+                    # Agar purana channel ban ho gaya aur alias set hai,
+                    # toh silently naye channel pe redirect karo
+                    alias_id = await Seishiro.get_channel_alias(channel_id)
+                    if alias_id:
+                        logger.info(f"Alias redirect: {channel_id} → {alias_id}")
+                        channel_id = alias_id
 
-                # Encoded link save
-                if is_request:
-                    await Seishiro.save_encoded_link2(channel_id, b64)
-                else:
-                    await Seishiro.save_encoded_link(channel_id)
+                    # Channel DB mein save
+                    if not await Seishiro.channel_data.find_one({"channel_id": channel_id}):
+                        await Seishiro.save_channel(channel_id)
 
-                # Original link check
-                orig = await Seishiro.get_original_link(channel_id)
-                if orig:
-                    return await message.reply_text(
-                        "<b><blockquote expandable>Your channel link 👇</blockquote></b>",
-                        reply_markup=InlineKeyboardMarkup([[
-                            InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=orig)
-                        ]])
-                    )
+                    # ── Request link save karo for approve notification ────
+                    if is_request:
+                        await Seishiro.save_user_request_link(uid, channel_id, b64)
+
+                    # Peer resolve
+                    try:
+                        chat = await _safe_get_chat(client, channel_id)
+                        logger.info(f"Peer OK: {channel_id} → {chat.title}")
+                    except PeerIdInvalid:
+                        if not await _force_resolve_peer(client, channel_id):
+                            return await message.reply_text(
+                                "<b><blockquote expandable>"
+                                "⚠️ Channel resolve nahi hua. Bot ko admin banao aur dobara try karo."
+                                "</blockquote></b>"
+                            )
+                    except Exception as e:
+                        return await message.reply_text(
+                            f"<b><blockquote expandable>Channel error: {str(e)[:80]}</blockquote></b>"
+                        )
+
+                    # Admin check
+                    is_admin_ch, can_invite, reason = await check_bot_permissions(client, channel_id)
+                    if not is_admin_ch:
+                        return await message.reply_text(
+                            f"<b><blockquote expandable>⚠️ Bot admin nahi hai.\nKaaran: {reason}</blockquote></b>"
+                        )
+                    if not can_invite:
+                        return await message.reply_text(
+                            "<b><blockquote expandable>⚠️ Bot ko 'Invite Users' permission chahiye.</blockquote></b>"
+                        )
+
+                    # Encoded link save
+                    if is_request:
+                        await Seishiro.save_encoded_link2(channel_id, b64)
+                    else:
+                        await Seishiro.save_encoded_link(channel_id)
+
+                    # Original link check
+                    orig = await Seishiro.get_original_link(channel_id)
+                    if orig:
+                        return await message.reply_text(
+                            "<b><blockquote expandable>Your channel link 👇</blockquote></b>",
+                            reply_markup=InlineKeyboardMarkup([[
+                                InlineKeyboardButton("• ᴄʟɪᴄᴋ ʜᴇʀᴇ •", url=orig)
+                            ]])
+                        )
 
                 # ── Link flow: kab direct link, kab ads ───────────────
                 flow     = await get_link_flow()

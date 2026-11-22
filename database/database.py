@@ -895,7 +895,7 @@ class Master:
         try:
             for _id in ("main", "b"):
                 d = await self.database['bot_config'].find_one({"_id": _id}) or {}
-                m = max(m, int(d.get("verify_premium_seconds", 0) or 0))
+                m = max(m, int(d.get("verify_premium_seconds", 0) or 0), int(d.get("shortener_free_seconds", 0) or 0))
         except Exception:
             pass
         return m + 60

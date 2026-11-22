@@ -157,6 +157,10 @@ _CH_TTL = 3600
 
 
 async def _channel_info(bot, cid: int) -> dict:
+    from plugins.custom_link import is_custom_id, get_custom
+    if is_custom_id(cid):                          # Short Link: channel nahi, sirf title
+        d = await get_custom(cid) or {}
+        return {"title": d.get("title", ""), "photo": None, "ts": time.time()}
     c = _CH_CACHE.get(cid)
     if c and time.time() - c["ts"] < _CH_TTL:
         return c

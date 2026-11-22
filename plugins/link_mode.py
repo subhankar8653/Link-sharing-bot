@@ -149,6 +149,7 @@ async def _open_b(client: Bot, message: Message):
         "<code>/setshortener</code>, FSub menu...) woh <b>sirf B mode</b> pe lagenge.\n"
         "A mode (purane links) pe koi asar nahi.\n\n"
         "B link format: <code>https://t.me/BOT?start=b_&lt;id&gt;</code> (<code>/genlink</code> se milta hai)\n"
+        "Bot admin nahi hai? Settings → <b>🔗 Short Link</b> (ya <code>/shortlink</code>) mein koi bhi Telegram link do, bot link bana dega.\n"
         "Wapas jaane ke liye: <code>/link_mode a</code>")
     from plugins.settings import settings_command
     await settings_command(client, message)

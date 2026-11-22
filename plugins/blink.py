@@ -121,7 +121,7 @@ async def _real_premium(uid: int) -> bool:
             return False
         exp = await Seishiro.get_premium_expiry(uid)
         c = await _bot_cfg()
-        temp = int(c.get("verify_premium_seconds", 86400) or 0)
+        temp = max(int(c.get("verify_premium_seconds", 86400) or 0), int(c.get("shortener_free_seconds", 0) or 0))
         if not isinstance(exp, datetime.datetime):
             return False
         return (exp - datetime.datetime.now()).total_seconds() > temp + 60

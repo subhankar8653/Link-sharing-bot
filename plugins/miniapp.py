@@ -190,9 +190,9 @@ async def get_alt_settings() -> dict:
 
 
 async def alt_ready() -> bool:
-    """Button tabhi dikhega jab ON ho aur kam se kam 1 smart link ya shortener set ho (warna sirf wait = free link ho jaata)."""
+    """"Mini App not opening?" button seedha shortener kholta hai, isliye tabhi dikhega jab ON ho aur shortener set ho."""
     a = await get_alt_settings()
-    return a["enabled"] and bool(a["links"] or a["short_on"])
+    return a["enabled"] and a["short_on"]
 
 
 def seconds_until_ist_midnight() -> int:
@@ -558,23 +558,21 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
                     await _set_bot_config("alt_smartlinks", links)
                     await _set_bot_config("alt_smartlink", "")
             a = await get_alt_settings()
-            rows = [[InlineKeyboardButton("🔴 Turn OFF" if a["enabled"] else "🟢 Turn ON", callback_data="mini_alttog")]]
-            for i, l in enumerate(a["links"]):
-                rows.append([InlineKeyboardButton(f"🗑 {i + 1}. {_link_host(l)}", callback_data=f"mini_altdel:{i}")])
-            if len(a["links"]) < ALT_MAX_LINKS:
-                rows.append([InlineKeyboardButton("➕ Add Smart Link", callback_data="mini_altadd")])
-            rows.append(_back())
-            lines = "\n".join(f"{i + 1}. <code>{_link_host(l)}</code>" for i, l in enumerate(a["links"])) or "<i>koi smart link nahi</i>"
+            from plugins.premium import get_shortener_free_seconds, fmt_free_time
+            free = await get_shortener_free_seconds()
+            rows = [[InlineKeyboardButton("🔴 Turn OFF" if a["enabled"] else "🟢 Turn ON", callback_data="mini_alttog")],
+                    [InlineKeyboardButton(f"⏱ Shortener Free Time: {fmt_free_time(free)}", callback_data="shfree")],
+                    _back()]
             await cq.message.edit_text(
                 "<b>🔁 Alternative Method</b>\n\n"
-                f"Status: <b>{'ON' if a['enabled'] else 'OFF'}</b>  |  Shortener: <b>{'ON' if a['short_on'] else 'OFF'}</b> (/shortener)\n\n"
-                f"<b>Smart Links ({len(a['links'])}/{ALT_MAX_LINKS}):</b>\n{lines}\n\n"
+                f"Status: <b>{'ON' if a['enabled'] else 'OFF'}</b>  |  Shortener: <b>{'ON' if a['short_on'] else 'OFF'}</b> (/shortener)\n"
+                f"Shortener Free Time: <b>{fmt_free_time(free)}</b>\n\n"
                 "Jinka Mini App nahi khulta unko gate message mein <b>Mini App not opening?</b> button milta hai. "
-                "Page par Mini App jaisa UI: smart links ek-ek karke <b>Open ad</b> se khulte hain, har ek ke baad Min Watch time ka countdown, "
-                "phir (Shortener ON ho toh ek last step) link usi page par channel ke saath aa jaata hai (bot chat mein bhi).\n\n"
-                "<b>Mini App jaisa hi:</b> ek session mein kitne smart links = Mini App ka <b>Ads/Session</b>, countdown = <b>Min Watch</b>, "
-                "rotation 1, 2, 3 ... phir wapas 1, aur Daily Goal / Free Time / Link Flow sab Mini App ki settings se (alag setting nahi).\n"
-                "<i>Smart Link ya Shortener mein se ek set na ho toh button nahi dikhta. Premium users ko direct link milta hai.</i>",
+                "Us par user ko <b>seedha Shortener link</b> milta hai (ads page nahi). "
+                "User shortener paar kare toh link bot chat mein aa jaata hai aur use <b>Shortener Free Time</b> milta hai.\n\n"
+                "<b>Free time alag-alag:</b> Mini App ka Free Time = /miniapp → Free Time, "
+                "Shortener ka Free Time = /shortener → Free Time (ya /setverifytime).\n"
+                "<i>Shortener set/ON na ho toh ye button nahi dikhta. Premium users ko direct link milta hai.</i>",
                 reply_markup=InlineKeyboardMarkup(rows),
             )
 
@@ -643,8 +641,9 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
             await cq.message.edit_text(
                 "<b>⏱ Free Time</b>\n\n"
                 f"Abhi: <b>{_dur(s['free_seconds'])}</b>\n\n"
-                "<b>Ye ek hi Free Time sab jagah lagta hai:</b> session ke baad free time, Daily Goal ka reward, "
+                "<b>Ye Mini App ka Free Time hai:</b> session ke baad free time, Daily Goal ka reward, "
                 "aur Custom sequence poora hone ke baad free time. Is dauran seedha link milta hai.\n"
+                "<i>Shortener ka Free Time alag hai: /shortener → Free Time.</i>\n"
                 "<b>None</b> = free time nahi (har baar ads/steps).\n"
                 "<i>FSub: Daily Goal flow mein free time ke dauran bhi FSub lagta hai; Custom flow mein nahi.</i>",
                 reply_markup=InlineKeyboardMarkup(rows),
