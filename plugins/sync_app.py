@@ -80,9 +80,29 @@ INTRO_TEXT = (
 )
 
 
+NEW_INTRO_TEXT = (
+    "<b>Welcome to MyTribute, {mention}!</b>\n\n"
+    "<blockquote>Check your Telegram age, collect your rewards and get ready for the airdrop.</blockquote>\n\n"
+    "Tap <b>Open MyTribute</b> below to start."
+)
+
+
+async def new_app_url() -> str:
+    """Naye app (MyTribute) ka base URL (Home URL / Mini App URL wahi, path /tribute). https na ho toh ''."""
+    from plugins.miniapp import get_miniapp_settings
+    cfg = await _get_bot_config()
+    ms = await get_miniapp_settings()
+    url = (cfg.get("sync_app_url") or ms["url"] or "").rstrip("/")
+    return url if url.startswith("https://") else ""
+
+
 async def intro_message(user):
-    """Plain /start ka welcome: sirf text + 'Open Senpai Sync' button (photo / About / Help / Premium nahi)."""
+    """Plain /start ka welcome: sirf text + Open button. /appmode new ho toh naya MyTribute app, warna Senpai Sync."""
     from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+    if (await _get_bot_config()).get("app_mode") == "new":
+        nurl = await new_app_url()
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("Open MyTribute", web_app=WebAppInfo(url=f"{nurl}/tribute"))]]) if nurl else None
+        return NEW_INTRO_TEXT.format(mention=user.mention), markup, bool(nurl)
     url = await sync_enabled_and_url()
     markup = InlineKeyboardMarkup([[InlineKeyboardButton("Open Senpai Sync", web_app=WebAppInfo(url=f"{url}/miniapp"))]]) if url else None
     return INTRO_TEXT.format(mention=user.mention), markup, bool(url)

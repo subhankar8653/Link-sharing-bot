@@ -32,6 +32,39 @@ async def _admin_ok(uid: int) -> bool:
     return uid == OWNER_ID or await Seishiro.is_admin(uid)
 
 
+# ── Naya app (MyTribute) ka switch: /appmode new | classic  +  /preview (sirf admin ko dikhta hai) ──
+
+@Bot.on_message(filters.command("appmode") & filters.private)
+async def cmd_appmode(client: Bot, msg: Message):
+    if not await _admin_ok(msg.from_user.id):
+        return await msg.reply("⛔ Sirf admins ke liye!")
+    cur = (await _get_bot_config()).get("app_mode", "classic")
+    arg = msg.command[1].lower() if len(msg.command) > 1 else ""
+    if arg in ("new", "classic"):
+        await _set_bot_config("app_mode", arg)
+        cur = arg
+    label = "NEW — MyTribute" if cur == "new" else "CLASSIC — Senpai Sync"
+    await msg.reply(
+        f"<b>App mode:</b> {label}\n\n"
+        "<code>/appmode new</code> → /start par naya MyTribute app khulega\n"
+        "<code>/appmode classic</code> → /start par purana Senpai Sync\n"
+        "<code>/preview</code> → sirf aap naya app khol kar dekho (mode badle bina)\n\n"
+        "<i>Gate (Watch Video Ad) aur baaki sab purana hi chalta hai, mode sirf /start ke Open button ko badalta hai.</i>")
+
+
+@Bot.on_message(filters.command("preview") & filters.private)
+async def cmd_preview(client: Bot, msg: Message):
+    if not await _admin_ok(msg.from_user.id):
+        return await msg.reply("⛔ Sirf admins ke liye!")
+    from pyrogram.types import WebAppInfo
+    from plugins.sync_app import new_app_url
+    url = await new_app_url()
+    if not url:
+        return await msg.reply("❌ Pehle Mini App URL (https) set karo: /miniapp → Set URL")
+    await msg.reply("<b>MyTribute preview</b>\n\nSirf admin ke liye. Ye naya app hai (frontend demo).",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Open MyTribute", web_app=WebAppInfo(url=f"{url}/tribute"))]]))
+
+
 def _menu_text(st: dict, home_url: str = "") -> str:
     lines = "\n".join(f"• {SYNC_SETTINGS[k][1]}: <b>{st[k]}</b>" for k in SYNC_SETTINGS)
     return (

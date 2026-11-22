@@ -30,6 +30,14 @@ async def miniapp_page(request):
     )
 
 
+@routes.get("/tribute", allow_head=True)
+async def tribute_page(request):
+    return web.FileResponse(
+        os.path.join(WEBAPP_DIR, "tribute.html"),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @routes.get("/go", allow_head=True)
 async def go_page(request):
     return web.FileResponse(

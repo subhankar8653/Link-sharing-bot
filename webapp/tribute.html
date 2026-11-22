@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MyTribute</title>
+<style>
+:root{--bg:#f2f2f7;--card:#fff;--tx:#0b0b0f;--mu:#8a8a93;--ln:#ececf1;--bl:#0a7aff;--bs:#e3eeff}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif;-webkit-font-smoothing:antialiased}
+.scr{display:none;min-height:100vh}.scr.on{display:block}
+.pad{padding:22px 16px 40px;max-width:480px;margin:0 auto}
+.kick{font-size:14px;letter-spacing:.04em;color:var(--mu);font-weight:600;text-transform:uppercase;margin:28px 0 8px}
+h1.big{font-size:40px;line-height:1.1;margin:0 0 22px;font-weight:800;letter-spacing:-.02em}
+.card{background:var(--card);border-radius:22px;overflow:hidden}
+.row{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--ln)}
+.row:last-child{border:0}
+.tile{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex:none;color:#fff}
+.row .t{flex:1;min-width:0}.row .t b{display:block;font-size:16px;font-weight:600}.row .t span{display:block;font-size:12.5px;color:var(--mu);margin-top:1px}
+.val{color:var(--mu);font-size:16px}
+.ck{width:30px;height:30px;border-radius:50%;background:#34c759;color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;margin-left:8px;flex:none}
+.sp{width:30px;height:30px;border-radius:50%;border:3px solid #dcdce3;border-top-color:#8a8a93;margin-left:8px;flex:none;animation:r 1s linear infinite}
+@keyframes r{to{transform:rotate(360deg)}}
+.dim{opacity:.35}
+.foot{position:fixed;left:0;right:0;bottom:26px;text-align:center;color:var(--mu);font-size:15px;padding:0 24px}
+/* stories */
+.st{background:radial-gradient(900px 600px at 20% 0,#7d7e86,#2d2e35 55%,#0c0c10);color:#fff;position:relative;overflow:hidden}
+.bars{display:flex;gap:7px;padding:14px 14px 0}.bars i{flex:1;height:4px;border-radius:9px;background:rgba(255,255,255,.28);overflow:hidden}
+.bars i b{display:block;height:100%;width:0;background:#fff}
+.sh{display:flex;justify-content:space-between;padding:22px 20px;font-weight:650;font-size:18px}
+.sh a{opacity:.9}
+.sb{position:absolute;left:0;right:0;top:0;bottom:0;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:0 22px}
+.sb .s{font-size:21px;opacity:.85;margin:6px 0}.sb .n{font-size:110px;font-weight:800;letter-spacing:-.04em;line-height:1}
+.pill{display:inline-block;background:rgba(255,255,255,.18);padding:12px 22px;border-radius:99px;font-size:19px;font-weight:600;margin-top:18px}
+.pb{width:88%;height:30px;position:relative;margin:36px 0 8px}.pb i{position:absolute;left:0;top:14px;height:16px;border-radius:9px;background:rgba(255,255,255,.28);right:0}
+.pb b{position:absolute;left:0;top:14px;height:16px;border-radius:9px;background:#fff}
+.you{position:absolute;top:-22px;background:#fff;color:#000;border-radius:12px;padding:4px 14px;font-weight:700;font-size:17px;transform:translateX(-50%)}
+.eras{width:100%;margin-top:18px}.eras div{display:flex;justify-content:space-between;background:rgba(255,255,255,.12);border-radius:20px;padding:15px 22px;margin-bottom:9px;font-size:19px;font-weight:600;color:rgba(255,255,255,.65)}
+.eras div.me{background:#fff;color:#000}
+.g6{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;margin-top:14px}
+.g6 div{background:rgba(255,255,255,.14);border-radius:26px;padding:18px;text-align:left;position:relative}
+.g6 b{display:block;font-size:44px;margin-top:20px}.g6 span{font-size:19px;opacity:.8}.g6 em{position:absolute;right:14px;top:14px;font-style:normal;background:rgba(0,0,0,.3);padding:5px 12px;border-radius:14px;font-size:16px;font-weight:700}
+.coin{width:104px;height:104px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#bfe8ff,#29a6ee 60%,#1473c0);display:flex;align-items:center;justify-content:center;margin:18px 0 6px;box-shadow:0 0 40px rgba(60,170,255,.45)}
+.coin::after{content:"";width:54px;height:54px;border-radius:50%;border:12px solid #0f3b63;border-right-color:transparent}
+.wb{display:block;width:100%;background:#fff;color:#000;border:0;border-radius:99px;padding:19px;font-size:19px;font-weight:700;margin-top:14px}
+.gb{background:rgba(255,255,255,.18);color:#fff}.lk{background:none;border:0;color:#fff;font-size:21px;font-weight:650;padding:16px;width:100%}
+.sc{width:78%;max-width:330px;background:linear-gradient(160deg,#6d6e76,#17171c);border-radius:34px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+.sc .y{font-size:84px;font-weight:800;letter-spacing:-.04em;line-height:1.05;margin:10px 0}
+.sc .m{display:flex;gap:8px;margin-top:16px}.sc .m div{flex:1;background:rgba(255,255,255,.12);border-radius:14px;padding:11px 4px;font-weight:700;font-size:17px}.sc .m span{display:block;font-size:12px;font-weight:500;opacity:.7;margin-top:3px}
+.chip{background:rgba(255,255,255,.2);border-radius:99px;padding:11px 22px;font-weight:650;font-size:18px;margin-bottom:16px}
+/* X screen */
+.xi{width:88px;height:88px;border-radius:24px;background:#000;color:#fff;font-size:44px;display:flex;align-items:center;justify-content:center;margin:20px 0 26px}
+.bt{display:block;width:100%;border:0;border-radius:99px;background:var(--bl);color:#fff;font-size:19px;font-weight:650;padding:19px;margin-top:14px}
+.tl{display:block;width:100%;background:none;border:0;color:var(--bl);font-size:19px;font-weight:600;padding:16px}
+/* home */
+.hd{display:flex;align-items:center;gap:10px;margin-bottom:8px}.av{width:38px;height:38px;border-radius:50%;background:#f4a64a;color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center}
+.hd b{font-size:16px;display:block}.hd span{font-size:12px;color:#28a745}.gear{margin-left:auto;width:36px;height:36px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center}
+.bal{text-align:center;margin:8px 0 14px}.bal small{color:var(--mu);font-size:13px}.bal div{font-size:44px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:8px}
+.mc{width:26px;height:26px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#bfe8ff,#29a6ee 60%,#1473c0);display:inline-block}
+.qa{display:flex;justify-content:center;gap:34px;margin-bottom:16px}.qa div{text-align:center;font-size:12px;color:#444}.qa i{display:flex;width:50px;height:50px;border-radius:16px;background:#fff;align-items:center;justify-content:center;font-size:21px;font-style:normal;margin:0 auto 5px}
+.sec{font-size:11.5px;letter-spacing:.06em;color:var(--mu);font-weight:650;margin:18px 4px 7px;display:flex;justify-content:space-between}
+.btn{background:var(--bs);color:var(--bl);border:0;border-radius:15px;padding:7px 15px;font-size:14px;font-weight:650;flex:none}
+.btn.d{opacity:.5}.btn.k{background:#ffe9e9;color:#e5484d}
+.bn{display:flex;gap:10px;margin-top:10px}.bn div{flex:1;border-radius:18px;color:#fff;padding:14px;min-height:112px;display:flex;flex-direction:column;justify-content:space-between}.bn small{opacity:.85;font-size:12px}.bn b{font-size:22px}.bn button{background:rgba(255,255,255,.92);color:#222;border:0;border-radius:14px;padding:7px 12px;font-weight:650;width:max-content}
+.og{display:flex;align-items:center;gap:12px;padding:14px;margin-top:10px}.og b{font-size:34px;color:#f4a64a}.og .t{flex:1;font-size:13px;color:#666}.og .t span{display:block;color:#222}
+.ring{width:48px;height:48px;border-radius:50%;border:5px solid #e4e4ea;border-top-color:#1f6bff;border-right-color:#1f6bff;display:flex;align-items:center;justify-content:center;font-weight:800}
+.pr{height:7px;border-radius:9px;background:#ececf1;margin:8px 14px 12px;overflow:hidden}.pr i{display:block;height:100%;background:var(--bl)}
+.tk{padding:14px}.tk b{font-size:28px;display:block;margin:2px 0 10px}.seg{display:flex;height:6px;border-radius:9px;overflow:hidden;gap:2px;margin-bottom:8px}.seg i{display:block}
+.nav{position:fixed;left:10px;right:10px;bottom:10px;background:#fff;border-radius:24px;display:flex;box-shadow:0 6px 30px rgba(0,0,0,.12);padding:8px;max-width:460px;margin:0 auto}
+.nav a{flex:1;text-align:center;font-size:11px;color:#777;padding:6px 0;border-radius:16px}.nav a i{display:block;font-size:20px;font-style:normal}.nav a.on{background:var(--bs);color:var(--bl);font-weight:650}
+.toast{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);background:#222;color:#fff;border-radius:14px;padding:11px 18px;font-size:14px;opacity:0;transition:.25s;pointer-events:none;z-index:9}.toast.on{opacity:1}
+</style></head><body>
+<div class="scr" id="s-scan"><div class="pad"><div class="kick">MyTribute</div><h1 class="big">Scanning your Telegram</h1><div class="card" id="scl"></div></div><div class="foot">We read only what Telegram shows. Nothing is posted.</div></div>
+<div class="scr st" id="s-st"><div class="bars" id="bars"></div><div class="sh"><span>MyTribute</span><a id="skip">Skip</a></div><div class="sb" id="sb"></div></div>
+<div class="scr st" id="s-sh"><div class="sh"><span>MyTribute</span></div><div class="sb" id="shb" style="justify-content:flex-start;padding-top:70px"></div></div>
+<div class="scr" id="s-x"><div class="pad"><div class="xi">𝕏</div><h1 class="big" style="margin-bottom:10px">Now your X</h1><p style="color:var(--mu);font-size:19px;line-height:1.5;margin:0 0 30px">Link X for up to <b style="color:#000">10,000</b> more SUBH. We read the account date, followers and the check mark.</p><div class="card" id="xl"></div><p style="color:var(--mu);text-align:center;font-size:15px">One X account can be linked to one Telegram account.</p><button class="bt" id="xc">𝕏  Connect X</button><button class="tl" id="xn">Not now</button></div></div>
+<div class="scr" id="s-home"><div class="pad" style="padding-bottom:110px" id="home"></div>
+<div class="nav"><a class="on"><i>🏠</i>Home</a><a data-c><i>🏆</i>TOP</a><a data-c><i>📣</i>Channels</a><a data-c><i>🎟</i>Pass</a><a data-c><i>👥</i>Friends</a></div></div>
+<div class="toast" id="tt"></div>
+<script src="https://telegram.org/js/telegram-web-app.js" async></script>
+<script>
+(function(){
+var T={name:'SUBH',app:'MyTribute',bot:'MyTributeApp',listing:'2026-12-18T00:00:00',coinId:'◉'};
+var $=function(i){return document.getElementById(i)},fmt=function(n){return Number(n).toLocaleString('en-US')};
+function toast(m){var t=$('tt');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(function(){t.classList.remove('on')},1600)}
+function ls(k,v){try{if(v===undefined)return localStorage.getItem(k);localStorage.setItem(k,v)}catch(e){return null}}
+function show(id){document.querySelectorAll('.scr').forEach(function(e){e.classList.toggle('on',e.id===id)});window.scrollTo(0,0)}
+/* user (Telegram ya demo) */
+function user(){var u=null,w=window.Telegram&&Telegram.WebApp;try{if(w&&w.initDataUnsafe&&w.initDataUnsafe.user)u=w.initDataUnsafe.user;
+if(!u){var p=new URLSearchParams(location.hash.slice(1)).get('tgWebAppData');if(p)u=JSON.parse(new URLSearchParams(p).get('user'))}}catch(e){}
+return u||{id:6490719152,first_name:'Oni107',username:'Usiaksa',is_premium:false,demo:1}}
+/* account age: id se andaza (close, exact nahi) */
+var AN=[[2.77e6,'2013-09'],[1e8,'2014-12'],[3e8,'2016-03'],[6e8,'2017-09'],[1e9,'2019-04'],[1.5e9,'2020-08'],[2.1e9,'2021-06'],[5e9,'2022-03'],[6.49e9,'2023-06'],[7e9,'2023-11'],[7.5e9,'2024-05'],[8e9,'2024-12'],[8.6e9,'2025-08']];
+function joined(id){var a=AN,i=0;if(id<=a[0][0])i=0;else if(id>=a[a.length-1][0])return new Date(a[a.length-1][1]+'-15');else{while(id>a[i+1][0])i++}
+var d0=new Date(a[i][1]+'-15').getTime(),d1=new Date(a[Math.min(i+1,a.length-1)][1]+'-15').getTime(),f=(id-a[i][0])/((a[Math.min(i+1,a.length-1)][0]-a[i][0])||1);return new Date(d0+(d1-d0)*Math.max(0,Math.min(1,f)))}
+var U=user(),J=joined(U.id),NOW=new Date(),days=Math.max(1,Math.round((NOW-J)/864e5)),yr=J.getFullYear(),yrs=Math.max(0,Math.floor(days/365)),
+ pct=Math.round(100*(1-Math.exp(-days/2200))),og=Math.round(pct*.88),mon=J.toLocaleString('en-US',{month:'long'})+' '+yr,
+ ERAS=[['Genesis','2013',0,2013],['Legend','2014',2014,2014],['OG','2015–16',2015,2016],['Veteran','2017–18',2017,2018],['Regular','2019–20',2019,2020],['Rookie','2021–22',2021,2022],['Newbie','2023 on',2023,9999]],
+ era=ERAS.filter(function(e){return yr>=(e[2]||0)&&yr<=e[3]})[0]||ERAS[6],
+ TAG={Genesis:'You were here before it was cool',Legend:'A true Telegram legend',OG:'You saw it grow',Veteran:'Seasoned and steady',Regular:'You know the place',Rookie:'You came early to the wave',Newbie:'Welcome in, it pays from day one'},
+ prem=!!U.is_premium,reward=yrs*1000+(prem?2000:0)||500,name=U.first_name||U.username||'You';
+var bal=parseInt(ls('mt_bal')||'0',10);
+/* 1. scan */
+var SC=[['#','#5856d6','Account','#'+fmt(U.id)],['🗓','#007aff','Joined',mon],['🕘','#30b0c7','Days on Telegram',fmt(days)],['★','#af52de','Telegram Premium',prem?'Yes':'No'],['🎁','#ff9500','NFT gifts','None'],['🛡','#34c759','Telegram level','None yet'],['🏷','#ff2d55','Username',U.username?'@'+U.username:'None'],['✦','#ffcc00','Profile','Basic']];
+function scan(){var h='';SC.forEach(function(r,i){h+='<div class="row dim" id="sr'+i+'"><div class="tile" style="background:'+r[1]+'">'+r[0]+'</div><div class="t"><b>'+r[2]+'</b></div><span class="val"></span><div class="sp"></div></div>'});$('scl').innerHTML=h;show('s-scan');
+SC.forEach(function(r,i){setTimeout(function(){var e=$('sr'+i);e.classList.remove('dim');e.querySelector('.val').textContent=r[3];e.querySelector('.sp').outerHTML='<div class="ck">✓</div>'},700+i*480)});setTimeout(stories,700+SC.length*480+700)}
+/* 2. stories */
+var SL=[function(){return '<div class="s">You joined Telegram in</div><div class="n">'+yr+'</div><div class="s" style="font-size:25px;font-weight:650;margin-top:30px">'+mon+'</div><div class="pill">'+fmt(days)+' days ago</div>'},
+function(){return '<div class="s">Your account is older than</div><div class="n">'+pct+'%</div><div class="s" style="font-size:25px;font-weight:650">of all Telegram accounts</div><div class="pb"><span class="you" style="left:'+pct+'%">You</span><i></i><b style="width:'+pct+'%"></b></div><div class="pill">Account #'+fmt(U.id)+'</div>'},
+function(){var h='<div class="s">Your era</div><div class="n" style="font-size:78px">'+era[0]+'</div><div class="s" style="font-size:23px;font-weight:650">'+TAG[era[0]]+'</div><div class="eras">';ERAS.forEach(function(e){h+='<div class="'+(e===era?'me':'')+'"><span>'+e[0]+'</span><span>'+e[1]+'</span></div>'});return h+'</div>'},
+function(){return '<div class="s" style="font-size:23px">Your profile</div><div class="g6"><div>★<b>'+(prem?'Yes':'No')+'</b><span>Premium</span></div><div>🎁<b>None</b><span>NFT gifts</span></div><div>🛡<b>None</b><span>Telegram level</span></div><div><em>+'+fmt(yrs*1000)+'</em>🗓<b>'+yrs+'</b><span>Years</span></div><div>🏷<b>'+(U.username?'Yes':'No')+'</b><span>Username</span></div><div>✦<b>Basic</b><span>Profile</span></div></div>'},
+function(){return '<div class="s">Your reward</div><div class="coin"></div><div class="n" style="font-size:78px">'+fmt(reward)+'</div><div class="s" style="font-size:26px;font-weight:650">'+T.name+' for your account</div><button class="wb" id="claim">Claim '+fmt(reward)+' '+T.name+'</button><p style="opacity:.7;font-size:16px;line-height:1.45">The age is read from your account number. It is close, not exact to the day.</p>'}];
+var cur=0,tm=null;
+function stories(){show('s-st');cur=0;play()}
+function play(){clearInterval(tm);var b=$('bars');b.innerHTML=SL.map(function(){return '<i><b></b></i>'}).join('');var bs=b.querySelectorAll('b');
+for(var k=0;k<cur;k++)bs[k].style.width='100%';$('sb').innerHTML=SL[cur]();$('skip').style.display=cur===SL.length-1?'none':'';
+var cl=$('claim');if(cl)cl.onclick=function(){bal+=reward;ls('mt_bal',bal);share()};
+if(cur===SL.length-1){bs[cur].style.width='100%';return}
+var t0=Date.now();tm=setInterval(function(){var f=(Date.now()-t0)/4200;bs[cur].style.width=Math.min(100,f*100)+'%';if(f>=1){cur++;play()}},60)}
+$('skip').onclick=function(){clearInterval(tm);cur=SL.length-1;play()};
+$('s-st').addEventListener('click',function(e){if(e.target.closest('#claim,#skip'))return;var x=e.clientX/innerWidth;clearInterval(tm);if(x<.3&&cur>0)cur--;else if(cur<SL.length-1)cur++;play()});
+/* 3. share card */
+function share(){show('s-sh');$('shb').innerHTML='<div class="chip">✓ +'+fmt(reward)+' '+T.name+' added</div><div class="sc"><div style="display:flex;justify-content:space-between;font-weight:650"><span>'+T.app+'</span><span style="opacity:.7;font-size:13px">@'+T.bot+'</span></div><div style="margin-top:36px;font-weight:700;font-size:21px">'+name+'</div><div style="opacity:.7;letter-spacing:.14em;font-size:13px;margin:8px 0">TELEGRAM SINCE</div><div class="y">'+yr+'</div><div>'+mon+' · '+fmt(days)+' days</div><div class="pill" style="font-size:14px;padding:9px 16px">Older than '+pct+'% of Telegram</div><div class="m"><div>'+era[0]+'<span>Era</span></div><div>'+(U.id/1e9).toFixed(2)+'B<span>Account #</span></div><div>'+og+'<span>OG score</span></div></div></div>'+
+'<div style="width:100%;margin-top:22px"><button class="wb" data-t="Share to Story">📷  Share to Story · +1,000</button><button class="wb gb" data-t="Send to a chat">➤  Send to a chat</button><button class="wb gb" data-t="Post to X">𝕏  Post to X · +1,000</button><button class="lk" id="shc">Continue</button></div>';
+$('shb').querySelectorAll('[data-t]').forEach(function(b){b.onclick=function(){toast(b.dataset.t+' — coming soon')}});$('shc').onclick=xs}
+/* 4. X */
+function xs(){var R=[['🗓','#007aff','Account age','Every year on X counts'],['👥','#30b0c7','Followers','100+, 1K+ and 10K+ each add more'],['✔','#007aff','Verified','A check mark adds a bonus']];
+$('xl').innerHTML=R.map(function(r){return '<div class="row"><div class="tile" style="background:'+r[1]+'">'+r[0]+'</div><div class="t"><b>'+r[2]+'</b><span>'+r[3]+'</span></div></div>'}).join('');show('s-x')}
+$('xc').onclick=function(){toast('Connect X — coming soon')};$('xn').onclick=function(){ls('mt_done','1');home()};
+/* 5. home */
+var LS=function(){var a=[].slice.call(arguments);return '<div class="card">'+a.map(function(r){return '<div class="row"><div class="tile" style="background:'+r[0]+'">'+r[1]+'</div><div class="t"><b>'+r[2]+'</b><span>'+(r[3]||'')+'</span></div>'+(r[4]?'<button class="btn '+(r[5]||'')+'" data-a="'+(r[6]||'')+'">'+r[4]+'</button>':'')+'</div>'}).join('')+'</div>'},
+SEC=function(t,r){return '<div class="sec"><span>'+t+'</span><span>'+(r||'')+'</span></div>'};
+function home(){var h='<div class="hd"><div class="av">'+name.slice(0,2).toUpperCase()+'</div><div><b>'+name+'</b><span>✓ Whitelisted</span></div><div class="gear">⚙</div></div>'+
+'<div class="bal"><small>Balance</small><div><i class="mc"></i><span id="bal">'+fmt(bal)+'</span></div></div><div class="qa"><div><i>⚔</i>Battle</div><div><i>📷</i>Story</div><div><i>👛</i>Wallet</div></div>'+
+SEC('COMMUNITY VOTE')+LS(['#0a7aff','🗳','How should the $'+T.name+' farm rewards be used?','238,964 votes','Vote','',''])+
+SEC('WHITELIST','1,399,404 joined')+LS(['#ffb020','◉','Whitelist prizes','25,000 '+T.name,'Closed','d','']).replace('<div class="row"><div class="tile" style="background:#ffb020">◉</div>','<div class="row"><div class="tile" style="background:#ffb020">◉</div>')+
+'<div class="bn"><div style="background:linear-gradient(135deg,#1c3b8a,#2d6bff)"><small>$'+T.name+'</small><b>2026–2027 Roadmap</b><button>Open ›</button></div><div style="background:linear-gradient(135deg,#7a3bf0,#a45cff)"><small>'+T.app+'</small><b>Important Update</b><button>Check ›</button></div></div>'+
+'<div class="card og"><b>'+yr+'</b><div class="t">Telegram since<span>Older than '+pct+'% of all accounts</span></div><div class="ring">'+og+'</div></div>'+
+'<div class="card" style="margin-top:10px"><div class="row"><div class="tile" style="background:#ffb020">▣</div><div class="t"><b>Vault</b><span>26 '+T.name+' an hour · +38%</span></div><button class="btn d" data-a="vault">Claim</button></div><div style="padding:0 14px 4px;font-size:26px;font-weight:700"><i class="mc" style="width:20px;height:20px;vertical-align:-2px"></i> 0 <small style="font-size:13px;color:#999;font-weight:500">of 208</small></div><div class="pr"><i style="width:2%"></i></div><div style="padding:0 14px 12px;font-size:12px;color:#999">Full in <span id="vt">07:59:42</span></div></div>'+
+SEC('CODE')+LS(['#5856d6','🔑','Enter a code','Codes drop in our channel','Enter','d',''])+
+SEC('TODAY')+LS(['#34c759','🎁','Daily reward','Day 1 of 7 · +100','Claim','','daily'],['#ff2d55','🏷',T.app.toUpperCase()+' APP','In your name · +300 a day','Check','d',''],['#0a7aff','🔗','Your link in bio','+1,000 a day · Friends find you','Check','d',''])+
+SEC('SPINS')+LS(['#ff2d55','🎰','Spin','Up to 5,000 '+T.name+' or $GRAM','Spin','',''],['#af52de','🎁','Mystery spin','Finish every task or bring a friend who does','Locked','k',''],['#ff9500','⚠','Epic spin','0.33 to 33 GRAM on every slice','Watch','',''])+
+SEC('STEP 1','0 of 2')+LS(['#ff2d55','🎰','Bonus spin','For all 2 tasks below','0/2','d',''],['#0a7aff','✈','Follow '+T.app,'+2,000','Open','',''],['#0a7aff','✈','Follow partner channel','+2,000','Open','',''])+
+SEC('STEP 2','0 of 1')+LS(['#af52de','🎁','Mystery spin','For all the task below','0/1','d',''],['#0a7aff','✈','Register partner','+3,000 · Up to 500% for new players','Open','',''])+
+SEC('EXTRA TASKS','0 of 3')+LS(['#0a7aff','✈','Like and share a post','+2,000','Open','',''],['#0a7aff','✈','Follow partner','+2,500','Open','',''],['#0a7aff','✈','Like and share partner post','+1,500','Open','',''])+
+SEC('COMPETE')+LS(['#8e8e93','🪨','Stone Age league','Place 3 of 5 · Ends in 4d 05:21:01','›','d',''],['#af52de','🏅','Achievements','0 of 33 · 1 to claim','1','k',''])+
+SEC('EARN '+T.name)+LS(['#5856d6','💬','Who\'s the OG here?','Friends pay 10%','Send','',''],['#111','𝕏','Link your X','Up to +10,000','Link','',''])+
+SEC(T.name+' TOKEN')+'<div class="card tk"><div style="display:flex;gap:10px;align-items:center"><i class="mc"></i><div style="font-size:13px;color:#666">'+T.name+' lists on TON<b style="color:#000;margin:0">December 18</b></div></div><div style="font-size:30px;font-weight:700;margin:12px 0 10px" id="cd">–</div><div class="seg"><i style="flex:64;background:#d9902f"></i><i style="flex:16;background:#2d6bff"></i><i style="flex:10;background:#34c759"></i><i style="flex:10;background:#af52de"></i></div><div style="font-size:12px;color:#999">64% to community · Tokenomics</div></div>'+
+'<div class="card" style="margin-top:10px"><div class="row"><div class="tile" style="background:#e9eefc;color:#0a7aff">◔</div><div class="t"><b>Get ready for the airdrop</b><span>1 of 6 done</span></div><span class="val">›</span></div></div>';
+$('home').innerHTML=h;show('s-home');
+$('home').onclick=function(e){var b=e.target.closest('button,.qa div,.bn div');if(!b)return;var a=b.dataset&&b.dataset.a;
+if(a==='daily'&&!b.classList.contains('d')){bal+=100;ls('mt_bal',bal);$('bal').textContent=fmt(bal);b.textContent='Done';b.classList.add('d');toast('+100 '+T.name)}else if(b.classList.contains('d')&&b.textContent==='Done'){}else toast('Coming soon')};
+document.querySelectorAll('.nav a[data-c]').forEach(function(a){a.onclick=function(){toast('Coming soon')}});
+setInterval(tick,1000);tick()}
+function tick(){var s=Math.max(0,Math.floor((new Date(T.listing)-new Date())/1000)),d=Math.floor(s/86400),p=function(n){return String(n).padStart(2,'0')};
+var c=$('cd');if(c)c.textContent=d+'d '+p(Math.floor(s%86400/3600))+':'+p(Math.floor(s%3600/60))+':'+p(s%60);var v=$('vt');if(v){var r=28800-(Math.floor(Date.now()/1000)%28800);v.textContent=p(Math.floor(r/3600))+':'+p(Math.floor(r%3600/60))+':'+p(r%60)}}
+/* start */
+(function(){var w=window.Telegram&&Telegram.WebApp;if(w){try{w.ready();w.expand()}catch(e){}}
+var q=new URLSearchParams(location.search);if(q.get('reset')==='1'){ls('mt_done','');ls('mt_bal','0');bal=0}
+if(ls('mt_done')==='1'&&q.get('replay')!=='1')home();else scan()})();
+})();
+</script></body></html>

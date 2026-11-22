@@ -2,6 +2,7 @@
   "rewrites": [
     { "source": "/miniapp", "destination": "/index.html" },
     { "source": "/go", "destination": "/go.html" },
+    { "source": "/tribute", "destination": "/tribute.html" },
     { "source": "/config.js", "destination": "/api/config" },
     { "source": "/api/sync/:action", "destination": "/api/proxy?path=/api/sync/:action" },
     { "source": "/api/mini/:action", "destination": "/api/proxy?path=/api/mini/:action" },
