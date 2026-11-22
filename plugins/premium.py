@@ -44,6 +44,7 @@ from pyrogram.types import (
 )
 
 from config import OWNER_ID
+import modectx
 from database.database import Seishiro
 from bot import Bot
 
@@ -59,13 +60,30 @@ IST    = pytz.timezone("Asia/Kolkata")
 # DB HELPERS
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+# B mode mein alag rehne wale bot_config keys (baaki — premium plans, sync, auto-delete, miniapp_url — shared)
+_MIRROR_PREFIX = ("miniapp_", "link_", "shortener_", "alt_")
+_MIRROR_KEYS   = {"verify_premium_seconds"}
+_SHARED_KEYS   = {"miniapp_url"}
+
+
+def _mirrored(key: str) -> bool:
+    return key not in _SHARED_KEYS and (key in _MIRROR_KEYS or key.startswith(_MIRROR_PREFIX))
+
+
 async def _get_bot_config() -> dict:
-    doc = await Seishiro.database['bot_config'].find_one({"_id": "main"})
-    return doc or {}
+    col  = Seishiro.database['bot_config']
+    main = await col.find_one({"_id": "main"}) or {}
+    if modectx.cur() != "b":
+        return main
+    b = await col.find_one({"_id": "b"}) or {}
+    out = {k: v for k, v in main.items() if not _mirrored(k)}
+    out.update({k: v for k, v in b.items() if k != "_id" and _mirrored(k)})
+    return out
 
 async def _set_bot_config(key: str, value) -> None:
+    _id = "b" if (modectx.cur() == "b" and _mirrored(key)) else "main"
     await Seishiro.database['bot_config'].update_one(
-        {"_id": "main"}, {"$set": {key: value}}, upsert=True
+        {"_id": _id}, {"$set": {key: value}}, upsert=True
     )
 
 async def get_shortener_settings() -> dict:

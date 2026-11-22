@@ -65,6 +65,8 @@ async def api_mini_alt(request):
     doc = await Seishiro.get_verify_token(token) if token else {}
     if not doc or doc.get("used") or not doc.get("alt_on"):
         return web.json_response({"ok": False, "error": "invalid"})
+    from modectx import set_mode
+    set_mode(doc.get("mode", "a"))                 # token ke mode ki settings
     alt = await get_alt_settings()
     bot = request.app.get("bot")
     if not alt["enabled"] or bot is None:
@@ -143,6 +145,8 @@ async def _auth(body: dict):
         return None, None, None, "used"
     if int(doc.get("user_id", 0)) != int(user["id"]):
         return None, None, None, "not_yours"
+    from modectx import set_mode
+    set_mode(doc.get("mode", "a"))                 # token jis mode (A/B) mein bana, usi ki settings
     return int(user["id"]), token, doc, None
 
 
@@ -208,8 +212,7 @@ async def api_mini_init(request):
 
     # Per-session ads: user ke cursor se shuru karke N ads (agla session wahin se)
     cursor = await Seishiro.get_ad_cursor(uid)
-    is_b = bool(doc.get("btype"))                      # B link: channel ki apni ads count
-    steps, n = pick_session(all_steps, int(doc.get("b_ads") or 0) if is_b else s["per_session"], cursor)
+    steps, n = pick_session(all_steps, s["per_session"], cursor)
     await Seishiro.start_miniapp_session(token, uid, cursor, n)
     bot = request.app.get("bot")
     info = await _channel_info(bot, doc["channel_id"]) if bot else {"title": "", "photo": None}
@@ -219,7 +222,7 @@ async def api_mini_init(request):
         "min_seconds": s["min_seconds"],
         "uid": uid,
         "channel": {"title": info["title"], "has_photo": bool(info["photo"])},
-        "fallback": (s["fb_daily"] > 0) and not is_b,      # B link pe "continue without ads" nahi
+        "fallback": s["fb_daily"] > 0,
         "tutorial": bool((await _get_cfg()).get("miniapp_tutorial")),
     })
 
@@ -292,8 +295,6 @@ async def api_mini_fallback(request):
     uid, token, doc, err = await _auth(body)
     if err:
         return web.json_response({"ok": False, "error": err})
-    if doc.get("btype"):
-        return web.json_response({"ok": False, "error": "fb_disabled"})
     started = doc.get("mini_started_at")
     if not started or (datetime.datetime.now() - started).total_seconds() < 8:
         return web.json_response({"ok": False, "error": "too_fast"})   # session khulte hi turant skip nahi

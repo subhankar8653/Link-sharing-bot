@@ -378,8 +378,8 @@
       } else {
         // FSub baaki hai: link abhi nahi, pehle chat mein channels join karne hain
         $('g-open').classList.add('hidden');
-        $('g-done-e').textContent = (info.fallback || info.short) ? 'One more step' : 'Ads completed';
-        $('g-done-d').textContent = info.short ? 'Complete the last step in the chat to receive your link.' : 'Join the required channels in the chat to receive your link.';
+        $('g-done-e').textContent = info.fallback ? 'One more step' : 'Ads completed';
+        $('g-done-d').textContent = 'Join the required channels in the chat to receive your link.';
       }
       $('g-back').onclick = closeApp;
       show('done'); haptic('success');

@@ -288,7 +288,11 @@ async def _maintenance_loop(client):
     await asyncio.sleep(20)
     while True:
         try:
-            await maintenance_tick(client)
+            import modectx
+            for _m in ("a", "b"):               # A aur B mode dono ke FSub channels ka maintenance
+                modectx.set_mode(_m)
+                await maintenance_tick(client)
+            modectx.set_mode("a")
         except asyncio.CancelledError:
             raise
         except Exception as e:

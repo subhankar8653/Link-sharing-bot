@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta, date
 from typing import List, Optional
 from config import * 
+import modectx
 
 logging.basicConfig(level=logging.INFO)
 
@@ -19,13 +20,25 @@ class Master:
         self.admins_data = self.database['admins']
         self.del_timer_data = self.database['del_timer']
         self.ban_data = self.database['ban_data']
-        self.fsub_data = self.database['fsub']
         self.rqst_fsub_data = self.database['request_forcesub']
         self.rqst_fsub_Channel_data = self.database['request_forcesub_channel']
         self.broadcast_data = self.database['channel_broadcast']
 
         # Main collection reference (for backward compatibility)
         self.col = self.user_data
+
+    # ── Link mode (A/B): B mode ki settings alag collections mein ──────────
+    def _c(self, name: str):
+        """Mirrored collection: mode B mein '<name>_b', warna '<name>'."""
+        return self.database[name + "_b"] if modectx.cur() == "b" else self.database[name]
+
+    def _us(self):
+        """Per-user flow state (ads-free, link pos, fsub pending...) — B mode ka alag collection."""
+        return self.database['users_b'] if modectx.cur() == "b" else self.user_data
+
+    @property
+    def fsub_data(self):
+        return self._c('fsub')
 
     def new_user(self, id, username=None):
         return dict(
@@ -774,7 +787,7 @@ class Master:
     async def set_fake_link(self, url: str, button_text: str) -> bool:
         """Set fake link with button text."""
         try:
-            await self.database['fake_link'].update_one(
+            await self._c('fake_link').update_one(
                 {"_id": "fake_link_config"},
                 {
                     "$set": {
@@ -796,7 +809,7 @@ class Master:
     async def get_fake_link(self) -> Optional[dict]:
         """Get fake link configuration."""
         try:
-            config = await self.database['fake_link'].find_one({"_id": "fake_link_config"})
+            config = await self._c('fake_link').find_one({"_id": "fake_link_config"})
             if config and config.get("enabled", False):
                 return {
                     "url": config.get("url"),
@@ -810,7 +823,7 @@ class Master:
     async def remove_fake_link(self) -> bool:
         """Remove/disable fake link."""
         try:
-            result = await self.database['fake_link'].delete_one({"_id": "fake_link_config"})
+            result = await self._c('fake_link').delete_one({"_id": "fake_link_config"})
             logging.info("Fake link removed")
             return result.deleted_count > 0
         except Exception as e:
@@ -823,7 +836,7 @@ class Master:
     async def add_fake_link(self, url: str, button_text: str, row: int = 1) -> bool:
         """Add a new fake link (multi-link support). Purana delete nahi hoga."""
         try:
-            col = self.database['fake_link_multi']
+            col = self._c('fake_link_multi')
             last = await col.find_one(sort=[("order", -1)])
             order = (last["order"] + 1) if last else 1
             await col.insert_one({
@@ -841,7 +854,7 @@ class Master:
     async def get_fake_links(self) -> list:
         """Return all fake links sorted by order."""
         try:
-            col = self.database['fake_link_multi']
+            col = self._c('fake_link_multi')
             cursor = col.find().sort("order", 1)
             links = []
             async for doc in cursor:
@@ -863,7 +876,7 @@ class Master:
             if index < 1 or index > len(links):
                 return False
             target = links[index - 1]
-            result = await self.database['fake_link_multi'].delete_one({
+            result = await self._c('fake_link_multi').delete_one({
                 "url": target["url"],
                 "button_text": target["button_text"],
             })
@@ -876,17 +889,36 @@ class Master:
     # PREMIUM SYSTEM  (DreamXBotz se liya)
     # ══════════════════════════════════════════
 
-    async def has_premium_access(self, user_id: int) -> bool:
-        """Check karo user ka premium active hai ya nahi."""
+    async def _b_margin(self) -> int:
+        """Temp (verify / ads-free) premium kitne seconds ka ho sakta hai — usse lamba expiry = asli (paid) premium."""
+        m = 86400
         try:
+            for _id in ("main", "b"):
+                d = await self.database['bot_config'].find_one({"_id": _id}) or {}
+                m = max(m, int(d.get("verify_premium_seconds", 0) or 0))
+        except Exception:
+            pass
+        return m + 60
+
+    async def has_premium_access(self, user_id: int) -> bool:
+        """Check karo user ka premium active hai ya nahi.
+        B mode mein: sirf asli (paid/admin) premium + B ka apna temp premium (A mode ka temp/free time nahi)."""
+        try:
+            import datetime
             user = await self.user_data.find_one({"_id": int(user_id)})
             if not user:
                 return False
+            now = datetime.datetime.now()
+            if modectx.cur() == "b":
+                eb = user.get("expiry_time_b")
+                if isinstance(eb, datetime.datetime) and now <= eb:
+                    return True
+                ex = user.get("expiry_time")
+                return isinstance(ex, datetime.datetime) and (ex - now).total_seconds() > await self._b_margin()
             expiry = user.get("expiry_time")
             if expiry is None:
                 return False
-            import datetime
-            if isinstance(expiry, datetime.datetime) and datetime.datetime.now() <= expiry:
+            if isinstance(expiry, datetime.datetime) and now <= expiry:
                 return True
             # Expire ho gaya — clean karo
             await self.user_data.update_one(
@@ -899,27 +931,34 @@ class Master:
             return False
 
     async def get_premium_expiry(self, user_id: int):
-        """Premium expiry datetime return karo, ya None."""
+        """Premium expiry datetime return karo, ya None. (B mode: asli ya B-temp mein se jo lamba ho)"""
         try:
             user = await self.user_data.find_one({"_id": int(user_id)})
-            if user:
-                return user.get("expiry_time")
-            return None
+            if not user:
+                return None
+            ex = user.get("expiry_time")
+            if modectx.cur() == "b":
+                eb = user.get("expiry_time_b")
+                vals = [v for v in (ex, eb) if isinstance(v, datetime) ]
+                return max(vals) if vals else None
+            return ex
         except Exception as e:
             logging.error(f"get_premium_expiry error: {e}")
             return None
 
-    async def add_premium(self, user_id: int, seconds: int) -> bool:
-        """User ko premium do — seconds mein duration."""
+    async def add_premium(self, user_id: int, seconds: int, temp: bool = False) -> bool:
+        """User ko premium do — seconds mein duration.
+        temp=True (verify / ads-free time) aur B mode → sirf B ka temp field; baaki sab (paid, A mode) → expiry_time."""
         import datetime
         try:
             expiry = datetime.datetime.now() + datetime.timedelta(seconds=seconds)
+            field = "expiry_time_b" if (temp and modectx.cur() == "b") else "expiry_time"
             await self.user_data.update_one(
                 {"_id": int(user_id)},
-                {"$set": {"expiry_time": expiry}},
+                {"$set": {field: expiry}},
                 upsert=True
             )
-            logging.info(f"Premium added for {user_id}, expires {expiry}")
+            logging.info(f"Premium added for {user_id}, expires {expiry} ({field})")
             return True
         except Exception as e:
             logging.error(f"add_premium error for {user_id}: {e}")
@@ -930,7 +969,7 @@ class Master:
         try:
             result = await self.user_data.update_one(
                 {"_id": int(user_id)},
-                {"$set": {"expiry_time": None}}
+                {"$set": {"expiry_time": None, "expiry_time_b": None}}
             )
             return result.matched_count > 0
         except Exception as e:
@@ -973,6 +1012,7 @@ class Master:
                     "b64":        b64 or "",
                     "created_at": datetime.datetime.now(),
                     "used":       False,
+                    "mode":       modectx.cur(),      # B mode token → Mini App / vfy_ B settings se chalega
                 }},
                 upsert=True
             )
@@ -999,7 +1039,7 @@ class Master:
     async def get_alt_cursor(self, user_id: int) -> int:
         """Alternative method ke smart links ka rotating pointer (agla session kaunsa link)."""
         try:
-            u = await self.user_data.find_one({"_id": int(user_id)}, {"alt_cursor": 1})
+            u = await self._us().find_one({"_id": int(user_id)}, {"alt_cursor": 1})
             return max(0, int((u or {}).get("alt_cursor", 0) or 0))
         except Exception as e:
             logging.error(f"get_alt_cursor error: {e}")
@@ -1007,7 +1047,7 @@ class Master:
 
     async def set_alt_cursor(self, user_id: int, cursor: int) -> None:
         try:
-            await self.user_data.update_one(
+            await self._us().update_one(
                 {"_id": int(user_id)}, {"$set": {"alt_cursor": max(0, int(cursor))}}, upsert=True)
         except Exception as e:
             logging.error(f"set_alt_cursor error: {e}")
@@ -1064,7 +1104,7 @@ class Master:
     async def get_ad_cursor(self, user_id: int) -> int:
         """Per-session ads ka rotating pointer (agla session ads list mein kahan se shuru hoga)."""
         try:
-            u = await self.user_data.find_one({"_id": int(user_id)}, {"ad_cursor": 1})
+            u = await self._us().find_one({"_id": int(user_id)}, {"ad_cursor": 1})
             return max(0, int((u or {}).get("ad_cursor", 0) or 0))
         except Exception as e:
             logging.error(f"get_ad_cursor error: {e}")
@@ -1072,7 +1112,7 @@ class Master:
 
     async def set_ad_cursor(self, user_id: int, cursor: int) -> None:
         try:
-            await self.user_data.update_one(
+            await self._us().update_one(
                 {"_id": int(user_id)}, {"$set": {"ad_cursor": max(0, int(cursor))}}, upsert=True)
         except Exception as e:
             logging.error(f"set_ad_cursor error: {e}")
@@ -1112,14 +1152,14 @@ class Master:
         try:
             from pymongo import ReturnDocument
             date = self._ist_date()
-            doc = await self.database['miniapp_daily'].find_one_and_update(
+            doc = await self._c('miniapp_daily').find_one_and_update(
                 {"_id": f"{int(user_id)}:{date}"},
                 {"$inc": {"count": int(shown), "sessions": 1},
                  "$set": {"uid": int(user_id), "date": date}},
                 upsert=True,
                 return_document=ReturnDocument.AFTER,
             )
-            await self.database['miniapp_stats'].update_one(
+            await self._c('miniapp_stats').update_one(
                 {"_id": date},
                 {"$inc": {"sessions": 1, "ads": int(shown)}},
                 upsert=True,
@@ -1131,7 +1171,7 @@ class Master:
 
     async def get_miniapp_daily_count(self, user_id: int) -> int:
         try:
-            doc = await self.database['miniapp_daily'].find_one(
+            doc = await self._c('miniapp_daily').find_one(
                 {"_id": f"{int(user_id)}:{self._ist_date()}"}
             )
             return int(doc.get("count", 0)) if doc else 0
@@ -1143,10 +1183,10 @@ class Master:
         """Admin panel ke liye: aaj + total sessions/ads + aaj ke unique users."""
         try:
             date = self._ist_date()
-            today = await self.database['miniapp_stats'].find_one({"_id": date}) or {}
-            users_today = await self.database['miniapp_daily'].count_documents({"date": date})
+            today = await self._c('miniapp_stats').find_one({"_id": date}) or {}
+            users_today = await self._c('miniapp_daily').count_documents({"date": date})
             tot_sessions = tot_ads = 0
-            async for d in self.database['miniapp_stats'].find({}):
+            async for d in self._c('miniapp_stats').find({}):
                 tot_sessions += int(d.get("sessions", 0))
                 tot_ads += int(d.get("ads", 0))
             return {
@@ -1165,7 +1205,7 @@ class Master:
     async def get_fsub_layout(self) -> int:
         """1 = ek row mein 1 button (default), 2 = ek row mein 2 buttons."""
         try:
-            doc = await self.database['bot_settings'].find_one({"_id": "fsub_layout"})
+            doc = await self._c('bot_settings').find_one({"_id": "fsub_layout"})
             return 2 if doc and int(doc.get("per_row", 1)) == 2 else 1
         except Exception as e:
             logging.error(f"get_fsub_layout error: {e}")
@@ -1173,7 +1213,7 @@ class Master:
 
     async def set_fsub_layout(self, per_row: int) -> bool:
         try:
-            await self.database['bot_settings'].update_one(
+            await self._c('bot_settings').update_one(
                 {"_id": "fsub_layout"},
                 {"$set": {"per_row": 2 if int(per_row) == 2 else 1}},
                 upsert=True,
@@ -1186,7 +1226,7 @@ class Master:
     async def get_fsub_ui(self) -> dict:
         """Custom fsub text + photo. text="" -> default text. pic="" -> default FSUB_PIC, "none" -> sirf text."""
         try:
-            doc = await self.database['bot_settings'].find_one({"_id": "fsub_ui"}) or {}
+            doc = await self._c('bot_settings').find_one({"_id": "fsub_ui"}) or {}
             return {"text": doc.get("text", "") or "", "pic": doc.get("pic", "") or ""}
         except Exception as e:
             logging.error(f"get_fsub_ui error: {e}")
@@ -1194,7 +1234,7 @@ class Master:
 
     async def set_fsub_ui(self, **fields) -> bool:
         try:
-            await self.database['bot_settings'].update_one(
+            await self._c('bot_settings').update_one(
                 {"_id": "fsub_ui"}, {"$set": fields}, upsert=True
             )
             return True
@@ -1275,11 +1315,11 @@ class Master:
             return
         try:
             target = datetime.now() + timedelta(seconds=int(seconds))
-            user = await self.user_data.find_one({"_id": int(user_id)}) or {}
+            user = await self._us().find_one({"_id": int(user_id)}) or {}
             cur = user.get("ads_free_until")
             if isinstance(cur, datetime) and cur >= target:
                 return
-            await self.user_data.update_one(
+            await self._us().update_one(
                 {"_id": int(user_id)}, {"$set": {"ads_free_until": target}}, upsert=True
             )
         except Exception as e:
@@ -1287,7 +1327,7 @@ class Master:
 
     async def has_ads_free(self, user_id: int) -> bool:
         try:
-            user = await self.user_data.find_one({"_id": int(user_id)})
+            user = await self._us().find_one({"_id": int(user_id)})
             until = user.get("ads_free_until") if user else None
             return isinstance(until, datetime) and datetime.now() <= until
         except Exception as e:
@@ -1297,7 +1337,7 @@ class Master:
     async def reset_miniapp_progress(self, user_id: int) -> None:
         """Goal poora hone ke baad aaj ka ads-count 0 karo (naya cycle)."""
         try:
-            await self.database['miniapp_daily'].update_one(
+            await self._c('miniapp_daily').update_one(
                 {"_id": f"{int(user_id)}:{self._ist_date()}"}, {"$set": {"count": 0}}
             )
         except Exception as e:
@@ -1307,7 +1347,7 @@ class Master:
 
     async def get_link_pos(self, user_id: int) -> int:
         try:
-            u = await self.user_data.find_one({"_id": int(user_id)}, {"link_pos": 1})
+            u = await self._us().find_one({"_id": int(user_id)}, {"link_pos": 1})
             return max(0, int((u or {}).get("link_pos", 0) or 0))
         except Exception as e:
             logging.error(f"get_link_pos error: {e}")
@@ -1315,7 +1355,7 @@ class Master:
 
     async def set_link_pos(self, user_id: int, pos: int) -> None:
         try:
-            await self.user_data.update_one(
+            await self._us().update_one(
                 {"_id": int(user_id)}, {"$set": {"link_pos": max(0, int(pos))}}, upsert=True)
         except Exception as e:
             logging.error(f"set_link_pos error: {e}")
@@ -1324,7 +1364,7 @@ class Master:
 
     async def set_fsub_pending(self, user_id: int) -> None:
         try:
-            await self.user_data.update_one(
+            await self._us().update_one(
                 {"_id": int(user_id)}, {"$set": {"fsub_pending": datetime.now()}}, upsert=True)
         except Exception as e:
             logging.error(f"set_fsub_pending error: {e}")
@@ -1332,7 +1372,7 @@ class Master:
     async def pop_fsub_pending(self, user_id: int) -> bool:
         """True agar user ne pichle 24h mein FSub screen dekhi thi (flag hata deta hai)."""
         try:
-            doc = await self.user_data.find_one_and_update(
+            doc = await self._us().find_one_and_update(
                 {"_id": int(user_id), "fsub_pending": {"$exists": True}}, {"$unset": {"fsub_pending": ""}})
             at = doc.get("fsub_pending") if doc else None
             return isinstance(at, datetime) and (datetime.now() - at) < timedelta(hours=24)
@@ -1366,9 +1406,9 @@ class Master:
         """Aaj ke quota se 1 use karo. False agar limit khatam."""
         try:
             uid, today = int(user_id), self._ist_date()
-            await self.user_data.update_one({"_id": uid}, {"$setOnInsert": {"fb_count": 0, "fb_day": ""}}, upsert=True)
-            await self.user_data.update_one({"_id": uid, "fb_day": {"$ne": today}}, {"$set": {"fb_day": today, "fb_count": 0}})
-            r = await self.user_data.update_one({"_id": uid, "fb_count": {"$lt": int(limit)}}, {"$inc": {"fb_count": 1}})
+            await self._us().update_one({"_id": uid}, {"$setOnInsert": {"fb_count": 0, "fb_day": ""}}, upsert=True)
+            await self._us().update_one({"_id": uid, "fb_day": {"$ne": today}}, {"$set": {"fb_day": today, "fb_count": 0}})
+            r = await self._us().update_one({"_id": uid, "fb_count": {"$lt": int(limit)}}, {"$inc": {"fb_count": 1}})
             return r.modified_count > 0
         except Exception as e:
             logging.error(f"fallback_use error: {e}")
@@ -1376,7 +1416,7 @@ class Master:
 
     async def set_ads_bypass(self, user_id: int, seconds: int = 1800) -> None:
         try:
-            await self.user_data.update_one(
+            await self._us().update_one(
                 {"_id": int(user_id)},
                 {"$set": {"ads_bypass_until": datetime.now() + timedelta(seconds=int(seconds))}}, upsert=True)
         except Exception as e:
@@ -1384,7 +1424,7 @@ class Master:
 
     async def has_ads_bypass(self, user_id: int) -> bool:
         try:
-            u = await self.user_data.find_one({"_id": int(user_id)})
+            u = await self._us().find_one({"_id": int(user_id)})
             until = u.get("ads_bypass_until") if u else None
             return isinstance(until, datetime) and datetime.now() <= until
         except Exception as e:
@@ -1393,7 +1433,7 @@ class Master:
 
     async def pop_ads_bypass(self, user_id: int) -> None:
         try:
-            await self.user_data.update_one({"_id": int(user_id)}, {"$unset": {"ads_bypass_until": ""}})
+            await self._us().update_one({"_id": int(user_id)}, {"$unset": {"ads_bypass_until": ""}})
         except Exception as e:
             logging.error(f"pop_ads_bypass error: {e}")
 
@@ -1551,7 +1591,7 @@ class Master:
         file_id: Telegram video file_id
         """
         try:
-            await self.database['tutorial_config'].update_one(
+            await self._c('tutorial_config').update_one(
                 {"_id": tutorial_type},
                 {"$set": {
                     "_id": tutorial_type,
@@ -1570,7 +1610,7 @@ class Master:
     async def get_tutorial(self, tutorial_type: str) -> Optional[dict]:
         """Tutorial config fetch karo. None if not set or disabled."""
         try:
-            doc = await self.database['tutorial_config'].find_one({"_id": tutorial_type})
+            doc = await self._c('tutorial_config').find_one({"_id": tutorial_type})
             if doc and doc.get("enabled", False):
                 return {"file_id": doc["file_id"]}
             return None
@@ -1581,7 +1621,7 @@ class Master:
     async def toggle_tutorial(self, tutorial_type: str, enabled: bool) -> bool:
         """Tutorial on/off karo."""
         try:
-            result = await self.database['tutorial_config'].update_one(
+            result = await self._c('tutorial_config').update_one(
                 {"_id": tutorial_type},
                 {"$set": {"enabled": enabled, "updated_at": datetime.utcnow()}}
             )
@@ -1593,7 +1633,7 @@ class Master:
     async def get_tutorial_status(self, tutorial_type: str) -> dict:
         """Tutorial ka full status return karo."""
         try:
-            doc = await self.database['tutorial_config'].find_one({"_id": tutorial_type})
+            doc = await self._c('tutorial_config').find_one({"_id": tutorial_type})
             if not doc:
                 return {"exists": False, "enabled": False, "file_id": None}
             return {
@@ -1644,7 +1684,7 @@ class Master:
     async def get_auto_check(self) -> bool:
         """FSub smart auto-check ON hai ya OFF (default: OFF, purana behaviour)."""
         try:
-            doc = await self.database['bot_settings'].find_one({"_id": "fsub_auto_check"})
+            doc = await self._c('bot_settings').find_one({"_id": "fsub_auto_check"})
             return bool(doc.get("enabled", False)) if doc else False
         except Exception as e:
             logging.error(f"get_auto_check error: {e}")
@@ -1653,7 +1693,7 @@ class Master:
     async def set_auto_check(self, enabled: bool) -> bool:
         """FSub smart auto-check ON/OFF set karo."""
         try:
-            await self.database['bot_settings'].update_one(
+            await self._c('bot_settings').update_one(
                 {"_id": "fsub_auto_check"},
                 {"$set": {"enabled": enabled, "updated_at": datetime.utcnow()}},
                 upsert=True
@@ -1724,7 +1764,7 @@ class Master:
     async def get_fsub_check_duration(self) -> dict:
         """{"enabled": bool, "hours": int} return karta hai. Default: OFF."""
         try:
-            doc = await self.database['bot_settings'].find_one({"_id": "fsub_check_duration"})
+            doc = await self._c('bot_settings').find_one({"_id": "fsub_check_duration"})
             if not doc:
                 return {"enabled": False, "hours": 0}
             return {"enabled": bool(doc.get("enabled", False)), "hours": int(doc.get("hours", 0) or 0)}
@@ -1735,7 +1775,7 @@ class Master:
     async def set_fsub_check_duration(self, enabled: bool, hours: int = 0) -> bool:
         """FSub check-duration (cooldown) ON/OFF + duration (hours mein) set karo."""
         try:
-            await self.database['bot_settings'].update_one(
+            await self._c('bot_settings').update_one(
                 {"_id": "fsub_check_duration"},
                 {"$set": {"enabled": enabled, "hours": hours, "updated_at": datetime.utcnow()}},
                 upsert=True
@@ -1748,7 +1788,7 @@ class Master:
     async def set_fsub_verified(self, user_id: int) -> bool:
         """User ka FSub check abhi-abhi pass hua — timestamp save karo (cooldown ke liye)."""
         try:
-            await self.user_data.update_one(
+            await self._us().update_one(
                 {"_id": int(user_id)},
                 {"$set": {"fsub_verified_at": datetime.utcnow()}},
                 upsert=True
@@ -1761,7 +1801,7 @@ class Master:
     async def get_fsub_verified_at(self, user_id: int):
         """User ka last FSub-pass timestamp laao (ya None agar kabhi verify nahi hua)."""
         try:
-            user = await self.user_data.find_one({"_id": int(user_id)})
+            user = await self._us().find_one({"_id": int(user_id)})
             return user.get("fsub_verified_at") if user else None
         except Exception as e:
             logging.error(f"get_fsub_verified_at error: {e}")
