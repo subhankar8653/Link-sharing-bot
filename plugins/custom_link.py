@@ -160,15 +160,49 @@ def _short_name(d: dict) -> str:
 
 async def _list_view():
     docs = await _col().find({}).sort("_id", -1).to_list(length=MAX_LIST)
-    rows = [[InlineKeyboardButton(f"🗑 {_short_name(d)}", callback_data=f"cl_del:{d['_id']}")] for d in docs]
+    rows = [[InlineKeyboardButton(f"🔗 {_short_name(d)}", callback_data=f"cl_view:{d['_id']}")] for d in docs]
     rows.append([InlineKeyboardButton("back", callback_data="cl_menu")])
-    text = ("<b>📋 My Short Links</b>\n\nButton dabane par link delete ho jata hai "
-            "(uska bot link kaam karna band kar dega).\n\n" if docs else
+    text = ("<b>📋 My Short Links</b>\n\nLink chuno — title / destination link edit ya delete kar sakte ho.\n\n" if docs else
             "<b>📋 My Short Links</b>\n\n<i>Abhi koi short link nahi bana.</i>")
     return text, InlineKeyboardMarkup(rows)
 
 
-@Bot.on_callback_query(filters.regex(r"^(cl_menu|cl_new|cl_list|cl_del:-?\d+)$"), group=-1)
+async def _detail_view(client, cid: int):
+    d = await get_custom(cid)
+    if not d:
+        return "<b>⚠️ Ye short link ab nahi hai.</b>", InlineKeyboardMarkup(
+            [[InlineKeyboardButton("back", callback_data="cl_list")]])
+    a_link, b_link = await _links_for(client, cid)
+    text = _result_text(d["url"], d.get("title", ""), a_link, b_link).replace(
+        "<b>✅ Short Link ready</b>", "<b>🔗 Short Link</b>", 1)
+    text += "\n\n<i>Edit karne par bot link (A/B) wahi rehta hai, sirf title / destination badalta hai.</i>"
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✏️ Edit Title", callback_data=f"cl_et:{cid}"),
+         InlineKeyboardButton("🔗 Edit Link", callback_data=f"cl_eu:{cid}")],
+        [InlineKeyboardButton("🗑 Delete", callback_data=f"cl_del:{cid}")],
+        [InlineKeyboardButton("back", callback_data="cl_list")],
+    ])
+    return text, kb
+
+
+async def _listen_text(client, cq: CallbackQuery, prompt: str, back_to: str):
+    await cq.message.edit_text(
+        prompt + "\n\n<i>/cancel — cancel karne ke liye</i>",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("back", callback_data=back_to)]]),
+        disable_web_page_preview=True)
+    try:
+        resp = await client.listen(chat_id=cq.message.chat.id, timeout=300)
+    except Exception:
+        return None
+    try:
+        await resp.delete()
+    except Exception:
+        pass
+    t = (resp.text or "").strip()
+    return None if (not t or t.lower() == "/cancel") else t
+
+
+@Bot.on_callback_query(filters.regex(r"^(cl_menu|cl_new|cl_list|cl_(view|del|et|eu):-?\d+)$"), group=-1)
 async def cl_callbacks(client: Bot, cq: CallbackQuery):
     if not await _is_admin(cq.from_user.id):
         await cq.answer("⛔ Admins only", show_alert=True)
@@ -182,11 +216,44 @@ async def cl_callbacks(client: Bot, cq: CallbackQuery):
             text, kb = await _list_view()
             await cq.message.edit_text(text, reply_markup=kb)
 
+        elif d.startswith("cl_view:"):
+            text, kb = await _detail_view(client, int(d.split(":", 1)[1]))
+            await cq.message.edit_text(text, reply_markup=kb, disable_web_page_preview=True)
+
         elif d.startswith("cl_del:"):
             await _col().delete_one({"_id": int(d.split(":", 1)[1])})
             await cq.answer("🗑 Deleted")
             text, kb = await _list_view()
             await cq.message.edit_text(text, reply_markup=kb)
+
+        elif d.startswith("cl_et:") or d.startswith("cl_eu:"):
+            cid = int(d.split(":", 1)[1])
+            cur = await get_custom(cid)
+            if not cur:
+                await cq.answer("Ye short link ab nahi hai", show_alert=True)
+            elif d.startswith("cl_et:"):
+                t = await _listen_text(client, cq,
+                    f"<b>✏️ Edit Title</b>\n\nAbhi: <b>{cur.get('title', '')}</b>\n\nNaya title bhejo.",
+                    f"cl_view:{cid}")
+                if t:
+                    await _col().update_one({"_id": cid}, {"$set": {"title": t[:60]}})
+                    await cq.answer("✅ Title updated")
+            else:
+                t = await _listen_text(client, cq,
+                    f"<b>🔗 Edit Link</b>\n\nAbhi: <code>{cur['url']}</code>\n\n"
+                    "Naya Telegram link bhejo. Bot link wahi rahega, sirf destination badlega.",
+                    f"cl_view:{cid}")
+                if t:
+                    url = normalize_tg_link(t.split()[0])
+                    if not url:
+                        await cq.message.reply("❌ Valid Telegram link bhejo, jaise <code>https://t.me/+AbCdEfGh</code>")
+                    elif await _col().find_one({"url": url, "_id": {"$ne": cid}}):
+                        await cq.message.reply("⚠️ Ye link kisi aur short link mein pehle se hai.")
+                    else:
+                        await _col().update_one({"_id": cid}, {"$set": {"url": url}})
+                        await cq.answer("✅ Link updated")
+            text, kb = await _detail_view(client, cid)
+            await cq.message.edit_text(text, reply_markup=kb, disable_web_page_preview=True)
 
         elif d == "cl_new":
             await cq.message.edit_text(
@@ -219,6 +286,7 @@ async def cl_callbacks(client: Bot, cq: CallbackQuery):
                     await cq.message.edit_text(
                         _result_text(url, doc.get("title", ""), a_link, b_link),
                         reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("✏️ Edit", callback_data=f"cl_view:{cid}")],
                             [InlineKeyboardButton("➕ Another", callback_data="cl_new")],
                             [InlineKeyboardButton("back", callback_data="cl_menu")]]),
                         disable_web_page_preview=True)
