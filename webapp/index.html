@@ -359,7 +359,7 @@
       });
       const d = shown + failed; $('g-ring').style.strokeDashoffset = String(CIRC * (1 - (steps.length ? d / steps.length : 0)));
     }
-    let FALLBACK = false, troubleT = null;
+    let FALLBACK = false, troubleT = null, AD_GAP = 0;
     const clearTrouble = () => { clearTimeout(troubleT); troubleT = null; };
     const showTrouble = () => { if (FALLBACK) $('g-trouble').classList.remove('hidden'); };
     function showDone(info) {
@@ -435,6 +435,14 @@
         if (shown < 1) return FALLBACK ? offerFallback() : fail('no_ad_shown');
         return finish();
       }
+      // Ad poora hua: agla ad turant nahi — pehle gap timer (same company ke ads no-fill na hon)
+      if (result === 'ok' && AD_GAP > 0) {
+        busy = true; let left = AD_GAP;
+        const lab = () => icon('i-play') + '<span>Next ad in ' + left + 's</span>';
+        setMsg('Ad completed. Next ad is getting ready.', 'good'); setBtn(lab(), true);
+        await new Promise((r) => { const t = setInterval(() => { left--; if (left <= 0) { clearInterval(t); r(); } else setBtn(lab(), true); }, 1000); });
+        busy = false; setMsg('');
+      }
       setBtn(result === 'skipped' ? icon('i-play') + '<span>Try again</span>' : nextLabel(), false);
     }
     $('g-btn').onclick = play;
@@ -443,7 +451,7 @@
       let res; try { res = await gapi('/api/mini/init'); } catch (e) { return fail('server'); }
       if (!res.ok) return fail(res.error);
       steps = res.steps || []; if (!steps.length) return fail('no_ads');
-      USER_ID = res.uid || ''; status = steps.map(() => null); FALLBACK = !!res.fallback;
+      USER_ID = res.uid || ''; status = steps.map(() => null); FALLBACK = !!res.fallback; AD_GAP = Math.max(0, parseInt(res.ad_gap, 10) || 0);
       try { tg && tg.enableClosingConfirmation(); } catch (e) {}
       avatar(res.channel);
       if (res.tutorial) $('g-help').classList.remove('hidden');

@@ -95,6 +95,7 @@ async def get_miniapp_settings() -> dict:
         "fb_daily": max(0, int(cfg.get("miniapp_fb_daily", 3))),   # ads fail hone par "bina ads" raasta: din mein kitni baar (0 = band)
         "seq": [k for k in (cfg.get("link_seq") or ["ads"]) if k in SEQ_LABEL][:SEQ_MAX] or ["ads"],
         "seq_free": max(0, int(cfg.get("verify_premium_seconds", 86400))),   # Free Time (ek hi setting)
+        "ad_gap": max(0, min(120, int(cfg.get("miniapp_ad_gap", 5)))),   # ad poora hone ke baad agle ad se pehle wait (sec), 0 = off
         "per_session": max(0, min(50, int(cfg.get("miniapp_per_session", 0)))),   # 0 = saare ads
         "inapp": False,   # passive in-app ads hata diye (auto-ads uncounted the)
     }
@@ -304,7 +305,8 @@ def _menu_kb(s: dict) -> InlineKeyboardMarkup:
          InlineKeyboardButton("🎯 Daily Goal", callback_data="mini_goal")],
         [InlineKeyboardButton("📦 Ads / Session", callback_data="mini_per"),
          InlineKeyboardButton("⏱ Free Time", callback_data="mini_free")],
-        [InlineKeyboardButton("⏳ Min Watch", callback_data="mini_wait")],
+        [InlineKeyboardButton("⏳ Min Watch", callback_data="mini_wait"),
+         InlineKeyboardButton("⏲ Ad Gap", callback_data="mini_gap")],
         [InlineKeyboardButton("🔀 Link Flow", callback_data="mini_flow"),
          InlineKeyboardButton("📊 Stats", callback_data="mini_stats")],
         [InlineKeyboardButton("🌐 Set URL", callback_data="mini_url"),
@@ -824,6 +826,39 @@ async def mini_callbacks(client: Bot, cq: CallbackQuery):
                     await cq.answer("⚠️ Link gate ke liye koi ad nahi bacha — Mini App OFF kar diya", show_alert=True)
                     await _set_bot_config("miniapp_enabled", False)
             await _show_ad(cq, i)
+
+        elif cmd == "mini_gap":
+            s = await get_miniapp_settings()
+            cur = s["ad_gap"]
+            rows = [[InlineKeyboardButton(("✅ " if cur == v else "") + ("Off" if v == 0 else f"{v}s"),
+                                          callback_data=f"mini_gapset:{v}") for v in (0, 3, 5, 10, 15, 30)],
+                    [InlineKeyboardButton("✏️ Custom seconds", callback_data="mini_gapcustom")], _back()]
+            await cq.message.edit_text(
+                "<b>⏲ Ad Gap</b>\n\n"
+                f"Abhi: <b>{'OFF' if not cur else str(cur) + ' second'}</b> (default 5s)\n\n"
+                "Ek ad poora hone ke baad agla ad turant nahi khulta — itne second ka timer chalta hai "
+                "(<i>Next ad in 5s</i>), phir agla ad. Isse ek hi company ke 2 ads back-to-back request hone par "
+                "no-fill / fallback nahi hota.\n"
+                "<b>Off</b> = pehle jaisa: ad ke turant baad agla ad.",
+                reply_markup=InlineKeyboardMarkup(rows))
+
+        elif cmd == "mini_gapcustom":
+            text = await _ask(client, cq, "<b>⏲ Ad Gap</b>\n\nKitne second ka gap chahiye? "
+                              "Number bhejo (0-120). <code>0</code> = Off.", "mini_gap")
+            n = _parse_int(text, 0, 120) if text else None
+            if n is not None:
+                await _set_bot_config("miniapp_ad_gap", n)
+                await cq.answer("✅ Saved")
+            elif text:
+                await cq.message.reply("❌ Sirf number bhejo, jaise 8.")
+            cq.data = "mini_gap"
+            await mini_callbacks(client, cq)
+
+        elif cmd == "mini_gapset":
+            await _set_bot_config("miniapp_ad_gap", max(0, min(120, int(parts[1]))))
+            await cq.answer("✅ Saved")
+            cq.data = "mini_gap"
+            await mini_callbacks(client, cq)
 
         elif cmd == "mini_fb":
             s = await get_miniapp_settings()

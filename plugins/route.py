@@ -224,6 +224,7 @@ async def api_mini_init(request):
         "ok": True,
         "steps": steps,
         "min_seconds": s["min_seconds"],
+        "ad_gap": s["ad_gap"],
         "uid": uid,
         "channel": {"title": info["title"], "has_photo": bool(info["photo"])},
         "fallback": s["fb_daily"] > 0,
