@@ -3,7 +3,7 @@
 const ALLOW = [
   /^\/api\/sync\/[a-z_]{2,24}$/,
   /^\/api\/mini\/(init|complete|fallback|tutorial|alt)$/,
-  /^\/miniapp\/photo$/,
+  /^\/miniapp\/(photo|logo|tphoto)$/,
 ];
 
 module.exports = async (req, res) => {

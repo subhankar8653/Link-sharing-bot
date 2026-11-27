@@ -6,6 +6,8 @@
     { "source": "/config.js", "destination": "/api/config" },
     { "source": "/api/sync/:action", "destination": "/api/proxy?path=/api/sync/:action" },
     { "source": "/api/mini/:action", "destination": "/api/proxy?path=/api/mini/:action" },
-    { "source": "/miniapp/photo", "destination": "/api/proxy?path=/miniapp/photo" }
+    { "source": "/miniapp/photo", "destination": "/api/proxy?path=/miniapp/photo" },
+    { "source": "/miniapp/logo", "destination": "/api/proxy?path=/miniapp/logo" },
+    { "source": "/miniapp/tphoto", "destination": "/api/proxy?path=/miniapp/tphoto" }
   ]
 }

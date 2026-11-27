@@ -195,6 +195,66 @@ async def miniapp_photo(request):
     return web.Response(body=info["photo"], content_type="image/jpeg",
                         headers={"Cache-Control": "private, max-age=3600"})
 
+
+# ── Bot ka logo (website par jab Telegram profile photo na ho) ──
+_LOGO = {"ts": 0.0, "b": None}
+
+
+@routes.get("/miniapp/logo")
+async def miniapp_logo(request):
+    bot = request.app.get("bot")
+    if bot is None:
+        return web.Response(status=404)
+    if not (_LOGO["b"] and time.time() - _LOGO["ts"] < _CH_TTL):
+        b = None
+        try:
+            me = await bot.get_me()
+            chat = await bot.get_chat(me.id)
+            if chat.photo:
+                bio = await bot.download_media(chat.photo.big_file_id, in_memory=True)
+                if bio is not None:
+                    b = bytes(bio.getbuffer())
+        except Exception as e:
+            logger.warning(f"bot logo fetch failed: {e}")
+        _LOGO.update(ts=time.time() if b else time.time() - _CH_TTL + 120, b=b)
+    if not _LOGO["b"]:
+        return web.Response(status=404)
+    return web.Response(body=_LOGO["b"], content_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=3600"})
+
+
+# ── Task picture (manual photo ya Telegram channel ki photo) ──
+_TP_CACHE: dict = {}
+
+
+@routes.get("/miniapp/tphoto")
+async def miniapp_tphoto(request):
+    from bson import ObjectId
+    from plugins.sync_app import _col
+    bot = request.app.get("bot")
+    tid = str(request.query.get("id", ""))[:40]
+    if bot is None or not tid:
+        return web.Response(status=404)
+    c = _TP_CACHE.get(tid)
+    if c and time.time() - c[0] < _CH_TTL and c[1]:
+        data = c[1]
+    else:
+        data = None
+        try:
+            t = await _col("sync_tasks").find_one({"_id": ObjectId(tid), "active": True})
+            if t and t.get("photo_file_id"):
+                bio = await bot.download_media(t["photo_file_id"], in_memory=True)
+                data = bytes(bio.getbuffer()) if bio is not None else None
+            elif t and t.get("type", "tg") == "tg" and t.get("channel_id"):
+                data = (await _channel_info(bot, int(t["channel_id"]))).get("photo")
+        except Exception as e:
+            logger.warning(f"task photo failed ({tid}): {e}")
+        _TP_CACHE[tid] = (time.time() if data else time.time() - _CH_TTL + 120, data)
+    if not data:
+        return web.Response(status=404)
+    return web.Response(body=data, content_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
+
+
 @routes.post("/api/mini/init")
 async def api_mini_init(request):
     from plugins.miniapp import get_miniapp_settings, build_steps, pick_session

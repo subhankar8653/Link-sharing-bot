@@ -16,7 +16,8 @@ from database.database import Seishiro
 
 logger = logging.getLogger(__name__)
 DEFAULT_DELAY = 600
-_cache = {"t": 0.0, "v": DEFAULT_DELAY}
+_cache = {"t": 0.0, "v": DEFAULT_DELAY, "adm": False}
+_adm = {}   # uid -> (ts, is_admin)
 _task = None
 
 
@@ -30,10 +31,27 @@ async def get_delay() -> int:
     try:
         doc = await Seishiro.database["bot_config"].find_one({"_id": "main"}) or {}
         v = int(doc.get("auto_delete_seconds", DEFAULT_DELAY))
+        _cache["adm"] = bool(doc.get("auto_delete_admins", False))
     except Exception:
         v = DEFAULT_DELAY
     _cache.update(t=time.time(), v=max(0, v))
     return _cache["v"]
+
+
+async def _is_admin_chat(cid: int) -> bool:
+    """Owner / admin ki chat? (60s cache)"""
+    try:
+        from config import OWNER_ID
+        if cid == OWNER_ID:
+            return True
+        hit = _adm.get(cid)
+        if hit and time.time() - hit[0] < 60:
+            return hit[1]
+        ok = bool(await Seishiro.is_admin(cid))
+        _adm[cid] = (time.time(), ok)
+        return ok
+    except Exception:
+        return False
 
 
 async def register(msg) -> None:
@@ -44,6 +62,13 @@ async def register(msg) -> None:
         delay = await get_delay()
         if delay <= 0:
             return
+        # Admin/owner ke chat mein bot ke messages (genlink, add channel ka link, batch, Short Link...) delete nahi hote,
+        # jab tak panel mein "Admin chats mein bhi" ON na ho.
+        if not _cache.get("adm"):
+            first = (msg[0] if isinstance(msg, list) and msg else msg)
+            _c = getattr(getattr(first, "chat", None), "id", None)
+            if _c and _c > 0 and await _is_admin_chat(_c):
+                return
         docs = []
         at = datetime.datetime.utcnow() + datetime.timedelta(seconds=delay)
         for m in (msg if isinstance(msg, list) else [msg]):

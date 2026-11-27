@@ -11,6 +11,7 @@ Senpai Sync — admin panel (/settings -> Senpai Sync Menu, ya /sync)
 
 import datetime
 import logging
+import re
 
 from bson import ObjectId
 from pyrogram import filters, StopPropagation
@@ -104,6 +105,36 @@ async def cmd_sync(client: Bot, msg: Message):
     await msg.reply(_menu_text(st, cfg.get("sync_app_url", "")), reply_markup=_menu_kb(st))
 
 
+_T_EMOJI = {"tg": "📢", "yt": "▶️", "x": "𝕏", "web": "🌐"}
+_T_NAME = {"tg": "Telegram", "yt": "YouTube", "x": "X (Twitter)", "web": "Website"}
+
+
+async def _task_view(cq: CallbackQuery, tid: str):
+    r = await _col("sync_tasks").find_one({"_id": ObjectId(tid)})
+    if not r:
+        await cq.answer("Nahi mila", show_alert=True)
+        return
+    t = r.get("type", "tg")
+    lines = [f"Type: {_T_NAME.get(t, t)}", f"Reward: {r['reward']} SP", f"Link: {r['url']}",
+             f"Status: {'ON' if r.get('active') else 'OFF'}"]
+    if t == "tg":
+        lines.insert(1, f"Channel: <code>{r['channel_id']}</code>")
+        lines.append("Picture: " + ("manual" if r.get("photo_file_id") else "channel ki photo (auto)"))
+    else:
+        lines.append(f"Verify wait: {r.get('wait', 15)}s")
+        lines.append("Picture: " + ("set" if r.get("photo_file_id") else "default icon"))
+    kb = [[InlineKeyboardButton("Turn OFF" if r.get("active") else "Turn ON", callback_data=f"sync_taskon:{tid}"),
+           InlineKeyboardButton("Delete", callback_data=f"sync_taskdel:{tid}")],
+          [InlineKeyboardButton("🖼 Set Picture", callback_data=f"sync_taskpic:{tid}")]]
+    if r.get("photo_file_id"):
+        kb[-1].append(InlineKeyboardButton("Remove Picture", callback_data=f"sync_taskpicdel:{tid}"))
+    if t != "tg":
+        kb.append([InlineKeyboardButton("⏱ Verify Wait", callback_data=f"sync_taskwait:{tid}")])
+    kb.append([InlineKeyboardButton("back", callback_data="sync_tasks")])
+    await cq.message.edit_text(f"<b>{r['title']}</b>\n\n<blockquote>" + "\n".join(lines) + "</blockquote>",
+                               reply_markup=InlineKeyboardMarkup(kb), disable_web_page_preview=True)
+
+
 @Bot.on_callback_query(filters.regex(r"^sync_"), group=-1)
 async def sync_callbacks(client: Bot, cq: CallbackQuery):
     if not await _admin_ok(cq.from_user.id):
@@ -177,35 +208,29 @@ async def sync_callbacks(client: Bot, cq: CallbackQuery):
             await _show_menu(cq.message)
 
         elif cmd == "sync_tasks":
-            rows = await _col("sync_tasks").find({}).sort("created", 1).limit(20).to_list(20)
-            kb = [[InlineKeyboardButton(f"{'ON' if r.get('active') else 'OFF'} | {r['title'][:22]} | {r['reward']} SP",
-                                        callback_data=f"sync_taskv:{r['_id']}")] for r in rows]
+            rows = await _col("sync_tasks").find({}).sort("created", 1).limit(30).to_list(30)
+            kb = [[InlineKeyboardButton(
+                f"{'ON' if r.get('active') else 'OFF'} | {_T_EMOJI.get(r.get('type', 'tg'), '🔗')} {r['title'][:20]} | {r['reward']} SP",
+                callback_data=f"sync_taskv:{r['_id']}")] for r in rows]
             kb.append([InlineKeyboardButton("Add Task", callback_data="sync_taskadd")])
             kb.append([InlineKeyboardButton("back", callback_data="sync_menu")])
             await cq.message.edit_text(
-                "<b>Channel Tasks</b>\n\nUser channel join karta hai, bot membership verify karke points deta hai. "
-                "Bot ko us channel mein <b>admin</b> hona chahiye.",
+                "<b>Tasks</b>\n\n"
+                "• <b>Telegram channel/group</b>: bot membership verify karke points deta hai. "
+                "Bot ko us channel/group mein <b>admin</b> hona chahiye.\n"
+                "• <b>YouTube / X / Website</b>: Telegram in par membership check nahi kar sakta. User link kholta hai, "
+                "set kiye hue second baad Verify karta hai aur points milte hain (click-through task).\n\n"
+                "Har task par picture lag sakti hai (Telegram task par channel ki photo apne aap).",
                 reply_markup=InlineKeyboardMarkup(kb))
 
         elif cmd == "sync_taskv":
-            r = await _col("sync_tasks").find_one({"_id": ObjectId(parts[1])})
-            if not r:
-                await cq.answer("Nahi mila", show_alert=True)
-                raise StopPropagation
-            await cq.message.edit_text(
-                f"<b>{r['title']}</b>\n\n<blockquote>Channel: <code>{r['channel_id']}</code>\n"
-                f"Reward: {r['reward']} SP\nLink: {r['url']}\nStatus: {'ON' if r.get('active') else 'OFF'}</blockquote>",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Turn OFF" if r.get("active") else "Turn ON", callback_data=f"sync_taskon:{r['_id']}"),
-                     InlineKeyboardButton("Delete", callback_data=f"sync_taskdel:{r['_id']}")],
-                    [InlineKeyboardButton("back", callback_data="sync_tasks")]]))
+            await _task_view(cq, parts[1])
 
         elif cmd == "sync_taskon":
             r = await _col("sync_tasks").find_one({"_id": ObjectId(parts[1])})
             if r:
                 await _col("sync_tasks").update_one({"_id": r["_id"]}, {"$set": {"active": not r.get("active")}})
-            cq.data = f"sync_taskv:{parts[1]}"
-            await sync_callbacks(client, cq)
+            await _task_view(cq, parts[1])
 
         elif cmd == "sync_taskdel":
             await _col("sync_tasks").delete_one({"_id": ObjectId(parts[1])})
@@ -213,12 +238,90 @@ async def sync_callbacks(client: Bot, cq: CallbackQuery):
             cq.data = "sync_tasks"
             await sync_callbacks(client, cq)
 
+        elif cmd == "sync_taskpic":
+            tid = parts[1]
+            await cq.message.edit_text(
+                "<b>Task Picture</b>\n\nEk <b>photo</b> bhejo (logo / thumbnail). "
+                "Ye task ke saath app mein dikhegi.\n<i>/cancel — cancel</i>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("back", callback_data=f"sync_taskv:{tid}")]]))
+            try:
+                resp = await client.listen(chat_id=cq.message.chat.id, timeout=300)
+            except Exception:
+                resp = None
+            if resp is not None:
+                fid = None
+                if getattr(resp, "photo", None):
+                    fid = resp.photo.file_id
+                elif getattr(resp, "document", None) and (resp.document.mime_type or "").startswith("image/"):
+                    fid = resp.document.file_id
+                try:
+                    await resp.delete()
+                except Exception:
+                    pass
+                if fid:
+                    await _col("sync_tasks").update_one({"_id": ObjectId(tid)}, {"$set": {"photo_file_id": fid}})
+                    from plugins.route import _TP_CACHE
+                    _TP_CACHE.pop(tid, None)
+                    await cq.message.reply("✅ Picture set ho gayi.")
+                elif (resp.text or "").strip().lower() != "/cancel":
+                    await cq.message.reply("Photo bhejni thi. Dobara try karo.")
+            await _task_view(cq, tid)
+
+        elif cmd == "sync_taskpicdel":
+            await _col("sync_tasks").update_one({"_id": ObjectId(parts[1])}, {"$unset": {"photo_file_id": ""}})
+            from plugins.route import _TP_CACHE
+            _TP_CACHE.pop(parts[1], None)
+            await cq.answer("Picture hata di")
+            await _task_view(cq, parts[1])
+
+        elif cmd == "sync_taskwait":
+            tid = parts[1]
+            await cq.message.edit_text(
+                "<b>Task Wait</b>\n\nUser link kholne ke kitne second baad Verify kar sake? "
+                "Number bhejo (5-300).\n<i>/cancel — cancel</i>",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("back", callback_data=f"sync_taskv:{tid}")]]))
+            try:
+                resp = await client.listen(chat_id=cq.message.chat.id, timeout=300)
+            except Exception:
+                resp = None
+            if resp is not None:
+                t = (resp.text or "").strip()
+                try:
+                    await resp.delete()
+                except Exception:
+                    pass
+                if t.isdigit() and 5 <= int(t) <= 300:
+                    await _col("sync_tasks").update_one({"_id": ObjectId(tid)}, {"$set": {"wait": int(t)}})
+                elif t.lower() != "/cancel":
+                    await cq.message.reply("5 se 300 ke beech number bhejo.")
+            await _task_view(cq, tid)
+
         elif cmd == "sync_taskadd":
             await cq.message.edit_text(
-                "<b>Add Task</b>\n\nFormat: <code>channel_id reward title</code>\n"
-                "Example: <code>-1001234567890 5 Join Anime Hub</code>\n\n"
-                "Bot us channel mein admin ho. Link khud ban jayega.\n<i>/cancel — cancel</i>",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("back", callback_data="sync_tasks")]]))
+                "<b>Add Task</b>\n\nTask ka type chuno:",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📢 Telegram Channel/Group", callback_data="sync_taskaddt:tg")],
+                    [InlineKeyboardButton("▶️ YouTube", callback_data="sync_taskaddt:yt"),
+                     InlineKeyboardButton("𝕏 X (Twitter)", callback_data="sync_taskaddt:x")],
+                    [InlineKeyboardButton("🌐 Website / Other", callback_data="sync_taskaddt:web")],
+                    [InlineKeyboardButton("back", callback_data="sync_tasks")]]))
+
+        elif cmd == "sync_taskaddt":
+            ttype = parts[1] if parts[1] in _T_EMOJI else "tg"
+            if ttype == "tg":
+                prompt = ("<b>Add Telegram Task</b>\n\nFormat: <code>channel reward title</code>\n"
+                          "channel = <code>-1001234567890</code> ya <code>@username</code> ya <code>https://t.me/username</code>\n"
+                          "Example: <code>-1001234567890 5 Join Anime Hub</code>\n\n"
+                          "Bot us channel/group mein <b>admin</b> ho (tabhi membership verify hoti hai). Link khud ban jayega.\n"
+                          "<i>/cancel — cancel</i>")
+            else:
+                ex = {"yt": "https://youtube.com/@channel", "x": "https://x.com/username", "web": "https://example.com"}[ttype]
+                prompt = (f"<b>Add {_T_NAME[ttype]} Task</b>\n\nFormat: <code>link reward title</code>\n"
+                          f"Example: <code>{ex} 3 Follow us</code>\n\n"
+                          "Is task mein membership verify nahi hoti: user link kholta hai aur kuch second baad Verify karta hai "
+                          "(wait baad mein badal sakte ho). Picture baad mein task kholkar laga sakte ho.\n<i>/cancel — cancel</i>")
+            await cq.message.edit_text(prompt, reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("back", callback_data="sync_taskadd")]]), disable_web_page_preview=True)
             try:
                 resp = await client.listen(chat_id=cq.message.chat.id, timeout=300)
             except Exception:
@@ -232,23 +335,41 @@ async def sync_callbacks(client: Bot, cq: CallbackQuery):
                 p = txt.split(None, 2)
                 if txt.lower() == "/cancel":
                     pass
-                elif len(p) < 3 or not p[0].lstrip("-").isdigit() or not p[1].isdigit() or not (1 <= int(p[1]) <= 10000):
-                    await cq.message.reply("Format galat. Example: -1001234567890 5 Join Anime Hub")
-                else:
-                    cid, reward, title = int(p[0]), int(p[1]), p[2].strip()[:40]
+                elif len(p) < 3 or not p[1].isdigit() or not (1 <= int(p[1]) <= 10000):
+                    await cq.message.reply("Format galat. Example: <code>-1001234567890 5 Join Anime Hub</code>")
+                elif ttype == "tg":
+                    ref, reward, title = p[0], int(p[1]), p[2].strip()[:40]
                     try:
-                        chat = await client.get_chat(cid)
+                        ref = ref.replace("https://t.me/", "").replace("http://t.me/", "")
+                        cid_ref = int(ref) if ref.lstrip("-").isdigit() else ("@" + ref.lstrip("@").split("/")[0])
+                        chat = await client.get_chat(cid_ref)
+                        cid = chat.id
                         me = await client.get_chat_member(cid, "me")
                         if getattr(me.status, "name", "").upper() not in ("ADMINISTRATOR", "OWNER"):
-                            raise ValueError("Bot us channel mein admin nahi hai")
+                            raise ValueError("Bot us channel/group mein admin nahi hai")
                         url = f"https://t.me/{chat.username}" if chat.username else (
                             await client.create_chat_invite_link(cid, name="Senpai Sync task")).invite_link
                         await _col("sync_tasks").insert_one({
-                            "title": title, "channel_id": cid, "reward": reward, "url": url,
+                            "type": "tg", "title": title, "channel_id": cid, "reward": reward, "url": url,
                             "active": True, "created": datetime.datetime.utcnow()})
-                        await cq.message.reply(f"Task added: <b>{title}</b> ({reward} SP)")
+                        await cq.message.reply(f"Task added: <b>{title}</b> ({reward} SP). "
+                                               "Channel ki photo app mein apne aap dikhegi.")
                     except Exception as e:
                         await cq.message.reply(f"Task add nahi hua: <code>{str(e)[:150]}</code>")
+                else:
+                    url, reward, title = p[0], int(p[1]), p[2].strip()[:40]
+                    if not re.match(r"^https://[^\s/]+\.[^\s/]+", url):
+                        await cq.message.reply("Link https:// se shuru hona chahiye.")
+                    elif ttype == "yt" and not re.match(r"^https://([\w-]+\.)?(youtube\.com|youtu\.be)/", url, re.I):
+                        await cq.message.reply("Ye YouTube link nahi lag raha.")
+                    elif ttype == "x" and not re.match(r"^https://([\w-]+\.)?(x\.com|twitter\.com)/", url, re.I):
+                        await cq.message.reply("Ye X (Twitter) link nahi lag raha.")
+                    else:
+                        await _col("sync_tasks").insert_one({
+                            "type": ttype, "title": title, "channel_id": 0, "reward": reward, "url": url, "wait": 15,
+                            "active": True, "created": datetime.datetime.utcnow()})
+                        await cq.message.reply(f"Task added: <b>{title}</b> ({reward} SP, wait 15s). "
+                                               "Picture lagani ho toh Tasks mein is task ko kholo.")
             cq.data = "sync_tasks"
             await sync_callbacks(client, cq)
 

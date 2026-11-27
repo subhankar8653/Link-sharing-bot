@@ -404,7 +404,18 @@ async def act_tasks(tg: dict, body: dict, bot) -> dict:
         done.add(d["task_id"])
     return {"ok": True, "tasks": [
         {"id": str(r["_id"]), "title": r["title"], "reward": r["reward"], "url": r["url"],
+         "type": r.get("type", "tg"), "wait": int(r.get("wait", 15) or 15),
+         "photo": bool(r.get("photo_file_id") or (r.get("type", "tg") == "tg" and r.get("channel_id"))),
          "done": str(r["_id"]) in done} for r in rows]}
+
+
+async def act_task_open(tg: dict, body: dict, bot) -> dict:
+    """Link-task: user ne link khola — time yaad rakho (Verify tabhi jab 'wait' second beet jayein)."""
+    uid = int(tg["id"])
+    tid = str(body.get("id", ""))[:40]
+    await _col("sync_task_open").update_one({"_id": f"{uid}:{tid}"},
+                                            {"$setOnInsert": {"ts": datetime.datetime.utcnow()}}, upsert=True)
+    return {"ok": True}
 
 
 async def act_task_claim(tg: dict, body: dict, bot) -> dict:
@@ -423,10 +434,24 @@ async def act_task_claim(tg: dict, body: dict, bot) -> dict:
         return {"ok": False, "error": "invalid"}
     if await _col("sync_task_done").find_one({"_id": f"{uid}:{tid}"}):
         return {"ok": False, "error": "done"}
+    if task.get("type", "tg") != "tg":
+        # YouTube / X / Website: membership check possible nahi — link khola + wait poora hua (click-through)
+        op = await _col("sync_task_open").find_one({"_id": f"{uid}:{tid}"})
+        if not op:
+            return {"ok": False, "error": "not_opened"}
+        if (datetime.datetime.utcnow() - op["ts"]).total_seconds() < int(task.get("wait", 15) or 15) - 1:
+            return {"ok": False, "error": "task_wait"}
+        joined = True
+    else:
+        joined = None
     try:
+        if joined:
+            raise StopIteration
         m = await bot.get_chat_member(task["channel_id"], uid)
         name = getattr(m.status, "name", str(m.status)).upper()
         joined = name in ("MEMBER", "ADMINISTRATOR", "OWNER") or (name == "RESTRICTED" and getattr(m, "is_member", False))
+    except StopIteration:
+        joined = True
     except Exception as e:
         if type(e).__name__ == "UserNotParticipant":
             joined = False
@@ -467,7 +492,7 @@ async def act_payouts(tg: dict, body: dict, bot) -> dict:
 ACTIONS = {
     "me": act_me, "ad_start": act_ad_start, "ad_claim": act_ad_claim, "checkin": act_checkin,
     "history": act_history, "leaderboard": act_leaderboard, "withdraw": act_withdraw,
-    "tasks": act_tasks, "task_claim": act_task_claim, "payouts": act_payouts,
+    "tasks": act_tasks, "task_open": act_task_open, "task_claim": act_task_claim, "payouts": act_payouts,
 }
 
 

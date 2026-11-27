@@ -33,11 +33,17 @@ async def autodel_callbacks(client: Bot, cq: CallbackQuery):
         raise StopPropagation
     parts = cq.data.split(":")
     try:
+        if parts[0] == "autodel_adm":
+            doc = await Seishiro.database["bot_config"].find_one({"_id": "main"}) or {}
+            await _set_bot_config("auto_delete_admins", not bool(doc.get("auto_delete_admins", False)))
+            autodel.reset_cache()
+            await cq.answer("Saved")
         if parts[0] == "autodel_set":
             await _set_bot_config("auto_delete_seconds", max(0, int(parts[1])))
             autodel.reset_cache()
             await cq.answer("Saved")
         cur = await autodel.get_delay() if parts[0] != "autodel_set" else int(parts[1])
+        adm_on = bool(((await Seishiro.database["bot_config"].find_one({"_id": "main"})) or {}).get("auto_delete_admins", False))
         rows, row = [], []
         for v, l in OPTIONS:
             row.append(InlineKeyboardButton(("✅ " if v == cur else "") + l, callback_data=f"autodel_set:{v}"))
@@ -46,13 +52,16 @@ async def autodel_callbacks(client: Bot, cq: CallbackQuery):
                 row = []
         if row:
             rows.append(row)
+        rows.append([InlineKeyboardButton(("🟢 Admin chats mein bhi: ON" if adm_on else "⚪ Admin chats mein bhi: OFF"),
+                                          callback_data="autodel_adm")])
         rows.append([InlineKeyboardButton("back", callback_data="settings_main")])
         await cq.message.edit_text(
             "<b>Auto Delete</b>\n\n"
             f"Abhi: <b>{_label(cur)}</b>\n\n"
             "Bot user ko jo bhi message bhejta hai (private chat) wo itne time baad apne aap delete ho jata hai, "
             "taaki bot chat saaf rahe. Restart ke baad bhi chalta hai.\n"
-            "<i>Broadcast, group/channel messages aur admin ki withdrawal requests delete nahi hotin.</i>",
+            "<i>Broadcast, group/channel messages aur admin ki withdrawal requests delete nahi hotin.</i>\n\n"
+            f"<b>Admin chats:</b> {'ON — admin/owner ke messages bhi delete honge' if adm_on else 'OFF — admin/owner ke messages (genlink, add channel ka link, batch, Short Link) delete nahi honge'}",
             reply_markup=InlineKeyboardMarkup(rows),
         )
     except MessageNotModified:
